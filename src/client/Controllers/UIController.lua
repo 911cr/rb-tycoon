@@ -20,6 +20,8 @@ local BuildingInfo
 local BattleUI
 local TroopTraining
 local AllianceUI
+local Notifications
+local SettingsUI
 
 local UIController = {}
 UIController.__index = UIController
@@ -196,6 +198,33 @@ function UIController:HideAllianceUI()
 end
 
 --[[
+    Shows settings UI.
+]]
+function UIController:ShowSettings()
+    if SettingsUI then
+        SettingsUI:Show()
+    end
+end
+
+--[[
+    Hides settings UI.
+]]
+function UIController:HideSettings()
+    if SettingsUI then
+        SettingsUI:Hide()
+    end
+end
+
+--[[
+    Shows a notification.
+]]
+function UIController:Notify(message: string, notifType: string?)
+    if Notifications then
+        Notifications:Show(message, notifType :: any)
+    end
+end
+
+--[[
     Formats a number for display (e.g., 1500 -> "1.5K")
 ]]
 function UIController.FormatNumber(value: number): string
@@ -260,6 +289,8 @@ function UIController:Init()
         BattleUI = require(UI:WaitForChild("BattleUI"))
         TroopTraining = require(UI:WaitForChild("TroopTraining"))
         AllianceUI = require(UI:WaitForChild("AllianceUI"))
+        Notifications = require(UI:WaitForChild("Notifications"))
+        SettingsUI = require(UI:WaitForChild("SettingsUI"))
     end)
 
     if not success then
@@ -274,6 +305,8 @@ function UIController:Init()
                 BattleUI = require(UI:WaitForChild("BattleUI"))
                 TroopTraining = require(UI:WaitForChild("TroopTraining"))
                 AllianceUI = require(UI:WaitForChild("AllianceUI"))
+                Notifications = require(UI:WaitForChild("Notifications"))
+                SettingsUI = require(UI:WaitForChild("SettingsUI"))
             end
         end)
     end
@@ -344,6 +377,47 @@ function UIController:Init()
     if AllianceUI then
         AllianceUI:Init()
     end
+
+    if Notifications then
+        Notifications:Init()
+    end
+
+    if SettingsUI then
+        SettingsUI:Init()
+    end
+
+    -- Connect notifications to server responses
+    local Events = ReplicatedStorage:WaitForChild("Events")
+    Events.ServerResponse.OnClientEvent:Connect(function(action: string, result: any)
+        if Notifications then
+            if result.success then
+                if action == "PlaceBuilding" then
+                    Notifications:Success("Building placed!")
+                elseif action == "UpgradeBuilding" then
+                    Notifications:Success("Upgrade started!")
+                elseif action == "CollectResources" then
+                    Notifications:Success("Resources collected!")
+                elseif action == "TrainTroop" then
+                    Notifications:Success("Training started!")
+                elseif action == "CreateAlliance" then
+                    Notifications:Success("Alliance created!")
+                elseif action == "JoinAlliance" then
+                    Notifications:Success("Joined alliance!")
+                end
+            else
+                local errorMsg = result.error or "Action failed"
+                if errorMsg == "RATE_LIMITED" then
+                    Notifications:Warning("Too many requests, slow down!")
+                elseif errorMsg == "INSUFFICIENT_RESOURCES" then
+                    Notifications:Error("Not enough resources!")
+                elseif errorMsg == "NO_BUILDER_AVAILABLE" then
+                    Notifications:Warning("No builder available!")
+                else
+                    Notifications:Error(action .. " failed")
+                end
+            end
+        end
+    end)
 
     -- Connect to BattleController events
     local BattleController = require(script.Parent.BattleController)
