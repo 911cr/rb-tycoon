@@ -258,8 +258,35 @@ function BattleController:Init()
         end
     end)
 
-    -- TODO: Listen for BattleTick events for state updates
-    -- TODO: Listen for BattleEnded events
+    -- Listen for battle tick updates from server
+    Events.BattleTick.OnClientEvent:Connect(function(state)
+        if state.battleId == _currentBattleId then
+            _battleState = state
+
+            -- TODO: Update battle UI with new state
+            -- - Update destruction meter
+            -- - Update troop positions
+            -- - Update star display
+            -- - Update timer
+        end
+    end)
+
+    -- Listen for battle end
+    Events.BattleEnded.OnClientEvent:Connect(function(result)
+        if result.battleId == _currentBattleId then
+            _isInBattle = false
+            _battleState = nil
+            _currentBattleId = nil
+            _selectedTroopType = nil
+            _selectedSpellType = nil
+            _deploymentMode = "none"
+
+            BattleController.BattleEnded:Fire(result)
+            print("[Battle] Battle ended - Victory:", result.victory, "Stars:", result.stars)
+
+            -- TODO: Show battle results UI
+        end
+    end)
 
     -- Handle escape key to cancel deployment or surrender
     UserInputService.InputBegan:Connect(function(input, gameProcessed)

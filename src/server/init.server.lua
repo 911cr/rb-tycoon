@@ -105,6 +105,15 @@ local function setupRemoteEvents()
     DeploySpell.Name = "DeploySpell"
     DeploySpell.Parent = Events
 
+    -- Battle state broadcast events (server → client)
+    local BattleTick = Instance.new("RemoteEvent")
+    BattleTick.Name = "BattleTick"
+    BattleTick.Parent = Events
+
+    local BattleEnded = Instance.new("RemoteEvent")
+    BattleEnded.Name = "BattleEnded"
+    BattleEnded.Parent = Events
+
     -- Alliance events
     local CreateAlliance = Instance.new("RemoteEvent")
     CreateAlliance.Name = "CreateAlliance"
@@ -454,6 +463,42 @@ Events.DonateTroops.OnServerEvent:Connect(function(player, recipientUserId, troo
     local result = AllianceService:DonateTroops(player, recipientUserId, troopType, count)
 
     Events.ServerResponse:FireClient(player, "DonateTroops", result)
+end)
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- BATTLE STATE BROADCASTS
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+-- Connect CombatService signals to broadcast battle state to clients
+task.defer(function()
+    local CombatService = require(Services.CombatService)
+    local Players = game:GetService("Players")
+
+    -- Broadcast battle tick updates to attacker
+    CombatService.BattleTick:Connect(function(battleId, battleState)
+        local attacker = Players:GetPlayerByUserId(battleState.attackerId)
+        if attacker then
+            -- Send minimal state for rendering (don't send full internal state)
+            local clientState = {
+                battleId = battleId,
+                phase = battleState.phase,
+                timeRemaining = math.max(0, battleState.endsAt - os.time()),
+                destruction = battleState.destruction,
+                starsEarned = battleState.starsEarned,
+                troops = battleState.troops,
+                spells = battleState.spells,
+            }
+            Events.BattleTick:FireClient(attacker, clientState)
+        end
+    end)
+
+    -- Broadcast battle end to attacker
+    CombatService.BattleEnded:Connect(function(battleId, result)
+        local attacker = Players:GetPlayerByUserId(result.attackerId or 0)
+        if attacker then
+            Events.BattleEnded:FireClient(attacker, result)
+        end
+    end)
 end)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
