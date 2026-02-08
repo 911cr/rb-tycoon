@@ -26,6 +26,7 @@ local WorldMapUI
 local ShopUI
 local QuestsUI
 local DailyRewardUI
+local LeaderboardUI
 
 local UIController = {}
 UIController.__index = UIController
@@ -282,6 +283,24 @@ function UIController:HideDailyReward()
 end
 
 --[[
+    Shows leaderboard UI.
+]]
+function UIController:ShowLeaderboard()
+    if LeaderboardUI then
+        LeaderboardUI:Show()
+    end
+end
+
+--[[
+    Hides leaderboard UI.
+]]
+function UIController:HideLeaderboard()
+    if LeaderboardUI then
+        LeaderboardUI:Hide()
+    end
+end
+
+--[[
     Formats a number for display (e.g., 1500 -> "1.5K")
 ]]
 function UIController.FormatNumber(value: number): string
@@ -352,6 +371,7 @@ function UIController:Init()
         ShopUI = require(UI:WaitForChild("ShopUI"))
         QuestsUI = require(UI:WaitForChild("QuestsUI"))
         DailyRewardUI = require(UI:WaitForChild("DailyRewardUI"))
+        LeaderboardUI = require(UI:WaitForChild("LeaderboardUI"))
     end)
 
     if not success then
@@ -372,6 +392,7 @@ function UIController:Init()
                 ShopUI = require(UI:WaitForChild("ShopUI"))
                 QuestsUI = require(UI:WaitForChild("QuestsUI"))
                 DailyRewardUI = require(UI:WaitForChild("DailyRewardUI"))
+                LeaderboardUI = require(UI:WaitForChild("LeaderboardUI"))
             end
         end)
     end
@@ -406,6 +427,13 @@ function UIController:Init()
                 QuestsUI:Show()
             end
             print("[UI] Quests requested - showing quests")
+        end)
+
+        HUD.LeaderboardRequested:Connect(function()
+            if LeaderboardUI then
+                LeaderboardUI:Show()
+            end
+            print("[UI] Leaderboard requested - showing leaderboard")
         end)
     end
 
@@ -526,6 +554,15 @@ function UIController:Init()
         task.defer(function()
             task.wait(3) -- Wait for data to load
             DailyRewardUI:CheckAndShow()
+        end)
+    end
+
+    if LeaderboardUI then
+        LeaderboardUI:Init()
+
+        -- Connect LeaderboardUI events
+        LeaderboardUI.CloseRequested:Connect(function()
+            print("[UI] Leaderboard UI closed")
         end)
     end
 

@@ -21,6 +21,7 @@ HUD.BuildMenuRequested = Signal.new()
 HUD.AttackRequested = Signal.new()
 HUD.ShopRequested = Signal.new()
 HUD.QuestsRequested = Signal.new()
+HUD.LeaderboardRequested = Signal.new()
 
 -- Private state
 local _player = Players.LocalPlayer
@@ -173,18 +174,33 @@ local function createBuilderDisplay(parent: ScreenGui): Frame
 end
 
 --[[
-    Creates the trophy display.
+    Creates the trophy display (clickable to open leaderboard).
 ]]
 local function createTrophyDisplay(parent: ScreenGui): Frame
-    local container = Components.CreateFrame({
-        Name = "TrophyDisplay",
-        Size = UDim2.new(0, 90, 0, 36),
-        Position = UDim2.new(0, 116, 0, 58),
-        BackgroundColor = Components.Colors.BackgroundLight,
-        CornerRadius = Components.Sizes.CornerRadius,
-        BorderColor = Components.Colors.Warning,
-        Parent = parent,
-    })
+    -- Use a button as the container for click detection
+    local container = Instance.new("TextButton")
+    container.Name = "TrophyDisplay"
+    container.Size = UDim2.new(0, 90, 0, 36)
+    container.Position = UDim2.new(0, 116, 0, 58)
+    container.BackgroundColor3 = Components.Colors.BackgroundLight
+    container.BorderSizePixel = 0
+    container.Text = ""
+    container.AutoButtonColor = true
+    container.Parent = parent
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = Components.Sizes.CornerRadius
+    corner.Parent = container
+
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = Components.Colors.Warning
+    stroke.Thickness = 1
+    stroke.Parent = container
+
+    -- Click handler
+    container.MouseButton1Click:Connect(function()
+        HUD.LeaderboardRequested:Fire()
+    end)
 
     -- Trophy icon
     local iconBg = Components.CreateFrame({
@@ -220,7 +236,7 @@ local function createTrophyDisplay(parent: ScreenGui): Frame
         Parent = container,
     })
 
-    return container
+    return container :: any
 end
 
 --[[
