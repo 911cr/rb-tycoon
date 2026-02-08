@@ -25,6 +25,7 @@ repeat
 until ReplicatedStorage:FindFirstChild("Events")
 
 local Events = ReplicatedStorage.Events
+local ClientAPI = require(ReplicatedStorage.Shared.Modules.ClientAPI)
 
 -- Client state
 local PlayerData = nil
@@ -54,7 +55,82 @@ Events.ServerResponse.OnClientEvent:Connect(function(action: string, result: any
     end
 end)
 
--- Controller initialization
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- REGISTER CLIENT ACTIONS WITH ClientAPI
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+-- Building actions
+ClientAPI.RegisterAction("PlaceBuilding", function(buildingType: string, position: Vector3)
+    Events.PlaceBuilding:FireServer(buildingType, position)
+end)
+
+ClientAPI.RegisterAction("UpgradeBuilding", function(buildingId: string)
+    Events.UpgradeBuilding:FireServer(buildingId)
+end)
+
+ClientAPI.RegisterAction("CollectResources", function(buildingId: string)
+    Events.CollectResources:FireServer(buildingId)
+end)
+
+ClientAPI.RegisterAction("SpeedUpUpgrade", function(buildingId: string)
+    Events.SpeedUpUpgrade:FireServer(buildingId)
+end)
+
+-- Troop actions
+ClientAPI.RegisterAction("TrainTroop", function(troopType: string, quantity: number)
+    Events.TrainTroop:FireServer(troopType, quantity)
+end)
+
+ClientAPI.RegisterAction("CancelTraining", function(queueIndex: number)
+    Events.CancelTraining:FireServer(queueIndex)
+end)
+
+-- Combat actions
+ClientAPI.RegisterAction("StartBattle", function(defenderUserId: number)
+    Events.StartBattle:FireServer(defenderUserId)
+end)
+
+ClientAPI.RegisterAction("DeployTroop", function(battleId: string, troopType: string, position: Vector3)
+    Events.DeployTroop:FireServer(battleId, troopType, position)
+end)
+
+ClientAPI.RegisterAction("DeploySpell", function(battleId: string, spellType: string, position: Vector3)
+    Events.DeploySpell:FireServer(battleId, spellType, position)
+end)
+
+-- Alliance actions
+ClientAPI.RegisterAction("CreateAlliance", function(name: string, description: string?)
+    Events.CreateAlliance:FireServer(name, description or "")
+end)
+
+ClientAPI.RegisterAction("JoinAlliance", function(allianceId: string)
+    Events.JoinAlliance:FireServer(allianceId)
+end)
+
+ClientAPI.RegisterAction("LeaveAlliance", function()
+    Events.LeaveAlliance:FireServer()
+end)
+
+ClientAPI.RegisterAction("DonateTroops", function(recipientUserId: number, troopType: string, count: number)
+    Events.DonateTroops:FireServer(recipientUserId, troopType, count)
+end)
+
+-- Data access
+ClientAPI.RegisterAction("GetPlayerData", function()
+    return PlayerData
+end)
+
+ClientAPI.RegisterAction("RequestDataSync", function()
+    Events.SyncPlayerData:FireServer()
+end)
+
+-- Mark API as ready
+ClientAPI.SetReady()
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- CONTROLLER INITIALIZATION
+-- ═══════════════════════════════════════════════════════════════════════════════
+
 local Controllers = StarterPlayer:WaitForChild("StarterPlayerScripts"):FindFirstChild("Controllers")
 
 if Controllers then
@@ -82,80 +158,5 @@ if Controllers then
         end
     end
 end
-
--- Helper functions for client actions
-
-local ClientActions = {}
-
-function ClientActions.PlaceBuilding(buildingType: string, position: Vector3)
-    Events.PlaceBuilding:FireServer(buildingType, position)
-end
-
-function ClientActions.UpgradeBuilding(buildingId: string)
-    Events.UpgradeBuilding:FireServer(buildingId)
-end
-
-function ClientActions.CollectResources(buildingId: string)
-    Events.CollectResources:FireServer(buildingId)
-end
-
-function ClientActions.SpeedUpUpgrade(buildingId: string)
-    Events.SpeedUpUpgrade:FireServer(buildingId)
-end
-
-function ClientActions.GetPlayerData()
-    return PlayerData
-end
-
--- ═══════════════════════════════════════════════════════════════════════════════
--- TROOP ACTIONS
--- ═══════════════════════════════════════════════════════════════════════════════
-
-function ClientActions.TrainTroop(troopType: string, quantity: number)
-    Events.TrainTroop:FireServer(troopType, quantity)
-end
-
-function ClientActions.CancelTraining(queueIndex: number)
-    Events.CancelTraining:FireServer(queueIndex)
-end
-
--- ═══════════════════════════════════════════════════════════════════════════════
--- COMBAT ACTIONS
--- ═══════════════════════════════════════════════════════════════════════════════
-
-function ClientActions.StartBattle(defenderUserId: number)
-    Events.StartBattle:FireServer(defenderUserId)
-end
-
-function ClientActions.DeployTroop(battleId: string, troopType: string, position: Vector3)
-    Events.DeployTroop:FireServer(battleId, troopType, position)
-end
-
-function ClientActions.DeploySpell(battleId: string, spellType: string, position: Vector3)
-    Events.DeploySpell:FireServer(battleId, spellType, position)
-end
-
--- ═══════════════════════════════════════════════════════════════════════════════
--- ALLIANCE ACTIONS
--- ═══════════════════════════════════════════════════════════════════════════════
-
-function ClientActions.CreateAlliance(name: string, description: string?)
-    Events.CreateAlliance:FireServer(name, description or "")
-end
-
-function ClientActions.JoinAlliance(allianceId: string)
-    Events.JoinAlliance:FireServer(allianceId)
-end
-
-function ClientActions.LeaveAlliance()
-    Events.LeaveAlliance:FireServer()
-end
-
-function ClientActions.DonateTroops(recipientUserId: number, troopType: string, count: number)
-    Events.DonateTroops:FireServer(recipientUserId, troopType, count)
-end
-
--- Make available globally for UI scripts
-_G.ClientActions = ClientActions
 
 print("Battle Tycoon: Conquest - Client Ready!")

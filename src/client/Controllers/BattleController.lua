@@ -15,6 +15,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Signal = require(ReplicatedStorage.Shared.Modules.Signal)
 local TroopData = require(ReplicatedStorage.Shared.Constants.TroopData)
+local ClientAPI = require(ReplicatedStorage.Shared.Modules.ClientAPI)
 
 local BattleController = {}
 BattleController.__index = BattleController
@@ -70,8 +71,8 @@ function BattleController:StartBattle(defenderUserId: number)
         return
     end
 
-    if _G.ClientActions then
-        _G.ClientActions.StartBattle(defenderUserId)
+    if ClientAPI then
+        ClientAPI.StartBattle(defenderUserId)
     end
 end
 
@@ -146,8 +147,8 @@ function BattleController:DeployTroopAt(worldPosition: Vector3)
     local gridZ = math.floor(worldPosition.Z / CELL_SIZE)
     local snappedPosition = Vector3.new(gridX, 0, gridZ)
 
-    if _G.ClientActions then
-        _G.ClientActions.DeployTroop(_currentBattleId, _selectedTroopType, snappedPosition)
+    if ClientAPI then
+        ClientAPI.DeployTroop(_currentBattleId, _selectedTroopType, snappedPosition)
     end
 end
 
@@ -170,8 +171,8 @@ function BattleController:DeploySpellAt(worldPosition: Vector3)
     local gridZ = math.floor(worldPosition.Z / CELL_SIZE)
     local snappedPosition = Vector3.new(gridX, 0, gridZ)
 
-    if _G.ClientActions then
-        _G.ClientActions.DeploySpell(_currentBattleId, _selectedSpellType, snappedPosition)
+    if ClientAPI then
+        ClientAPI.DeploySpell(_currentBattleId, _selectedSpellType, snappedPosition)
     end
 end
 

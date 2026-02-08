@@ -12,6 +12,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Signal = require(ReplicatedStorage.Shared.Modules.Signal)
 local BuildingData = require(ReplicatedStorage.Shared.Constants.BuildingData)
+local ClientAPI = require(ReplicatedStorage.Shared.Modules.ClientAPI)
 
 local CityController = {}
 CityController.__index = CityController
@@ -75,8 +76,8 @@ function CityController:ConfirmPlacement(gridX: number, gridZ: number)
     local position = Vector3.new(gridX, 0, gridZ)
 
     -- Request server to place building
-    if _G.ClientActions then
-        _G.ClientActions.PlaceBuilding(_placementBuildingType, position)
+    if ClientAPI then
+        ClientAPI.PlaceBuilding(_placementBuildingType, position)
     end
 
     -- Exit placement mode
@@ -159,8 +160,8 @@ function CityController:UpgradeSelected()
         return
     end
 
-    if _G.ClientActions then
-        _G.ClientActions.UpgradeBuilding(_selectedBuildingId)
+    if ClientAPI then
+        ClientAPI.UpgradeBuilding(_selectedBuildingId)
     end
 end
 
@@ -173,8 +174,8 @@ function CityController:CollectFromSelected()
         return
     end
 
-    if _G.ClientActions then
-        _G.ClientActions.CollectResources(_selectedBuildingId)
+    if ClientAPI then
+        ClientAPI.CollectResources(_selectedBuildingId)
     end
 end
 
@@ -187,8 +188,8 @@ function CityController:SpeedUpSelected()
         return
     end
 
-    if _G.ClientActions then
-        _G.ClientActions.SpeedUpUpgrade(_selectedBuildingId)
+    if ClientAPI then
+        ClientAPI.SpeedUpUpgrade(_selectedBuildingId)
     end
 end
 
