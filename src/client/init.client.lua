@@ -142,6 +142,7 @@ local Controllers = player:WaitForChild("PlayerScripts"):FindFirstChild("Control
 if Controllers then
     local initOrder = {
         "CameraController", -- First so camera is ready for other controllers
+        "AudioController", -- Audio before UI so sounds can play on UI load
         "UIController",
         "CityController",
         "BattleController",
