@@ -20,6 +20,7 @@ HUD.__index = HUD
 HUD.BuildMenuRequested = Signal.new()
 HUD.AttackRequested = Signal.new()
 HUD.ShopRequested = Signal.new()
+HUD.QuestsRequested = Signal.new()
 
 -- Private state
 local _player = Players.LocalPlayer
@@ -261,6 +262,18 @@ local function createActionBar(parent: ScreenGui): Frame
         HorizontalAlignment = Enum.HorizontalAlignment.Center,
         VerticalAlignment = Enum.VerticalAlignment.Center,
         Padding = UDim.new(0, 16),
+        Parent = buttonContainer,
+    })
+
+    -- Quests button
+    local questsButton = Components.CreateButton({
+        Name = "QuestsButton",
+        Text = "Quests",
+        Size = UDim2.new(0, 80, 0, 50),
+        BackgroundColor = Components.Colors.Warning,
+        OnClick = function()
+            HUD.QuestsRequested:Fire()
+        end,
         Parent = buttonContainer,
     })
 

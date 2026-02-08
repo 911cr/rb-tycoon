@@ -133,6 +133,28 @@ ClientAPI.RegisterAction("CompleteTutorial", function()
     Events.CompleteTutorial:FireServer()
 end)
 
+-- Quest actions
+ClientAPI.RegisterAction("GetDailyQuests", function()
+    return Events.GetDailyQuests:InvokeServer()
+end)
+
+ClientAPI.RegisterAction("GetAchievements", function()
+    return Events.GetAchievements:InvokeServer()
+end)
+
+ClientAPI.RegisterAction("ClaimQuestReward", function(questId: string)
+    Events.ClaimQuestReward:FireServer(questId)
+end)
+
+-- Daily reward actions
+ClientAPI.RegisterAction("GetDailyRewardInfo", function()
+    return Events.GetDailyRewardInfo:InvokeServer()
+end)
+
+ClientAPI.RegisterAction("ClaimDailyReward", function()
+    Events.ClaimDailyReward:FireServer()
+end)
+
 -- Data access
 ClientAPI.RegisterAction("GetPlayerData", function()
     return PlayerData
@@ -366,6 +388,58 @@ Events.OpponentFound.OnClientEvent:Connect(function(opponent, skipCost)
     end
 
     print("[CLIENT] Opponent found:", opponent.username, "Trophies:", opponent.trophies)
+end)
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- WIRE UP QUESTS AND DAILY REWARDS
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+-- Listen for quest completion
+Events.QuestCompleted.OnClientEvent:Connect(function(data)
+    local uiControllerModule = Controllers and Controllers:FindFirstChild("UIController")
+    if uiControllerModule then
+        local UIController = require(uiControllerModule)
+        if UIController.ShowNotification then
+            local prefix = data.isAchievement and "Achievement Unlocked: " or "Quest Complete: "
+            UIController:ShowNotification(prefix .. data.title, "success")
+        end
+    end
+
+    print("[CLIENT] Quest/Achievement completed:", data.questId, data.title)
+end)
+
+-- Listen for quest progress
+Events.QuestProgress.OnClientEvent:Connect(function(data)
+    print(string.format("[CLIENT] Quest progress: %s - %d/%d", data.questId, data.progress, data.target))
+end)
+
+-- Listen for daily reward claimed
+Events.DailyRewardClaimed.OnClientEvent:Connect(function(data)
+    local uiControllerModule = Controllers and Controllers:FindFirstChild("UIController")
+    if uiControllerModule then
+        local UIController = require(uiControllerModule)
+        if UIController.ShowNotification then
+            local rewardText = ""
+            if data.reward.gold then
+                rewardText = rewardText .. data.reward.gold .. " Gold "
+            end
+            if data.reward.gems then
+                rewardText = rewardText .. data.reward.gems .. " Gems "
+            end
+            UIController:ShowNotification("Daily Reward: " .. rewardText, "success")
+
+            -- Show streak bonus if applicable
+            if data.streakBonus then
+                local bonusText = ""
+                if data.streakBonus.gems then
+                    bonusText = data.streakBonus.gems .. " Gems"
+                end
+                UIController:ShowNotification("Streak Bonus: " .. bonusText .. " (Day " .. data.newStreak .. ")", "success")
+            end
+        end
+    end
+
+    print(string.format("[CLIENT] Daily reward claimed! Streak: %d", data.newStreak))
 end)
 
 print("Battle Tycoon: Conquest - Client Ready!")

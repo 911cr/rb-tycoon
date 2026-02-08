@@ -29,6 +29,8 @@ local initOrder = {
     "CombatService",
     "AllianceService",
     "MatchmakingService",
+    "QuestService",
+    "DailyRewardService",
 }
 
 for _, serviceName in initOrder do
@@ -154,6 +156,40 @@ local function setupRemoteEvents()
     local CompleteTutorial = Instance.new("RemoteEvent")
     CompleteTutorial.Name = "CompleteTutorial"
     CompleteTutorial.Parent = Events
+
+    -- Quest events
+    local GetDailyQuests = Instance.new("RemoteFunction")
+    GetDailyQuests.Name = "GetDailyQuests"
+    GetDailyQuests.Parent = Events
+
+    local GetAchievements = Instance.new("RemoteFunction")
+    GetAchievements.Name = "GetAchievements"
+    GetAchievements.Parent = Events
+
+    local ClaimQuestReward = Instance.new("RemoteEvent")
+    ClaimQuestReward.Name = "ClaimQuestReward"
+    ClaimQuestReward.Parent = Events
+
+    local QuestCompleted = Instance.new("RemoteEvent")
+    QuestCompleted.Name = "QuestCompleted"
+    QuestCompleted.Parent = Events
+
+    local QuestProgress = Instance.new("RemoteEvent")
+    QuestProgress.Name = "QuestProgress"
+    QuestProgress.Parent = Events
+
+    -- Daily reward events
+    local GetDailyRewardInfo = Instance.new("RemoteFunction")
+    GetDailyRewardInfo.Name = "GetDailyRewardInfo"
+    GetDailyRewardInfo.Parent = Events
+
+    local ClaimDailyReward = Instance.new("RemoteEvent")
+    ClaimDailyReward.Name = "ClaimDailyReward"
+    ClaimDailyReward.Parent = Events
+
+    local DailyRewardClaimed = Instance.new("RemoteEvent")
+    DailyRewardClaimed.Name = "DailyRewardClaimed"
+    DailyRewardClaimed.Parent = Events
 
     return Events
 end
@@ -593,6 +629,126 @@ Events.CompleteTutorial.OnServerEvent:Connect(function(player)
             reward = { gems = 50 }
         })
     end
+end)
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- QUEST SERVICE HANDLERS
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+local MAX_QUEST_ID_LENGTH = 50
+
+-- Get daily quests (RemoteFunction for synchronous data)
+Events.GetDailyQuests.OnServerInvoke = function(player)
+    -- Rate limit
+    if not checkRateLimit(player, "GetDailyQuests", 5) then
+        return nil
+    end
+
+    -- Execute
+    local QuestService = require(Services.QuestService)
+    return QuestService:GetDailyQuests(player)
+end
+
+-- Get achievements (RemoteFunction for synchronous data)
+Events.GetAchievements.OnServerInvoke = function(player)
+    -- Rate limit
+    if not checkRateLimit(player, "GetAchievements", 5) then
+        return nil
+    end
+
+    -- Execute
+    local QuestService = require(Services.QuestService)
+    return QuestService:GetAchievements(player)
+end
+
+-- Claim quest reward handler
+Events.ClaimQuestReward.OnServerEvent:Connect(function(player, questId)
+    -- Rate limit
+    if not checkRateLimit(player, "ClaimQuestReward", 10) then
+        Events.ServerResponse:FireClient(player, "ClaimQuestReward", { success = false, error = "RATE_LIMITED" })
+        return
+    end
+
+    -- Type validation
+    if not validateStringInput(questId, MAX_QUEST_ID_LENGTH) then return end
+
+    -- Execute
+    local QuestService = require(Services.QuestService)
+    local result = QuestService:ClaimReward(player, questId)
+
+    Events.ServerResponse:FireClient(player, "ClaimQuestReward", result)
+end)
+
+-- Connect QuestService signals to broadcast to clients
+task.defer(function()
+    local QuestService = require(Services.QuestService)
+
+    -- Broadcast quest completion
+    QuestService.QuestCompleted:Connect(function(player, quest)
+        Events.QuestCompleted:FireClient(player, {
+            questId = quest.id,
+            title = quest.title,
+            reward = quest.reward,
+        })
+    end)
+
+    -- Broadcast quest progress updates
+    QuestService.QuestProgressUpdated:Connect(function(player, questId, progress, target)
+        Events.QuestProgress:FireClient(player, {
+            questId = questId,
+            progress = progress,
+            target = target,
+        })
+    end)
+
+    -- Broadcast achievement unlock
+    QuestService.AchievementUnlocked:Connect(function(player, achievement)
+        Events.QuestCompleted:FireClient(player, {
+            questId = achievement.id,
+            title = achievement.title,
+            reward = achievement.reward,
+            isAchievement = true,
+        })
+    end)
+end)
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- DAILY REWARD SERVICE HANDLERS
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+-- Get daily reward info (RemoteFunction for synchronous data)
+Events.GetDailyRewardInfo.OnServerInvoke = function(player)
+    -- Rate limit
+    if not checkRateLimit(player, "GetDailyRewardInfo", 5) then
+        return nil
+    end
+
+    -- Execute
+    local DailyRewardService = require(Services.DailyRewardService)
+    return DailyRewardService:GetRewardInfo(player)
+end
+
+-- Claim daily reward handler
+Events.ClaimDailyReward.OnServerEvent:Connect(function(player)
+    -- Rate limit
+    if not checkRateLimit(player, "ClaimDailyReward", 2) then
+        Events.ServerResponse:FireClient(player, "ClaimDailyReward", { success = false, error = "RATE_LIMITED" })
+        return
+    end
+
+    -- Execute
+    local DailyRewardService = require(Services.DailyRewardService)
+    local result = DailyRewardService:ClaimReward(player)
+
+    if result.success then
+        Events.DailyRewardClaimed:FireClient(player, {
+            reward = result.reward,
+            streakBonus = result.streakBonus,
+            newStreak = result.newStreak,
+        })
+    end
+
+    Events.ServerResponse:FireClient(player, "ClaimDailyReward", result)
 end)
 
 -- ═══════════════════════════════════════════════════════════════════════════════

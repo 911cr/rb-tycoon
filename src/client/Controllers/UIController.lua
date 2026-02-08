@@ -24,6 +24,8 @@ local Notifications
 local SettingsUI
 local WorldMapUI
 local ShopUI
+local QuestsUI
+local DailyRewardUI
 
 local UIController = {}
 UIController.__index = UIController
@@ -227,6 +229,59 @@ function UIController:Notify(message: string, notifType: string?)
 end
 
 --[[
+    Shows a notification with specific type (for external access).
+]]
+function UIController:ShowNotification(message: string, notifType: string?)
+    if Notifications then
+        if notifType == "success" then
+            Notifications:Success(message)
+        elseif notifType == "error" then
+            Notifications:Error(message)
+        elseif notifType == "warning" then
+            Notifications:Warning(message)
+        else
+            Notifications:Info(message)
+        end
+    end
+end
+
+--[[
+    Shows quests UI.
+]]
+function UIController:ShowQuests()
+    if QuestsUI then
+        QuestsUI:Show()
+    end
+end
+
+--[[
+    Hides quests UI.
+]]
+function UIController:HideQuests()
+    if QuestsUI then
+        QuestsUI:Hide()
+    end
+end
+
+--[[
+    Shows daily reward UI.
+]]
+function UIController:ShowDailyReward()
+    if DailyRewardUI then
+        DailyRewardUI:Show()
+    end
+end
+
+--[[
+    Hides daily reward UI.
+]]
+function UIController:HideDailyReward()
+    if DailyRewardUI then
+        DailyRewardUI:Hide()
+    end
+end
+
+--[[
     Formats a number for display (e.g., 1500 -> "1.5K")
 ]]
 function UIController.FormatNumber(value: number): string
@@ -295,6 +350,8 @@ function UIController:Init()
         SettingsUI = require(UI:WaitForChild("SettingsUI"))
         WorldMapUI = require(UI:WaitForChild("WorldMapUI"))
         ShopUI = require(UI:WaitForChild("ShopUI"))
+        QuestsUI = require(UI:WaitForChild("QuestsUI"))
+        DailyRewardUI = require(UI:WaitForChild("DailyRewardUI"))
     end)
 
     if not success then
@@ -313,6 +370,8 @@ function UIController:Init()
                 SettingsUI = require(UI:WaitForChild("SettingsUI"))
                 WorldMapUI = require(UI:WaitForChild("WorldMapUI"))
                 ShopUI = require(UI:WaitForChild("ShopUI"))
+                QuestsUI = require(UI:WaitForChild("QuestsUI"))
+                DailyRewardUI = require(UI:WaitForChild("DailyRewardUI"))
             end
         end)
     end
@@ -340,6 +399,13 @@ function UIController:Init()
                 ShopUI:Show()
             end
             print("[UI] Shop requested - showing shop")
+        end)
+
+        HUD.QuestsRequested:Connect(function()
+            if QuestsUI then
+                QuestsUI:Show()
+            end
+            print("[UI] Quests requested - showing quests")
         end)
     end
 
@@ -433,6 +499,36 @@ function UIController:Init()
         end)
     end
 
+    if QuestsUI then
+        QuestsUI:Init()
+
+        -- Connect QuestsUI events
+        QuestsUI.CloseRequested:Connect(function()
+            print("[UI] Quests UI closed")
+        end)
+    end
+
+    if DailyRewardUI then
+        DailyRewardUI:Init()
+
+        -- Connect DailyRewardUI events
+        DailyRewardUI.CloseRequested:Connect(function()
+            print("[UI] Daily Reward UI closed")
+        end)
+
+        DailyRewardUI.RewardClaimed:Connect(function(data)
+            if Notifications then
+                Notifications:Success("Daily reward claimed!")
+            end
+        end)
+
+        -- Auto-show daily reward on login if available
+        task.defer(function()
+            task.wait(3) -- Wait for data to load
+            DailyRewardUI:CheckAndShow()
+        end)
+    end
+
     -- Connect notifications to server responses
     local Events = ReplicatedStorage:WaitForChild("Events")
     Events.ServerResponse.OnClientEvent:Connect(function(action: string, result: any)
@@ -452,6 +548,10 @@ function UIController:Init()
                     Notifications:Success("Joined alliance!")
                 elseif action == "ShopPurchase" then
                     Notifications:Success("Purchase complete!")
+                elseif action == "ClaimQuestReward" then
+                    Notifications:Success("Quest reward claimed!")
+                elseif action == "ClaimDailyReward" then
+                    Notifications:Success("Daily reward claimed!")
                 end
             else
                 local errorMsg = result.error or "Action failed"
@@ -467,6 +567,12 @@ function UIController:Init()
                     Notifications:Info("You already own this!")
                 elseif errorMsg == "PURCHASE_PREVIOUS_FIRST" then
                     Notifications:Warning("Purchase previous builder first!")
+                elseif errorMsg == "NOT_COMPLETED" then
+                    Notifications:Warning("Quest not completed yet!")
+                elseif errorMsg == "ALREADY_CLAIMED" then
+                    Notifications:Info("Already claimed!")
+                elseif errorMsg == "QUEST_NOT_FOUND" then
+                    Notifications:Error("Quest not found!")
                 else
                     Notifications:Error(action .. " failed")
                 end
