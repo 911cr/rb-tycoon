@@ -1,0 +1,24 @@
+# Roblox
+*.rbxlx
+*.rbxl
+*.rbxm
+*.rbxmx
+
+# Rojo
+roblox.lock
+
+# IDE
+.vscode/
+.idea/
+.github/instructions/codacy.instructions.md
+
+# OS
+.DS_Store
+Thumbs.db
+*:Zone.Identifier
+
+# Logs
+*.log
+
+# Local settings
+.claude/settings.local.json

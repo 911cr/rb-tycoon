@@ -1,0 +1,69 @@
+{
+  "name": "BattleTycoon",
+  "tree": {
+    "$className": "DataModel",
+
+    "ReplicatedStorage": {
+      "$className": "ReplicatedStorage",
+      "Shared": {
+        "$path": "src/shared"
+      }
+    },
+
+    "ServerScriptService": {
+      "$className": "ServerScriptService",
+      "Services": {
+        "$path": "src/server/Services"
+      },
+      "Server": {
+        "$path": "src/server/init.server.lua"
+      }
+    },
+
+    "StarterPlayer": {
+      "$className": "StarterPlayer",
+      "StarterPlayerScripts": {
+        "$className": "StarterPlayerScripts",
+        "Controllers": {
+          "$path": "src/client/Controllers"
+        },
+        "Client": {
+          "$path": "src/client/init.client.lua"
+        }
+      }
+    },
+
+    "StarterGui": {
+      "$className": "StarterGui",
+      "UI": {
+        "$path": "assets/gui",
+        "$className": "Folder"
+      }
+    },
+
+    "Workspace": {
+      "$className": "Workspace",
+      "$properties": {
+        "FilteringEnabled": true
+      }
+    },
+
+    "SoundService": {
+      "$className": "SoundService",
+      "$properties": {
+        "RespectFilteringEnabled": true
+      }
+    },
+
+    "Lighting": {
+      "$className": "Lighting",
+      "$properties": {
+        "Technology": "Future",
+        "GlobalShadows": true,
+        "Brightness": 2,
+        "EnvironmentDiffuseScale": 1,
+        "EnvironmentSpecularScale": 1
+      }
+    }
+  }
+}
