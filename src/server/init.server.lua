@@ -25,9 +25,9 @@ local initOrder = {
     "DataService",
     "BuildingService",
     "EconomyService",
-    -- "TroopService",     -- TODO: Implement
-    -- "CombatService",    -- TODO: Implement
-    -- "AllianceService",  -- TODO: Implement
+    "TroopService",
+    "CombatService",
+    "AllianceService",
 }
 
 for _, serviceName in initOrder do
@@ -82,6 +82,45 @@ local function setupRemoteEvents()
     local SyncPlayerData = Instance.new("RemoteEvent")
     SyncPlayerData.Name = "SyncPlayerData"
     SyncPlayerData.Parent = Events
+
+    -- Troop training events
+    local TrainTroop = Instance.new("RemoteEvent")
+    TrainTroop.Name = "TrainTroop"
+    TrainTroop.Parent = Events
+
+    local CancelTraining = Instance.new("RemoteEvent")
+    CancelTraining.Name = "CancelTraining"
+    CancelTraining.Parent = Events
+
+    -- Combat events
+    local StartBattle = Instance.new("RemoteEvent")
+    StartBattle.Name = "StartBattle"
+    StartBattle.Parent = Events
+
+    local DeployTroop = Instance.new("RemoteEvent")
+    DeployTroop.Name = "DeployTroop"
+    DeployTroop.Parent = Events
+
+    local DeploySpell = Instance.new("RemoteEvent")
+    DeploySpell.Name = "DeploySpell"
+    DeploySpell.Parent = Events
+
+    -- Alliance events
+    local CreateAlliance = Instance.new("RemoteEvent")
+    CreateAlliance.Name = "CreateAlliance"
+    CreateAlliance.Parent = Events
+
+    local JoinAlliance = Instance.new("RemoteEvent")
+    JoinAlliance.Name = "JoinAlliance"
+    JoinAlliance.Parent = Events
+
+    local LeaveAlliance = Instance.new("RemoteEvent")
+    LeaveAlliance.Name = "LeaveAlliance"
+    LeaveAlliance.Parent = Events
+
+    local DonateTroops = Instance.new("RemoteEvent")
+    DonateTroops.Name = "DonateTroops"
+    DonateTroops.Parent = Events
 
     return Events
 end
@@ -223,6 +262,203 @@ Events.SyncPlayerData.OnServerEvent:Connect(function(player)
         Events.SyncPlayerData:FireClient(player, safeData)
     end
 end)
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- TROOP SERVICE HANDLERS
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+-- Train troop handler
+Events.TrainTroop.OnServerEvent:Connect(function(player, troopType, quantity)
+    -- Rate limit
+    if not checkRateLimit(player, "TrainTroop", 10) then
+        Events.ServerResponse:FireClient(player, "TrainTroop", { success = false, error = "RATE_LIMITED" })
+        return
+    end
+
+    -- Type validation
+    if not validateStringInput(troopType, MAX_BUILDING_TYPE_LENGTH) then return end
+    if typeof(quantity) ~= "number" then return end
+    quantity = math.floor(quantity) -- Ensure integer
+    if quantity < 1 or quantity > 50 then return end -- Reasonable limit
+
+    -- Execute
+    local TroopService = require(Services.TroopService)
+    local result = TroopService:TrainTroop(player, troopType, quantity)
+
+    Events.ServerResponse:FireClient(player, "TrainTroop", result)
+end)
+
+-- Cancel training handler
+Events.CancelTraining.OnServerEvent:Connect(function(player, queueIndex)
+    -- Rate limit
+    if not checkRateLimit(player, "CancelTraining", 5) then
+        Events.ServerResponse:FireClient(player, "CancelTraining", { success = false, error = "RATE_LIMITED" })
+        return
+    end
+
+    -- Type validation
+    if typeof(queueIndex) ~= "number" then return end
+    queueIndex = math.floor(queueIndex) -- Ensure integer
+    if queueIndex < 1 or queueIndex > 50 then return end -- Reasonable limit
+
+    -- Execute
+    local TroopService = require(Services.TroopService)
+    local result = TroopService:CancelTraining(player, queueIndex)
+
+    Events.ServerResponse:FireClient(player, "CancelTraining", result)
+end)
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- COMBAT SERVICE HANDLERS
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+-- Start battle handler
+Events.StartBattle.OnServerEvent:Connect(function(player, defenderUserId)
+    -- Rate limit (battles are expensive)
+    if not checkRateLimit(player, "StartBattle", 1) then
+        Events.ServerResponse:FireClient(player, "StartBattle", { success = false, error = "RATE_LIMITED" })
+        return
+    end
+
+    -- Type validation
+    if typeof(defenderUserId) ~= "number" then return end
+    defenderUserId = math.floor(defenderUserId) -- Ensure integer
+    if defenderUserId < 1 then return end
+
+    -- Execute
+    local CombatService = require(Services.CombatService)
+    local result = CombatService:StartBattle(player, defenderUserId)
+
+    Events.ServerResponse:FireClient(player, "StartBattle", result)
+end)
+
+-- Deploy troop handler
+Events.DeployTroop.OnServerEvent:Connect(function(player, battleId, troopType, position)
+    -- Rate limit (troops can be deployed quickly in battle)
+    if not checkRateLimit(player, "DeployTroop", 30) then return end
+
+    -- Type validation
+    if not validateStringInput(battleId, MAX_STRING_LENGTH) then return end
+    if not validateStringInput(troopType, MAX_BUILDING_TYPE_LENGTH) then return end
+    if typeof(position) ~= "Vector3" then return end
+
+    -- Execute
+    local CombatService = require(Services.CombatService)
+    local result = CombatService:DeployTroop(player, battleId, troopType, position)
+
+    if not result.success then
+        Events.ServerResponse:FireClient(player, "DeployTroop", result)
+    end
+    -- Successful deploys are broadcast via BattleTick events
+end)
+
+-- Deploy spell handler
+Events.DeploySpell.OnServerEvent:Connect(function(player, battleId, spellType, position)
+    -- Rate limit
+    if not checkRateLimit(player, "DeploySpell", 10) then return end
+
+    -- Type validation
+    if not validateStringInput(battleId, MAX_STRING_LENGTH) then return end
+    if not validateStringInput(spellType, MAX_BUILDING_TYPE_LENGTH) then return end
+    if typeof(position) ~= "Vector3" then return end
+
+    -- Execute
+    local CombatService = require(Services.CombatService)
+    local result = CombatService:DeploySpell(player, battleId, spellType, position)
+
+    if not result.success then
+        Events.ServerResponse:FireClient(player, "DeploySpell", result)
+    end
+end)
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- ALLIANCE SERVICE HANDLERS
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+local MAX_ALLIANCE_NAME_LENGTH = 20
+local MAX_DESCRIPTION_LENGTH = 200
+
+-- Create alliance handler
+Events.CreateAlliance.OnServerEvent:Connect(function(player, name, description)
+    -- Rate limit (expensive operation)
+    if not checkRateLimit(player, "CreateAlliance", 1) then
+        Events.ServerResponse:FireClient(player, "CreateAlliance", { success = false, error = "RATE_LIMITED" })
+        return
+    end
+
+    -- Type validation
+    if not validateStringInput(name, MAX_ALLIANCE_NAME_LENGTH) then return end
+    description = description or ""
+    if typeof(description) ~= "string" then return end
+    if #description > MAX_DESCRIPTION_LENGTH then return end
+
+    -- Execute
+    local AllianceService = require(Services.AllianceService)
+    local result = AllianceService:CreateAlliance(player, name, description)
+
+    Events.ServerResponse:FireClient(player, "CreateAlliance", result)
+end)
+
+-- Join alliance handler
+Events.JoinAlliance.OnServerEvent:Connect(function(player, allianceId)
+    -- Rate limit
+    if not checkRateLimit(player, "JoinAlliance", 2) then
+        Events.ServerResponse:FireClient(player, "JoinAlliance", { success = false, error = "RATE_LIMITED" })
+        return
+    end
+
+    -- Type validation
+    if not validateStringInput(allianceId, MAX_STRING_LENGTH) then return end
+
+    -- Execute
+    local AllianceService = require(Services.AllianceService)
+    local result = AllianceService:JoinAlliance(player, allianceId)
+
+    Events.ServerResponse:FireClient(player, "JoinAlliance", result)
+end)
+
+-- Leave alliance handler
+Events.LeaveAlliance.OnServerEvent:Connect(function(player)
+    -- Rate limit
+    if not checkRateLimit(player, "LeaveAlliance", 1) then
+        Events.ServerResponse:FireClient(player, "LeaveAlliance", { success = false, error = "RATE_LIMITED" })
+        return
+    end
+
+    -- Execute
+    local AllianceService = require(Services.AllianceService)
+    local result = AllianceService:LeaveAlliance(player)
+
+    Events.ServerResponse:FireClient(player, "LeaveAlliance", result)
+end)
+
+-- Donate troops handler
+Events.DonateTroops.OnServerEvent:Connect(function(player, recipientUserId, troopType, count)
+    -- Rate limit
+    if not checkRateLimit(player, "DonateTroops", 10) then
+        Events.ServerResponse:FireClient(player, "DonateTroops", { success = false, error = "RATE_LIMITED" })
+        return
+    end
+
+    -- Type validation
+    if typeof(recipientUserId) ~= "number" then return end
+    recipientUserId = math.floor(recipientUserId)
+    if recipientUserId < 1 then return end
+    if not validateStringInput(troopType, MAX_BUILDING_TYPE_LENGTH) then return end
+    if typeof(count) ~= "number" then return end
+    count = math.floor(count)
+    if count < 1 or count > 10 then return end -- Reasonable donation limit
+
+    -- Execute
+    local AllianceService = require(Services.AllianceService)
+    local result = AllianceService:DonateTroops(player, recipientUserId, troopType, count)
+
+    Events.ServerResponse:FireClient(player, "DonateTroops", result)
+end)
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- CLEANUP
+-- ═══════════════════════════════════════════════════════════════════════════════
 
 -- Cleanup rate limiter on player leave
 game:GetService("Players").PlayerRemoving:Connect(function(player)

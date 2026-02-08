@@ -61,7 +61,7 @@ if Controllers then
     local initOrder = {
         "UIController",
         "CityController",
-        -- "BattleController", -- TODO: Implement
+        "BattleController",
     }
 
     for _, controllerName in initOrder do
@@ -105,6 +105,54 @@ end
 
 function ClientActions.GetPlayerData()
     return PlayerData
+end
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- TROOP ACTIONS
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+function ClientActions.TrainTroop(troopType: string, quantity: number)
+    Events.TrainTroop:FireServer(troopType, quantity)
+end
+
+function ClientActions.CancelTraining(queueIndex: number)
+    Events.CancelTraining:FireServer(queueIndex)
+end
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- COMBAT ACTIONS
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+function ClientActions.StartBattle(defenderUserId: number)
+    Events.StartBattle:FireServer(defenderUserId)
+end
+
+function ClientActions.DeployTroop(battleId: string, troopType: string, position: Vector3)
+    Events.DeployTroop:FireServer(battleId, troopType, position)
+end
+
+function ClientActions.DeploySpell(battleId: string, spellType: string, position: Vector3)
+    Events.DeploySpell:FireServer(battleId, spellType, position)
+end
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- ALLIANCE ACTIONS
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+function ClientActions.CreateAlliance(name: string, description: string?)
+    Events.CreateAlliance:FireServer(name, description or "")
+end
+
+function ClientActions.JoinAlliance(allianceId: string)
+    Events.JoinAlliance:FireServer(allianceId)
+end
+
+function ClientActions.LeaveAlliance()
+    Events.LeaveAlliance:FireServer()
+end
+
+function ClientActions.DonateTroops(recipientUserId: number, troopType: string, count: number)
+    Events.DonateTroops:FireServer(recipientUserId, troopType, count)
 end
 
 -- Make available globally for UI scripts
