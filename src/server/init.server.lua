@@ -26,11 +26,13 @@ local initOrder = {
     "BuildingService",
     "EconomyService",
     "TroopService",
+    "SpellService",
     "CombatService",
     "AllianceService",
     "MatchmakingService",
     "QuestService",
     "DailyRewardService",
+    "LeaderboardService",
 }
 
 for _, serviceName in initOrder do
@@ -190,6 +192,40 @@ local function setupRemoteEvents()
     local DailyRewardClaimed = Instance.new("RemoteEvent")
     DailyRewardClaimed.Name = "DailyRewardClaimed"
     DailyRewardClaimed.Parent = Events
+
+    -- Spell events
+    local BrewSpell = Instance.new("RemoteEvent")
+    BrewSpell.Name = "BrewSpell"
+    BrewSpell.Parent = Events
+
+    local CancelSpellBrewing = Instance.new("RemoteEvent")
+    CancelSpellBrewing.Name = "CancelSpellBrewing"
+    CancelSpellBrewing.Parent = Events
+
+    local GetSpellQueue = Instance.new("RemoteFunction")
+    GetSpellQueue.Name = "GetSpellQueue"
+    GetSpellQueue.Parent = Events
+
+    local SpellBrewingComplete = Instance.new("RemoteEvent")
+    SpellBrewingComplete.Name = "SpellBrewingComplete"
+    SpellBrewingComplete.Parent = Events
+
+    -- Leaderboard events
+    local GetLeaderboard = Instance.new("RemoteFunction")
+    GetLeaderboard.Name = "GetLeaderboard"
+    GetLeaderboard.Parent = Events
+
+    local GetPlayerRank = Instance.new("RemoteFunction")
+    GetPlayerRank.Name = "GetPlayerRank"
+    GetPlayerRank.Parent = Events
+
+    local GetLeaderboardInfo = Instance.new("RemoteFunction")
+    GetLeaderboardInfo.Name = "GetLeaderboardInfo"
+    GetLeaderboardInfo.Parent = Events
+
+    local LeagueChanged = Instance.new("RemoteEvent")
+    LeagueChanged.Name = "LeagueChanged"
+    LeagueChanged.Parent = Events
 
     return Events
 end
@@ -749,6 +785,131 @@ Events.ClaimDailyReward.OnServerEvent:Connect(function(player)
     end
 
     Events.ServerResponse:FireClient(player, "ClaimDailyReward", result)
+end)
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- SPELL SERVICE HANDLERS
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+local MAX_SPELL_TYPE_LENGTH = 30
+
+-- Brew spell handler
+Events.BrewSpell.OnServerEvent:Connect(function(player, spellType)
+    -- Rate limit
+    if not checkRateLimit(player, "BrewSpell", 10) then
+        Events.ServerResponse:FireClient(player, "BrewSpell", { success = false, error = "RATE_LIMITED" })
+        return
+    end
+
+    -- Type validation
+    if not validateStringInput(spellType, MAX_SPELL_TYPE_LENGTH) then return end
+
+    -- Execute
+    local SpellService = require(Services.SpellService)
+    local result = SpellService:BrewSpell(player, spellType)
+
+    Events.ServerResponse:FireClient(player, "BrewSpell", result)
+end)
+
+-- Cancel spell brewing handler
+Events.CancelSpellBrewing.OnServerEvent:Connect(function(player, queueIndex)
+    -- Rate limit
+    if not checkRateLimit(player, "CancelSpellBrewing", 5) then
+        Events.ServerResponse:FireClient(player, "CancelSpellBrewing", { success = false, error = "RATE_LIMITED" })
+        return
+    end
+
+    -- Type validation
+    if typeof(queueIndex) ~= "number" then return end
+    queueIndex = math.floor(queueIndex)
+    if queueIndex < 1 or queueIndex > 20 then return end
+
+    -- Execute
+    local SpellService = require(Services.SpellService)
+    local result = SpellService:CancelBrewing(player, queueIndex)
+
+    Events.ServerResponse:FireClient(player, "CancelSpellBrewing", result)
+end)
+
+-- Get spell queue (RemoteFunction for synchronous data)
+Events.GetSpellQueue.OnServerInvoke = function(player)
+    -- Rate limit
+    if not checkRateLimit(player, "GetSpellQueue", 5) then
+        return nil
+    end
+
+    -- Execute
+    local SpellService = require(Services.SpellService)
+    return SpellService:GetBrewingQueue(player)
+end
+
+-- Connect SpellService signals to broadcast to clients
+task.defer(function()
+    local SpellService = require(Services.SpellService)
+
+    -- Broadcast spell brewing complete
+    SpellService.BrewingComplete:Connect(function(player, spellType)
+        Events.SpellBrewingComplete:FireClient(player, {
+            spellType = spellType,
+        })
+    end)
+end)
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- LEADERBOARD SERVICE HANDLERS
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+-- Get global leaderboard (RemoteFunction for synchronous data)
+Events.GetLeaderboard.OnServerInvoke = function(player, count)
+    -- Rate limit
+    if not checkRateLimit(player, "GetLeaderboard", 3) then
+        return nil
+    end
+
+    -- Validate count
+    if typeof(count) ~= "number" then count = 100 end
+    count = math.clamp(math.floor(count), 1, 200)
+
+    -- Execute
+    local LeaderboardService = require(Services.LeaderboardService)
+    return LeaderboardService:GetTopPlayers(count)
+end
+
+-- Get player rank (RemoteFunction for synchronous data)
+Events.GetPlayerRank.OnServerInvoke = function(player)
+    -- Rate limit
+    if not checkRateLimit(player, "GetPlayerRank", 5) then
+        return nil
+    end
+
+    -- Execute
+    local LeaderboardService = require(Services.LeaderboardService)
+    return LeaderboardService:GetPlayerRank(player)
+end
+
+-- Get leaderboard info (RemoteFunction for synchronous data)
+Events.GetLeaderboardInfo.OnServerInvoke = function(player)
+    -- Rate limit
+    if not checkRateLimit(player, "GetLeaderboardInfo", 5) then
+        return nil
+    end
+
+    -- Execute
+    local LeaderboardService = require(Services.LeaderboardService)
+    return LeaderboardService:GetLeaderboardInfo(player)
+end
+
+-- Connect LeaderboardService signals to broadcast to clients
+task.defer(function()
+    local LeaderboardService = require(Services.LeaderboardService)
+
+    -- Broadcast league changes
+    LeaderboardService.LeagueChanged:Connect(function(player, oldLeague, newLeague)
+        Events.LeagueChanged:FireClient(player, {
+            oldLeague = oldLeague,
+            newLeague = newLeague,
+        })
+    end)
 end)
 
 -- ═══════════════════════════════════════════════════════════════════════════════

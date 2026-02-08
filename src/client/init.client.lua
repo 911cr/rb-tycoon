@@ -155,6 +155,32 @@ ClientAPI.RegisterAction("ClaimDailyReward", function()
     Events.ClaimDailyReward:FireServer()
 end)
 
+-- Spell actions
+ClientAPI.RegisterAction("BrewSpell", function(spellType: string)
+    Events.BrewSpell:FireServer(spellType)
+end)
+
+ClientAPI.RegisterAction("CancelSpellBrewing", function(queueIndex: number)
+    Events.CancelSpellBrewing:FireServer(queueIndex)
+end)
+
+ClientAPI.RegisterAction("GetSpellQueue", function()
+    return Events.GetSpellQueue:InvokeServer()
+end)
+
+-- Leaderboard actions
+ClientAPI.RegisterAction("GetLeaderboard", function(count: number?)
+    return Events.GetLeaderboard:InvokeServer(count or 100)
+end)
+
+ClientAPI.RegisterAction("GetPlayerRank", function()
+    return Events.GetPlayerRank:InvokeServer()
+end)
+
+ClientAPI.RegisterAction("GetLeaderboardInfo", function()
+    return Events.GetLeaderboardInfo:InvokeServer()
+end)
+
 -- Data access
 ClientAPI.RegisterAction("GetPlayerData", function()
     return PlayerData
@@ -440,6 +466,40 @@ Events.DailyRewardClaimed.OnClientEvent:Connect(function(data)
     end
 
     print(string.format("[CLIENT] Daily reward claimed! Streak: %d", data.newStreak))
+end)
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- WIRE UP SPELLS AND LEADERBOARD
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+-- Listen for spell brewing complete
+Events.SpellBrewingComplete.OnClientEvent:Connect(function(data)
+    local uiControllerModule = Controllers and Controllers:FindFirstChild("UIController")
+    if uiControllerModule then
+        local UIController = require(uiControllerModule)
+        if UIController.ShowNotification then
+            UIController:ShowNotification(data.spellType .. " spell ready!", "success")
+        end
+    end
+
+    print("[CLIENT] Spell brewing complete:", data.spellType)
+end)
+
+-- Listen for league changes
+Events.LeagueChanged.OnClientEvent:Connect(function(data)
+    local uiControllerModule = Controllers and Controllers:FindFirstChild("UIController")
+    if uiControllerModule then
+        local UIController = require(uiControllerModule)
+        if UIController.ShowNotification then
+            if data.newLeague.minTrophies > data.oldLeague.minTrophies then
+                UIController:ShowNotification("Promoted to " .. data.newLeague.name .. "!", "success")
+            else
+                UIController:ShowNotification("Demoted to " .. data.newLeague.name, "warning")
+            end
+        end
+    end
+
+    print("[CLIENT] League changed:", data.oldLeague.name, "->", data.newLeague.name)
 end)
 
 print("Battle Tycoon: Conquest - Client Ready!")
