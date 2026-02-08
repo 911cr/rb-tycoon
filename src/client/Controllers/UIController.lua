@@ -3,13 +3,20 @@
     UIController.lua
 
     Main UI orchestration controller.
-    Manages all UI screens and transitions.
+    Manages all UI screens, transitions, and module initialization.
 ]]
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local StarterPlayer = game:GetService("StarterPlayer")
 
 local Signal = require(ReplicatedStorage.Shared.Modules.Signal)
+local ClientAPI = require(ReplicatedStorage.Shared.Modules.ClientAPI)
+
+-- UI Modules (lazy loaded)
+local HUD
+local BuildMenu
+local BuildingInfo
 
 local UIController = {}
 UIController.__index = UIController
@@ -57,6 +64,23 @@ function UIController:SwitchScreen(screenName: string): boolean
     local previousScreen = _currentScreen
     _currentScreen = screenName
 
+    -- Update UI visibility based on screen
+    if HUD then
+        if screenName == "Battle" then
+            HUD:SetVisible(false)
+        else
+            HUD:SetVisible(true)
+        end
+    end
+
+    -- Close open menus on screen change
+    if BuildMenu and BuildMenu:IsVisible() then
+        BuildMenu:Hide()
+    end
+    if BuildingInfo and BuildingInfo:IsVisible() then
+        BuildingInfo:Hide()
+    end
+
     -- Fire event for UI updates
     UIController.ScreenChanged:Fire(screenName, previousScreen)
 
@@ -76,6 +100,42 @@ end
 ]]
 function UIController:ClosePopup(popupName: string)
     UIController.PopupClosed:Fire(popupName)
+end
+
+--[[
+    Shows the build menu.
+]]
+function UIController:ShowBuildMenu()
+    if BuildMenu then
+        BuildMenu:Show()
+    end
+end
+
+--[[
+    Hides the build menu.
+]]
+function UIController:HideBuildMenu()
+    if BuildMenu then
+        BuildMenu:Hide()
+    end
+end
+
+--[[
+    Shows building info for a building.
+]]
+function UIController:ShowBuildingInfo(buildingId: string, buildingData: any)
+    if BuildingInfo then
+        BuildingInfo:Show(buildingId, buildingData)
+    end
+end
+
+--[[
+    Hides building info.
+]]
+function UIController:HideBuildingInfo()
+    if BuildingInfo then
+        BuildingInfo:Hide()
+    end
 end
 
 --[[
@@ -121,12 +181,112 @@ function UIController:Init()
         return
     end
 
-    -- Setup player GUI
     local playerGui = _player:WaitForChild("PlayerGui")
 
-    -- TODO: Create main UI screens
-    -- TODO: Setup navigation buttons
-    -- TODO: Setup resource display HUD
+    -- Get UI modules from client scripts
+    local clientScripts = StarterPlayer:WaitForChild("StarterPlayerScripts")
+    local uiFolder = clientScripts:FindFirstChild("UI")
+
+    if not uiFolder then
+        -- UI folder might be in the player's scripts after spawn
+        uiFolder = _player:WaitForChild("PlayerScripts"):FindFirstChild("UI")
+    end
+
+    -- Load UI modules from ReplicatedStorage approach instead
+    -- Since Rojo maps our UI folder, we need to require from the right place
+    local success, err = pcall(function()
+        -- These are loaded relative to the script location
+        HUD = require(script.Parent.Parent:WaitForChild("UI"):WaitForChild("HUD"))
+        BuildMenu = require(script.Parent.Parent:WaitForChild("UI"):WaitForChild("BuildMenu"))
+        BuildingInfo = require(script.Parent.Parent:WaitForChild("UI"):WaitForChild("BuildingInfo"))
+    end)
+
+    if not success then
+        warn("[UI] Failed to load UI modules:", err)
+        -- Try alternative path
+        pcall(function()
+            local UI = _player:WaitForChild("PlayerScripts"):FindFirstChild("UI")
+            if UI then
+                HUD = require(UI:WaitForChild("HUD"))
+                BuildMenu = require(UI:WaitForChild("BuildMenu"))
+                BuildingInfo = require(UI:WaitForChild("BuildingInfo"))
+            end
+        end)
+    end
+
+    -- Initialize UI modules
+    if HUD then
+        HUD:Init()
+
+        -- Connect HUD events
+        HUD.BuildMenuRequested:Connect(function()
+            self:ShowBuildMenu()
+        end)
+
+        HUD.AttackRequested:Connect(function()
+            self:SwitchScreen("WorldMap")
+            print("[UI] Attack requested - switching to world map")
+        end)
+
+        HUD.ShopRequested:Connect(function()
+            self:SwitchScreen("Market")
+            print("[UI] Shop requested")
+        end)
+    end
+
+    if BuildMenu then
+        BuildMenu:Init()
+
+        -- Connect BuildMenu events
+        BuildMenu.BuildingSelected:Connect(function(buildingType)
+            BuildMenu:Hide()
+
+            -- Get CityController to enter placement mode
+            local CityController = require(script.Parent.CityController)
+            CityController:EnterPlacementMode(buildingType)
+        end)
+    end
+
+    if BuildingInfo then
+        BuildingInfo:Init()
+
+        -- Connect BuildingInfo events
+        BuildingInfo.Closed:Connect(function()
+            -- Deselect building in CityController
+            local CityController = require(script.Parent.CityController)
+            CityController:DeselectBuilding()
+        end)
+    end
+
+    -- Connect to CityController events
+    local CityController = require(script.Parent.CityController)
+
+    CityController.BuildingSelected:Connect(function(buildingId)
+        -- Get building data and show info panel
+        local playerData = ClientAPI.GetPlayerData()
+        if playerData and playerData.buildings then
+            for _, building in playerData.buildings do
+                if building.id == buildingId then
+                    self:ShowBuildingInfo(buildingId, building)
+                    break
+                end
+            end
+        end
+    end)
+
+    CityController.BuildingDeselected:Connect(function()
+        self:HideBuildingInfo()
+    end)
+
+    CityController.PlacementModeEntered:Connect(function(buildingType)
+        -- Could show placement UI hints here
+        print("[UI] Placement mode for:", buildingType)
+    end)
+
+    CityController.PlacementModeExited:Connect(function()
+        -- Could hide placement UI hints here
+        print("[UI] Placement mode exited")
+    end)
 
     _initialized = true
     print("UIController initialized")
