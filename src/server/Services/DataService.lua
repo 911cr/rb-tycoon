@@ -34,6 +34,22 @@ local _initialized = false
 -- Constants
 local DATA_SAVE_INTERVAL = 300 -- 5 minutes
 local SESSION_LOCK_KEY_PREFIX = "SessionLock_"
+local SESSION_LOCK_TIMEOUT = 600 -- 10 minutes
+
+--[[
+    Sanitizes a number to prevent NaN/Infinity exploits.
+    Per security rules: invalid numbers could corrupt player data.
+]]
+local function sanitizeNumber(value: number, default: number?): number
+    default = default or 0
+    -- Check for nil
+    if value == nil then return default end
+    -- Check for NaN (NaN ~= NaN is true)
+    if value ~= value then return default end
+    -- Check for infinity
+    if value == math.huge or value == -math.huge then return default end
+    return value
+end
 
 --[[
     Creates default player data for new players.
@@ -131,12 +147,12 @@ end
     Ensures all fields exist and are within valid ranges.
 ]]
 local function validatePlayerData(data: Types.PlayerData): Types.PlayerData
-    -- Ensure resources exist and are valid
+    -- Ensure resources exist and are valid (sanitize for NaN/Infinity)
     data.resources = data.resources or {}
-    data.resources.gold = math.max(0, data.resources.gold or 0)
-    data.resources.wood = math.max(0, data.resources.wood or 0)
-    data.resources.food = math.max(0, data.resources.food or 0)
-    data.resources.gems = math.max(0, data.resources.gems or 0)
+    data.resources.gold = math.max(0, sanitizeNumber(data.resources.gold, 0))
+    data.resources.wood = math.max(0, sanitizeNumber(data.resources.wood, 0))
+    data.resources.food = math.max(0, sanitizeNumber(data.resources.food, 0))
+    data.resources.gems = math.max(0, sanitizeNumber(data.resources.gems, 0))
 
     -- Ensure progression is valid
     data.townHallLevel = math.clamp(data.townHallLevel or 1, 1, 10)
@@ -181,40 +197,41 @@ local function validatePlayerData(data: Types.PlayerData): Types.PlayerData
 end
 
 --[[
-    Acquires a session lock for the player.
+    Acquires a session lock for the player using atomic UpdateAsync.
     Prevents data corruption from multiple sessions.
+    FIXED: Uses UpdateAsync for atomic check-and-set to prevent race conditions.
 ]]
 local function acquireSessionLock(userId: number): boolean
     local lockKey = SESSION_LOCK_KEY_PREFIX .. userId
     local lockStore = DataStoreService:GetDataStore("BattleTycoon_SessionLocks")
 
-    local success, currentLock = pcall(function()
-        return lockStore:GetAsync(lockKey)
+    local acquired = false
+    local now = os.time()
+
+    local success, err = pcall(function()
+        lockStore:UpdateAsync(lockKey, function(currentValue)
+            -- If no lock exists or lock is stale (> 10 minutes old), acquire it
+            if not currentValue or (now - currentValue) >= SESSION_LOCK_TIMEOUT then
+                acquired = true
+                return now -- Set new lock timestamp
+            end
+            -- Lock is active, don't modify
+            acquired = false
+            return nil -- Return nil to cancel the update
+        end)
     end)
 
     if not success then
-        warn("Failed to check session lock for", userId)
+        warn("Failed to acquire session lock for", userId, err)
         return false
     end
 
-    local now = os.time()
-
-    -- If lock exists and isn't stale (< 10 minutes old), deny
-    if currentLock and (now - currentLock) < 600 then
-        warn("Session lock active for", userId)
-        return false
-    end
-
-    -- Acquire lock
-    local setSuccess = pcall(function()
-        lockStore:SetAsync(lockKey, now)
-    end)
-
-    if setSuccess then
+    if acquired then
         _sessionLocks[userId] = now
         return true
     end
 
+    warn("Session lock active for", userId)
     return false
 end
 
@@ -348,24 +365,28 @@ function DataService:UpdateResources(player: Player, changes: Types.ResourceData
     local data = _playerData[player.UserId]
     if not data then return false end
 
-    -- Apply changes with validation
+    -- Apply changes with validation (sanitize for NaN/Infinity exploits)
     if changes.gold then
-        data.resources.gold = math.max(0, data.resources.gold + changes.gold)
+        local sanitizedGold = sanitizeNumber(changes.gold, 0)
+        data.resources.gold = math.max(0, data.resources.gold + sanitizedGold)
         data.resources.gold = math.min(data.resources.gold, data.storageCapacity.gold)
     end
 
     if changes.wood then
-        data.resources.wood = math.max(0, data.resources.wood + changes.wood)
+        local sanitizedWood = sanitizeNumber(changes.wood, 0)
+        data.resources.wood = math.max(0, data.resources.wood + sanitizedWood)
         data.resources.wood = math.min(data.resources.wood, data.storageCapacity.wood)
     end
 
     if changes.food then
-        data.resources.food = math.max(0, data.resources.food + changes.food)
+        local sanitizedFood = sanitizeNumber(changes.food, 0)
+        data.resources.food = math.max(0, data.resources.food + sanitizedFood)
         data.resources.food = math.min(data.resources.food, data.storageCapacity.food)
     end
 
     if changes.gems then
-        data.resources.gems = math.max(0, data.resources.gems + changes.gems)
+        local sanitizedGems = sanitizeNumber(changes.gems, 0)
+        data.resources.gems = math.max(0, data.resources.gems + sanitizedGems)
         -- Gems have no cap
     end
 

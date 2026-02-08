@@ -90,6 +90,22 @@ local Events = setupRemoteEvents()
 
 -- Connect RemoteEvent handlers with security validation
 local RateLimiter = {}
+
+-- Constants for input validation
+local MAX_STRING_LENGTH = 36 -- GUIDs are 36 characters
+local MAX_BUILDING_TYPE_LENGTH = 50
+
+--[[
+    Validates string input for length and type.
+    Prevents memory exhaustion from oversized strings.
+]]
+local function validateStringInput(value: any, maxLength: number): boolean
+    if typeof(value) ~= "string" then return false end
+    if #value > maxLength then return false end
+    if #value == 0 then return false end
+    return true
+end
+
 local function checkRateLimit(player: Player, action: string, limit: number): boolean
     local now = os.clock()
     RateLimiter[player.UserId] = RateLimiter[player.UserId] or {}
@@ -115,8 +131,8 @@ Events.PlaceBuilding.OnServerEvent:Connect(function(player, buildingType, positi
         return
     end
 
-    -- Type validation
-    if typeof(buildingType) ~= "string" then return end
+    -- Type and length validation (prevents memory exhaustion)
+    if not validateStringInput(buildingType, MAX_BUILDING_TYPE_LENGTH) then return end
     if typeof(position) ~= "Vector3" then return end
 
     -- Execute
@@ -134,8 +150,8 @@ Events.UpgradeBuilding.OnServerEvent:Connect(function(player, buildingId)
         return
     end
 
-    -- Type validation
-    if typeof(buildingId) ~= "string" then return end
+    -- Type and length validation (GUIDs are 36 chars)
+    if not validateStringInput(buildingId, MAX_STRING_LENGTH) then return end
 
     -- Execute
     local BuildingService = require(Services.BuildingService)
@@ -152,8 +168,8 @@ Events.CollectResources.OnServerEvent:Connect(function(player, buildingId)
         return
     end
 
-    -- Type validation
-    if typeof(buildingId) ~= "string" then return end
+    -- Type and length validation (GUIDs are 36 chars)
+    if not validateStringInput(buildingId, MAX_STRING_LENGTH) then return end
 
     -- Execute
     local BuildingService = require(Services.BuildingService)
@@ -170,8 +186,8 @@ Events.SpeedUpUpgrade.OnServerEvent:Connect(function(player, buildingId)
         return
     end
 
-    -- Type validation
-    if typeof(buildingId) ~= "string" then return end
+    -- Type and length validation (GUIDs are 36 chars)
+    if not validateStringInput(buildingId, MAX_STRING_LENGTH) then return end
 
     -- Execute
     local EconomyService = require(Services.EconomyService)
