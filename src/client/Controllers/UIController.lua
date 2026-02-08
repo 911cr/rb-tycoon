@@ -27,6 +27,8 @@ local ShopUI
 local QuestsUI
 local DailyRewardUI
 local LeaderboardUI
+local SpellBrewingUI
+local ProfileUI
 
 local UIController = {}
 UIController.__index = UIController
@@ -301,6 +303,42 @@ function UIController:HideLeaderboard()
 end
 
 --[[
+    Shows spell brewing UI.
+]]
+function UIController:ShowSpellBrewing()
+    if SpellBrewingUI then
+        SpellBrewingUI:Show()
+    end
+end
+
+--[[
+    Hides spell brewing UI.
+]]
+function UIController:HideSpellBrewing()
+    if SpellBrewingUI then
+        SpellBrewingUI:Hide()
+    end
+end
+
+--[[
+    Shows profile UI.
+]]
+function UIController:ShowProfile()
+    if ProfileUI then
+        ProfileUI:Show()
+    end
+end
+
+--[[
+    Hides profile UI.
+]]
+function UIController:HideProfile()
+    if ProfileUI then
+        ProfileUI:Hide()
+    end
+end
+
+--[[
     Formats a number for display (e.g., 1500 -> "1.5K")
 ]]
 function UIController.FormatNumber(value: number): string
@@ -372,6 +410,8 @@ function UIController:Init()
         QuestsUI = require(UI:WaitForChild("QuestsUI"))
         DailyRewardUI = require(UI:WaitForChild("DailyRewardUI"))
         LeaderboardUI = require(UI:WaitForChild("LeaderboardUI"))
+        SpellBrewingUI = require(UI:WaitForChild("SpellBrewingUI"))
+        ProfileUI = require(UI:WaitForChild("ProfileUI"))
     end)
 
     if not success then
@@ -393,6 +433,8 @@ function UIController:Init()
                 QuestsUI = require(UI:WaitForChild("QuestsUI"))
                 DailyRewardUI = require(UI:WaitForChild("DailyRewardUI"))
                 LeaderboardUI = require(UI:WaitForChild("LeaderboardUI"))
+                SpellBrewingUI = require(UI:WaitForChild("SpellBrewingUI"))
+                ProfileUI = require(UI:WaitForChild("ProfileUI"))
             end
         end)
     end
@@ -434,6 +476,13 @@ function UIController:Init()
                 LeaderboardUI:Show()
             end
             print("[UI] Leaderboard requested - showing leaderboard")
+        end)
+
+        HUD.ProfileRequested:Connect(function()
+            if ProfileUI then
+                ProfileUI:Show()
+            end
+            print("[UI] Profile requested - showing profile")
         end)
     end
 
@@ -566,6 +615,24 @@ function UIController:Init()
         end)
     end
 
+    if SpellBrewingUI then
+        SpellBrewingUI:Init()
+
+        -- Connect SpellBrewingUI events
+        SpellBrewingUI.CloseRequested:Connect(function()
+            print("[UI] Spell Brewing UI closed")
+        end)
+    end
+
+    if ProfileUI then
+        ProfileUI:Init()
+
+        -- Connect ProfileUI events
+        ProfileUI.CloseRequested:Connect(function()
+            print("[UI] Profile UI closed")
+        end)
+    end
+
     -- Connect notifications to server responses
     local Events = ReplicatedStorage:WaitForChild("Events")
     Events.ServerResponse.OnClientEvent:Connect(function(action: string, result: any)
@@ -589,6 +656,10 @@ function UIController:Init()
                     Notifications:Success("Quest reward claimed!")
                 elseif action == "ClaimDailyReward" then
                     Notifications:Success("Daily reward claimed!")
+                elseif action == "BrewSpell" then
+                    Notifications:Success("Spell brewing started!")
+                elseif action == "CancelSpellBrewing" then
+                    Notifications:Info("Spell brewing cancelled")
                 end
             else
                 local errorMsg = result.error or "Action failed"
@@ -610,6 +681,12 @@ function UIController:Init()
                     Notifications:Info("Already claimed!")
                 elseif errorMsg == "QUEST_NOT_FOUND" then
                     Notifications:Error("Quest not found!")
+                elseif errorMsg == "NO_SPELL_FACTORY" then
+                    Notifications:Warning("Build a Spell Factory first!")
+                elseif errorMsg == "NO_CAPACITY" then
+                    Notifications:Warning("Spell storage full!")
+                elseif errorMsg == "FACTORY_LEVEL_TOO_LOW" then
+                    Notifications:Warning("Upgrade your Spell Factory!")
                 else
                     Notifications:Error(action .. " failed")
                 end

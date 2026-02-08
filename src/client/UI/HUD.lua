@@ -22,6 +22,7 @@ HUD.AttackRequested = Signal.new()
 HUD.ShopRequested = Signal.new()
 HUD.QuestsRequested = Signal.new()
 HUD.LeaderboardRequested = Signal.new()
+HUD.ProfileRequested = Signal.new()
 
 -- Private state
 local _player = Players.LocalPlayer
@@ -123,18 +124,33 @@ local function createResourceBar(parent: ScreenGui): Frame
 end
 
 --[[
-    Creates the builder status display.
+    Creates the builder status display (clickable to open profile).
 ]]
 local function createBuilderDisplay(parent: ScreenGui): Frame
-    local container = Components.CreateFrame({
-        Name = "BuilderDisplay",
-        Size = UDim2.new(0, 100, 0, 36),
-        Position = UDim2.new(0, 8, 0, 58),
-        BackgroundColor = Components.Colors.BackgroundLight,
-        CornerRadius = Components.Sizes.CornerRadius,
-        BorderColor = Components.Colors.Secondary,
-        Parent = parent,
-    })
+    -- Use a button as the container for click detection
+    local container = Instance.new("TextButton")
+    container.Name = "BuilderDisplay"
+    container.Size = UDim2.new(0, 100, 0, 36)
+    container.Position = UDim2.new(0, 8, 0, 58)
+    container.BackgroundColor3 = Components.Colors.BackgroundLight
+    container.BorderSizePixel = 0
+    container.Text = ""
+    container.AutoButtonColor = true
+    container.Parent = parent
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = Components.Sizes.CornerRadius
+    corner.Parent = container
+
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = Components.Colors.Secondary
+    stroke.Thickness = 1
+    stroke.Parent = container
+
+    -- Click handler
+    container.MouseButton1Click:Connect(function()
+        HUD.ProfileRequested:Fire()
+    end)
 
     -- Builder icon
     local iconBg = Components.CreateFrame({
@@ -170,7 +186,7 @@ local function createBuilderDisplay(parent: ScreenGui): Frame
         Parent = container,
     })
 
-    return container
+    return container :: any
 end
 
 --[[
