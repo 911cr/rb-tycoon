@@ -17,6 +17,9 @@ local ClientAPI = require(ReplicatedStorage.Shared.Modules.ClientAPI)
 local HUD
 local BuildMenu
 local BuildingInfo
+local BattleUI
+local TroopTraining
+local AllianceUI
 
 local UIController = {}
 UIController.__index = UIController
@@ -139,6 +142,60 @@ function UIController:HideBuildingInfo()
 end
 
 --[[
+    Shows troop training UI.
+]]
+function UIController:ShowTroopTraining()
+    if TroopTraining then
+        TroopTraining:Show()
+    end
+end
+
+--[[
+    Hides troop training UI.
+]]
+function UIController:HideTroopTraining()
+    if TroopTraining then
+        TroopTraining:Hide()
+    end
+end
+
+--[[
+    Shows battle UI.
+]]
+function UIController:ShowBattleUI(battleId: string)
+    if BattleUI then
+        BattleUI:Show(battleId)
+    end
+end
+
+--[[
+    Hides battle UI.
+]]
+function UIController:HideBattleUI()
+    if BattleUI then
+        BattleUI:Hide()
+    end
+end
+
+--[[
+    Shows alliance UI.
+]]
+function UIController:ShowAllianceUI()
+    if AllianceUI then
+        AllianceUI:Show()
+    end
+end
+
+--[[
+    Hides alliance UI.
+]]
+function UIController:HideAllianceUI()
+    if AllianceUI then
+        AllianceUI:Hide()
+    end
+end
+
+--[[
     Formats a number for display (e.g., 1500 -> "1.5K")
 ]]
 function UIController.FormatNumber(value: number): string
@@ -196,9 +253,13 @@ function UIController:Init()
     -- Since Rojo maps our UI folder, we need to require from the right place
     local success, err = pcall(function()
         -- These are loaded relative to the script location
-        HUD = require(script.Parent.Parent:WaitForChild("UI"):WaitForChild("HUD"))
-        BuildMenu = require(script.Parent.Parent:WaitForChild("UI"):WaitForChild("BuildMenu"))
-        BuildingInfo = require(script.Parent.Parent:WaitForChild("UI"):WaitForChild("BuildingInfo"))
+        local UI = script.Parent.Parent:WaitForChild("UI")
+        HUD = require(UI:WaitForChild("HUD"))
+        BuildMenu = require(UI:WaitForChild("BuildMenu"))
+        BuildingInfo = require(UI:WaitForChild("BuildingInfo"))
+        BattleUI = require(UI:WaitForChild("BattleUI"))
+        TroopTraining = require(UI:WaitForChild("TroopTraining"))
+        AllianceUI = require(UI:WaitForChild("AllianceUI"))
     end)
 
     if not success then
@@ -210,6 +271,9 @@ function UIController:Init()
                 HUD = require(UI:WaitForChild("HUD"))
                 BuildMenu = require(UI:WaitForChild("BuildMenu"))
                 BuildingInfo = require(UI:WaitForChild("BuildingInfo"))
+                BattleUI = require(UI:WaitForChild("BattleUI"))
+                TroopTraining = require(UI:WaitForChild("TroopTraining"))
+                AllianceUI = require(UI:WaitForChild("AllianceUI"))
             end
         end)
     end
@@ -257,6 +321,55 @@ function UIController:Init()
             CityController:DeselectBuilding()
         end)
     end
+
+    if BattleUI then
+        BattleUI:Init()
+
+        -- Connect BattleUI events
+        BattleUI.TroopSelected:Connect(function(troopType)
+            local BattleController = require(script.Parent.BattleController)
+            BattleController:SelectTroop(troopType)
+        end)
+
+        BattleUI.SurrenderRequested:Connect(function()
+            local BattleController = require(script.Parent.BattleController)
+            BattleController:Surrender()
+        end)
+    end
+
+    if TroopTraining then
+        TroopTraining:Init()
+    end
+
+    if AllianceUI then
+        AllianceUI:Init()
+    end
+
+    -- Connect to BattleController events
+    local BattleController = require(script.Parent.BattleController)
+
+    BattleController.BattleStarted:Connect(function(battleId)
+        self:SwitchScreen("Battle")
+        if BattleUI then
+            -- Get player troops for the battle UI
+            local playerData = ClientAPI.GetPlayerData()
+            if playerData and playerData.troops then
+                BattleUI:UpdateTroops(playerData.troops)
+            end
+            BattleUI:Show(battleId)
+        end
+        if HUD then
+            HUD:SetVisible(false)
+        end
+    end)
+
+    BattleController.BattleEnded:Connect(function(result)
+        self:SwitchScreen("City")
+        if HUD then
+            HUD:SetVisible(true)
+        end
+        -- BattleUI hides itself after showing results
+    end)
 
     -- Connect to CityController events
     local CityController = require(script.Parent.CityController)
