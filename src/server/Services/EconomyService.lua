@@ -257,6 +257,112 @@ function EconomyService:TransferLoot(
     return actualLoot
 end
 
+-- Shop item definitions (gem purchases only - real money handled via MarketplaceService)
+local ShopItems = {
+    -- Resources
+    gold_10k = { type = "resource", resource = "gold", amount = 10000, gems = 50 },
+    gold_50k = { type = "resource", resource = "gold", amount = 50000, gems = 200 },
+    gold_200k = { type = "resource", resource = "gold", amount = 200000, gems = 700 },
+    wood_10k = { type = "resource", resource = "wood", amount = 10000, gems = 50 },
+    wood_50k = { type = "resource", resource = "wood", amount = 50000, gems = 200 },
+    food_5k = { type = "resource", resource = "food", amount = 5000, gems = 30 },
+    food_25k = { type = "resource", resource = "food", amount = 25000, gems = 120 },
+
+    -- Builders
+    builder_2 = { type = "builder", builderIndex = 2, gems = 250 },
+    builder_3 = { type = "builder", builderIndex = 3, gems = 500 },
+    builder_4 = { type = "builder", builderIndex = 4, gems = 1000 },
+    builder_5 = { type = "builder", builderIndex = 5, gems = 2000 },
+
+    -- Shields
+    shield_1d = { type = "shield", duration = 86400, gems = 100 }, -- 24 hours
+    shield_2d = { type = "shield", duration = 172800, gems = 150 }, -- 48 hours
+    shield_7d = { type = "shield", duration = 604800, gems = 400 }, -- 7 days
+
+    -- VIP
+    vip_week = { type = "vip", duration = 604800, gems = 200 }, -- 7 days
+    vip_month = { type = "vip", duration = 2592000, gems = 600 }, -- 30 days
+}
+
+--[[
+    Processes a gem-based shop purchase.
+]]
+function EconomyService:ProcessShopPurchase(player: Player, itemId: string): {success: boolean, error: string?}
+    local item = ShopItems[itemId]
+    if not item then
+        return { success = false, error = "INVALID_ITEM" }
+    end
+
+    local playerData = DataService:GetPlayerData(player)
+    if not playerData then
+        return { success = false, error = "NO_DATA" }
+    end
+
+    -- Check player has enough gems
+    if not DataService:CanAfford(player, { gems = item.gems } :: any) then
+        return { success = false, error = "INSUFFICIENT_GEMS" }
+    end
+
+    -- Process based on item type
+    if item.type == "resource" then
+        -- Add resource
+        local resources = { [item.resource] = item.amount }
+        DataService:DeductResources(player, { gems = item.gems } :: any)
+        DataService:UpdateResources(player, resources :: any)
+
+    elseif item.type == "builder" then
+        -- Check if builder already purchased
+        if playerData.builders >= item.builderIndex then
+            return { success = false, error = "ALREADY_OWNED" }
+        end
+
+        -- Check if purchasing in order (can't skip builders)
+        if playerData.builders + 1 ~= item.builderIndex then
+            return { success = false, error = "PURCHASE_PREVIOUS_FIRST" }
+        end
+
+        -- Add builder
+        DataService:DeductResources(player, { gems = item.gems } :: any)
+        playerData.builders = item.builderIndex
+
+    elseif item.type == "shield" then
+        -- Apply shield
+        local now = os.time()
+        local currentShield = playerData.shield or { active = false, expiresAt = 0 }
+
+        -- Extend existing shield or start new
+        if currentShield.active and currentShield.expiresAt > now then
+            currentShield.expiresAt = currentShield.expiresAt + item.duration
+        else
+            currentShield.active = true
+            currentShield.expiresAt = now + item.duration
+        end
+
+        DataService:DeductResources(player, { gems = item.gems } :: any)
+        playerData.shield = currentShield
+
+    elseif item.type == "vip" then
+        -- Apply VIP
+        local now = os.time()
+        local currentExpiry = playerData.vipExpiresAt or 0
+
+        -- Extend existing VIP or start new
+        if currentExpiry > now then
+            playerData.vipExpiresAt = currentExpiry + item.duration
+        else
+            playerData.vipExpiresAt = now + item.duration
+        end
+
+        playerData.vipActive = true
+        DataService:DeductResources(player, { gems = item.gems } :: any)
+
+    else
+        return { success = false, error = "UNKNOWN_TYPE" }
+    end
+
+    return { success = true }
+end
+
 --[[
     Initializes the EconomyService.
 ]]

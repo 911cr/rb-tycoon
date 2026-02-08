@@ -131,6 +131,11 @@ local function setupRemoteEvents()
     DonateTroops.Name = "DonateTroops"
     DonateTroops.Parent = Events
 
+    -- Shop events
+    local ShopPurchase = Instance.new("RemoteEvent")
+    ShopPurchase.Name = "ShopPurchase"
+    ShopPurchase.Parent = Events
+
     return Events
 end
 
@@ -463,6 +468,30 @@ Events.DonateTroops.OnServerEvent:Connect(function(player, recipientUserId, troo
     local result = AllianceService:DonateTroops(player, recipientUserId, troopType, count)
 
     Events.ServerResponse:FireClient(player, "DonateTroops", result)
+end)
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- SHOP HANDLERS
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+local MAX_ITEM_ID_LENGTH = 50
+
+-- Shop purchase handler (gem purchases)
+Events.ShopPurchase.OnServerEvent:Connect(function(player, itemId)
+    -- Rate limit
+    if not checkRateLimit(player, "ShopPurchase", 5) then
+        Events.ServerResponse:FireClient(player, "ShopPurchase", { success = false, error = "RATE_LIMITED" })
+        return
+    end
+
+    -- Type validation
+    if not validateStringInput(itemId, MAX_ITEM_ID_LENGTH) then return end
+
+    -- Execute
+    local EconomyService = require(Services.EconomyService)
+    local result = EconomyService:ProcessShopPurchase(player, itemId)
+
+    Events.ServerResponse:FireClient(player, "ShopPurchase", result)
 end)
 
 -- ═══════════════════════════════════════════════════════════════════════════════

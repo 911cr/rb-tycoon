@@ -22,6 +22,8 @@ local TroopTraining
 local AllianceUI
 local Notifications
 local SettingsUI
+local WorldMapUI
+local ShopUI
 
 local UIController = {}
 UIController.__index = UIController
@@ -291,6 +293,8 @@ function UIController:Init()
         AllianceUI = require(UI:WaitForChild("AllianceUI"))
         Notifications = require(UI:WaitForChild("Notifications"))
         SettingsUI = require(UI:WaitForChild("SettingsUI"))
+        WorldMapUI = require(UI:WaitForChild("WorldMapUI"))
+        ShopUI = require(UI:WaitForChild("ShopUI"))
     end)
 
     if not success then
@@ -307,6 +311,8 @@ function UIController:Init()
                 AllianceUI = require(UI:WaitForChild("AllianceUI"))
                 Notifications = require(UI:WaitForChild("Notifications"))
                 SettingsUI = require(UI:WaitForChild("SettingsUI"))
+                WorldMapUI = require(UI:WaitForChild("WorldMapUI"))
+                ShopUI = require(UI:WaitForChild("ShopUI"))
             end
         end)
     end
@@ -322,12 +328,18 @@ function UIController:Init()
 
         HUD.AttackRequested:Connect(function()
             self:SwitchScreen("WorldMap")
-            print("[UI] Attack requested - switching to world map")
+            if WorldMapUI then
+                WorldMapUI:Show()
+            end
+            print("[UI] Attack requested - showing world map")
         end)
 
         HUD.ShopRequested:Connect(function()
             self:SwitchScreen("Market")
-            print("[UI] Shop requested")
+            if ShopUI then
+                ShopUI:Show()
+            end
+            print("[UI] Shop requested - showing shop")
         end)
     end
 
@@ -386,6 +398,41 @@ function UIController:Init()
         SettingsUI:Init()
     end
 
+    if WorldMapUI then
+        WorldMapUI:Init()
+
+        -- Connect WorldMapUI events
+        WorldMapUI.AttackRequested:Connect(function(opponentId)
+            local BattleController = require(script.Parent.BattleController)
+            BattleController:StartBattle(opponentId)
+        end)
+
+        WorldMapUI.Closed:Connect(function()
+            self:SwitchScreen("City")
+        end)
+    end
+
+    if ShopUI then
+        ShopUI:Init()
+
+        -- Connect ShopUI events
+        ShopUI.PurchaseRequested:Connect(function(item)
+            -- Send purchase request to server
+            local Events = ReplicatedStorage:WaitForChild("Events")
+            if item.price then
+                -- Real money purchase - would go through Roblox MarketplaceService
+                print("[UI] Real money purchase requested:", item.id)
+            else
+                -- Gem purchase
+                Events.ShopPurchase:FireServer(item.id)
+            end
+        end)
+
+        ShopUI.Closed:Connect(function()
+            self:SwitchScreen("City")
+        end)
+    end
+
     -- Connect notifications to server responses
     local Events = ReplicatedStorage:WaitForChild("Events")
     Events.ServerResponse.OnClientEvent:Connect(function(action: string, result: any)
@@ -403,6 +450,8 @@ function UIController:Init()
                     Notifications:Success("Alliance created!")
                 elseif action == "JoinAlliance" then
                     Notifications:Success("Joined alliance!")
+                elseif action == "ShopPurchase" then
+                    Notifications:Success("Purchase complete!")
                 end
             else
                 local errorMsg = result.error or "Action failed"
@@ -410,8 +459,14 @@ function UIController:Init()
                     Notifications:Warning("Too many requests, slow down!")
                 elseif errorMsg == "INSUFFICIENT_RESOURCES" then
                     Notifications:Error("Not enough resources!")
+                elseif errorMsg == "INSUFFICIENT_GEMS" then
+                    Notifications:Error("Not enough gems!")
                 elseif errorMsg == "NO_BUILDER_AVAILABLE" then
                     Notifications:Warning("No builder available!")
+                elseif errorMsg == "ALREADY_OWNED" then
+                    Notifications:Info("You already own this!")
+                elseif errorMsg == "PURCHASE_PREVIOUS_FIRST" then
+                    Notifications:Warning("Purchase previous builder first!")
                 else
                     Notifications:Error(action .. " failed")
                 end
