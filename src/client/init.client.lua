@@ -8,7 +8,6 @@
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local StarterPlayer = game:GetService("StarterPlayer")
 
 local player = Players.LocalPlayer
 
@@ -115,6 +114,11 @@ ClientAPI.RegisterAction("DonateTroops", function(recipientUserId: number, troop
     Events.DonateTroops:FireServer(recipientUserId, troopType, count)
 end)
 
+-- Shop actions
+ClientAPI.RegisterAction("ShopPurchase", function(itemId: string)
+    Events.ShopPurchase:FireServer(itemId)
+end)
+
 -- Data access
 ClientAPI.RegisterAction("GetPlayerData", function()
     return PlayerData
@@ -131,7 +135,9 @@ ClientAPI.SetReady()
 -- CONTROLLER INITIALIZATION
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-local Controllers = StarterPlayer:WaitForChild("StarterPlayerScripts"):FindFirstChild("Controllers")
+-- In runtime, scripts are in PlayerScripts (copied from StarterPlayerScripts)
+local Controllers = player:WaitForChild("PlayerScripts"):FindFirstChild("Controllers")
+    or script.Parent:FindFirstChild("Controllers")
 
 if Controllers then
     local initOrder = {
