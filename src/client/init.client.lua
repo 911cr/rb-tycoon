@@ -119,6 +119,20 @@ ClientAPI.RegisterAction("ShopPurchase", function(itemId: string)
     Events.ShopPurchase:FireServer(itemId)
 end)
 
+-- Matchmaking actions
+ClientAPI.RegisterAction("FindOpponent", function()
+    Events.FindOpponent:FireServer()
+end)
+
+ClientAPI.RegisterAction("NextOpponent", function()
+    Events.NextOpponent:FireServer()
+end)
+
+-- Tutorial actions
+ClientAPI.RegisterAction("CompleteTutorial", function()
+    Events.CompleteTutorial:FireServer()
+end)
+
 -- Data access
 ClientAPI.RegisterAction("GetPlayerData", function()
     return PlayerData
@@ -180,10 +194,12 @@ local Controllers = player:WaitForChild("PlayerScripts"):FindFirstChild("Control
 if Controllers then
     local initOrder = {
         "CameraController", -- First so camera is ready for other controllers
+        "InputController", -- Input before controllers that need it
         "AudioController", -- Audio before UI so sounds can play on UI load
         "UIController",
         "CityController",
         "BattleController",
+        "TutorialController", -- Last so UI is ready for tutorial overlays
     }
 
     for _, controllerName in initOrder do
@@ -292,5 +308,64 @@ if BattleRenderer and Controllers then
         end
     end)
 end
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- WIRE UP INPUT CONTROLLER
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+if Controllers then
+    local inputControllerModule = Controllers:FindFirstChild("InputController")
+    local cityControllerModule = Controllers:FindFirstChild("CityController")
+
+    if inputControllerModule and cityControllerModule then
+        local InputController = require(inputControllerModule)
+        local CityController = require(cityControllerModule)
+
+        -- World click handling for city
+        InputController.WorldPositionClicked:Connect(function(worldPos)
+            if CityController:IsInPlacementMode() then
+                -- Placement mode - confirm building placement
+                local gridX, gridZ = InputController:WorldToGrid(worldPos)
+                CityController:ConfirmPlacement(gridX, gridZ)
+            else
+                -- Normal mode - check for building click (handled by CityRenderer)
+                -- If no building at position, deselect
+                if CityRenderer then
+                    local buildingId = CityRenderer:GetBuildingAtPosition(worldPos)
+                    if buildingId then
+                        CityController:SelectBuilding(buildingId)
+                    else
+                        CityController:DeselectBuilding()
+                    end
+                end
+            end
+        end)
+
+        -- Cancel action (escape key)
+        InputController.CancelAction:Connect(function()
+            if CityController:IsInPlacementMode() then
+                CityController:ExitPlacementMode()
+            else
+                CityController:DeselectBuilding()
+            end
+        end)
+    end
+end
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- WIRE UP MATCHMAKING
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+-- Listen for opponent found from server
+Events.OpponentFound.OnClientEvent:Connect(function(opponent, skipCost)
+    -- Notify WorldMapUI with real opponent data
+    local uiControllerModule = Controllers and Controllers:FindFirstChild("UIController")
+    if uiControllerModule then
+        local UIController = require(uiControllerModule)
+        -- The WorldMapUI will receive this via the UI system
+    end
+
+    print("[CLIENT] Opponent found:", opponent.username, "Trophies:", opponent.trophies)
+end)
 
 print("Battle Tycoon: Conquest - Client Ready!")

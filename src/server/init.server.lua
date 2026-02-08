@@ -28,6 +28,7 @@ local initOrder = {
     "TroopService",
     "CombatService",
     "AllianceService",
+    "MatchmakingService",
 }
 
 for _, serviceName in initOrder do
@@ -135,6 +136,24 @@ local function setupRemoteEvents()
     local ShopPurchase = Instance.new("RemoteEvent")
     ShopPurchase.Name = "ShopPurchase"
     ShopPurchase.Parent = Events
+
+    -- Matchmaking events
+    local FindOpponent = Instance.new("RemoteEvent")
+    FindOpponent.Name = "FindOpponent"
+    FindOpponent.Parent = Events
+
+    local NextOpponent = Instance.new("RemoteEvent")
+    NextOpponent.Name = "NextOpponent"
+    NextOpponent.Parent = Events
+
+    local OpponentFound = Instance.new("RemoteEvent")
+    OpponentFound.Name = "OpponentFound"
+    OpponentFound.Parent = Events
+
+    -- Tutorial events
+    local CompleteTutorial = Instance.new("RemoteEvent")
+    CompleteTutorial.Name = "CompleteTutorial"
+    CompleteTutorial.Parent = Events
 
     return Events
 end
@@ -492,6 +511,88 @@ Events.ShopPurchase.OnServerEvent:Connect(function(player, itemId)
     local result = EconomyService:ProcessShopPurchase(player, itemId)
 
     Events.ServerResponse:FireClient(player, "ShopPurchase", result)
+end)
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- MATCHMAKING HANDLERS
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+-- Player search counters for skip cost calculation
+local _playerSearchCounts: {[number]: number} = {}
+
+-- Find opponent handler
+Events.FindOpponent.OnServerEvent:Connect(function(player)
+    -- Rate limit
+    if not checkRateLimit(player, "FindOpponent", 2) then
+        Events.ServerResponse:FireClient(player, "FindOpponent", { success = false, error = "RATE_LIMITED" })
+        return
+    end
+
+    -- Reset search count for new search session
+    _playerSearchCounts[player.UserId] = 1
+
+    -- Execute
+    local MatchmakingService = require(Services.MatchmakingService)
+    local opponent, err = MatchmakingService:FindOpponent(player)
+
+    if opponent then
+        Events.OpponentFound:FireClient(player, opponent)
+    else
+        Events.ServerResponse:FireClient(player, "FindOpponent", { success = false, error = err or "NO_OPPONENT" })
+    end
+end)
+
+-- Next opponent handler (skip)
+Events.NextOpponent.OnServerEvent:Connect(function(player)
+    -- Rate limit
+    if not checkRateLimit(player, "NextOpponent", 5) then
+        Events.ServerResponse:FireClient(player, "NextOpponent", { success = false, error = "RATE_LIMITED" })
+        return
+    end
+
+    -- Increment search count
+    local searchCount = (_playerSearchCounts[player.UserId] or 0) + 1
+    _playerSearchCounts[player.UserId] = searchCount
+
+    -- Execute
+    local MatchmakingService = require(Services.MatchmakingService)
+    local opponent, err = MatchmakingService:NextOpponent(player, searchCount)
+
+    if opponent then
+        local skipCost = MatchmakingService:GetSkipCost(searchCount)
+        Events.OpponentFound:FireClient(player, opponent, skipCost)
+    else
+        Events.ServerResponse:FireClient(player, "NextOpponent", { success = false, error = err or "NO_OPPONENT" })
+    end
+end)
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- TUTORIAL HANDLERS
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+-- Complete tutorial handler
+Events.CompleteTutorial.OnServerEvent:Connect(function(player)
+    -- Rate limit
+    if not checkRateLimit(player, "CompleteTutorial", 1) then
+        return
+    end
+
+    -- Execute
+    local DataService = require(Services.DataService)
+    local playerData = DataService:GetPlayerData(player)
+
+    if playerData then
+        -- Mark tutorial as completed
+        playerData.tutorialCompleted = true
+
+        -- Grant tutorial completion reward
+        DataService:UpdateResources(player, { gems = 50 } :: any)
+
+        Events.ServerResponse:FireClient(player, "CompleteTutorial", {
+            success = true,
+            reward = { gems = 50 }
+        })
+    end
 end)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
