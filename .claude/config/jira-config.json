@@ -1,0 +1,223 @@
+{
+  "description": "Jira configuration for Claude Code agents. Related configs: planning-config.json, quality-config.json, routing-config.json, infra-config.json",
+  "cloudId": "fa70cdf0-d3be-4ccf-9557-2bf3c7baa0d3",
+  "siteUrl": "https://911it.atlassian.net",
+  "defaultProject": {
+    "key": "AI",
+    "name": "AI IT for MSPs"
+  },
+  "defaultBoard": {
+    "id": 1,
+    "name": "SCRUM board",
+    "type": "simple"
+  },
+  "statusWorkflow": {
+    "todo": "To Do",
+    "inProgress": "In Progress",
+    "review": "Review",
+    "readyToRelease": "Ready To Release",
+    "released": "Released",
+    "accepted": "Accepted"
+  },
+  "transitions": {
+    "toTodo": {
+      "id": "11",
+      "name": "To Do"
+    },
+    "toInProgress": {
+      "id": "21",
+      "name": "In Progress"
+    },
+    "toReview": {
+      "id": "2",
+      "name": "Review"
+    },
+    "toReadyToRelease": {
+      "id": "4",
+      "name": "Ready To Release"
+    },
+    "toReleased": {
+      "id": "3",
+      "name": "Released"
+    },
+    "toAccepted": {
+      "id": "31",
+      "name": "Accepted"
+    }
+  },
+  "agentStatusTransitions": {
+    "implementationAgents": {
+      "agents": [
+        "backend-developer",
+        "frontend-developer",
+        "code-refactorer",
+        "platform-windows-developer",
+        "platform-linux-developer",
+        "platform-macos-developer",
+        "ui-design-ux",
+        "ui-design-lead",
+        "technical-writer"
+      ],
+      "onStart": { "status": "In Progress", "transitionId": "21" }
+    },
+    "qaAgents": {
+      "agents": ["backend-qa", "frontend-qa", "platform-qa"],
+      "onStart": { "status": "Review", "transitionId": "2" }
+    },
+    "reviewAgents": {
+      "agents": ["senior-code-reviewer"],
+      "onPrCreate": { "status": "Ready To Release", "transitionId": "4" }
+    }
+  },
+  "labels": {
+    "qaBackend": {
+      "passed": "qa-backend-passed",
+      "failed": "qa-backend-failed",
+      "blocked": "qa-backend-blocked"
+    },
+    "qaFrontend": {
+      "passed": "qa-frontend-passed",
+      "failed": "qa-frontend-failed",
+      "blocked": "qa-frontend-blocked"
+    },
+    "codeReview": {
+      "approved": "code-review-approved",
+      "changesRequested": "code-review-changes-requested",
+      "inProgress": "code-review-in-progress"
+    },
+    "design": {
+      "ready": "design-ready",
+      "inProgress": "design-in-progress"
+    },
+    "worktree": {
+      "active": "worktree-active",
+      "qaPending": "worktree-qa-pending",
+      "readyToMerge": "worktree-ready-to-merge",
+      "merging": "worktree-merging"
+    },
+    "plan": {
+      "created": "plan-created",
+      "inProgress": "plan-in-progress",
+      "complete": "plan-complete"
+    },
+    "qaPlatform": {
+      "passed": "qa-platform-passed",
+      "failed": "qa-platform-failed",
+      "blocked": "qa-platform-blocked"
+    },
+    "platform": {
+      "windows": "platform-windows",
+      "linux": "platform-linux",
+      "macos": "platform-macos"
+    },
+    "uiDesign": {
+      "reviewRecommended": "design-review-recommended",
+      "reviewRequired": "design-review-required",
+      "wireframesReady": "wireframes-ready",
+      "designApproved": "design-approved",
+      "designInProgress": "design-in-progress"
+    },
+    "tdd": {
+      "required": "tdd-required",
+      "optional": "tdd-optional",
+      "compliant": "tdd-compliant",
+      "violation": "tdd-violation"
+    },
+    "userRequirements": {
+      "verified": "user-requirements-verified",
+      "violated": "user-requirements-violated",
+      "missing": "user-requirements-missing",
+      "blocked": "requirement-blocked",
+      "violation": "requirement-violation"
+    },
+    "techDebt": "tech-debt"
+  },
+  "issueTypes": {
+    "epic": "Epic",
+    "story": "Story",
+    "task": "Task",
+    "subtask": "Subtask",
+    "bug": "Bug"
+  },
+  "customFields": {
+    "storyPoints": "customfield_10016",
+    "epicLink": "customfield_10014",
+    "sprint": "customfield_10020",
+    "developmentPanel": "customfield_10000"
+  },
+  "comments": {
+    "templates": {
+      "qaBackendPassed": "## Backend QA Test Results\n\n**Status**: PASSED\n\n### Quality Gate Summary\n\n| Gate | Status | Details |\n|------|--------|---------|\\n| Migration Verification | {migrationStatus} | {migrationDetails} |\n| Unit Tests | PASS | {unitPassed} passed, {unitFailed} failed, {unitSkipped} skipped |\n| Integration Tests | PASS | {intPassed} passed, {intFailed} failed |\n| API Contract Verification | {contractStatus} | {contractDetails} |\n| Code Coverage | PASS | {coverage}% |\n| Company Isolation | PASS | company_uuid filtering verified |\n\n**Test Execution:**\n- Unit Tests: {unitPassed} passed, {unitFailed} failed, {unitSkipped} skipped\n- Integration Tests: {intPassed} passed, {intFailed} failed\n- Code Coverage: {coverage}%\n\n**Company Isolation:** PASS\n- company_uuid filtering verified\n- Data isolation tested (company-based)\n- No data leakage detected\n\n**QA Agent:** backend-qa\n**Label Applied:** qa-backend-passed",
+      "qaBackendFailed": "## Backend QA Test Results\n\n**Status**: FAILED\n\n### Quality Gate Summary\n\n| Gate | Status | Details |\n|------|--------|---------|\\n| Migration Verification | {migrationStatus} | {migrationDetails} |\n| Unit Tests | {unitStatus} | {unitPassed} passed, {unitFailed} failed, {unitSkipped} skipped |\n| Integration Tests | {intStatus} | {intPassed} passed, {intFailed} failed |\n| API Contract Verification | {contractStatus} | {contractDetails} |\n| Code Coverage | {coverageStatus} | {coverage}% |\n| Company Isolation | {isolationStatus} | {isolationDetails} |\n\n**Failing Tests:**\n{failingTests}\n\n**Subtasks Created:** {subtasks}\n\n**Next Step:** Developer fixes subtasks, re-run /qa-backend\n\n**QA Agent:** backend-qa\n**Label Applied:** qa-backend-failed",
+      "qaBackendBlocked": "## Backend QA Test Results\n\n**Status**: BLOCKED\n\n### Quality Gate Summary\n\n| Gate | Status | Details |\n|------|--------|---------|\\n| Migration Verification | {migrationStatus} | {migrationDetails} |\n| Unit Tests | {unitStatus} | {unitDetails} |\n| Integration Tests | {intStatus} | {intDetails} |\n| API Contract Verification | {contractStatus} | {contractDetails} |\n\n**Blocking Issue:** {blockingIssue}\n\n**Next Step:** {nextStep}\n\n**QA Agent:** backend-qa\n**Label Applied:** qa-backend-blocked",
+      "qaFrontendPassed": "## Frontend QA Test Results\n\n**Status**: PASSED\n\n**Test Execution:**\n- Tests Passed: {passed}\n- Tests Failed: {failed}\n- Tests Skipped: {skipped}\n- Code Coverage: {coverage}%\n\n**Accessibility (WCAG AA):** PASS\n- Keyboard navigation: yes\n- Screen reader support: yes\n- Color contrast: yes\n- ARIA attributes: yes\n\n**Responsive Design:** Tested\n- Mobile: yes\n- Tablet: yes\n- Desktop: yes\n\n**QA Agent:** frontend-qa\n**Label Applied:** qa-frontend-passed",
+      "codeReviewApproved": "## Code Review Results\n\n**Status**: APPROVED\n\n**5-Part Framework:**\n1. Document Alignment: PASS\n2. Code Quality: PASS\n3. Testing Strategy: PASS\n4. Performance: PASS\n5. Security Audit: PASS\n\n**Strengths:**\n{strengths}\n\n**GitHub PR:** {prUrl}\n\n**Reviewer:** senior-code-reviewer\n**Label Applied:** code-review-approved\n**Jira Transitioned:** Ready to Release"
+    }
+  },
+  "automations": {
+    "autoTransitionOnQAPass": true,
+    "autoTransitionOnReviewApprove": true,
+    "autoCreateSubtasksForIssues": true,
+    "autoLinkPRsToJira": true
+  },
+  "preTaskValidation": {
+    "description": "Sprint validation enforcement for implementation agents. Ensures tasks exist, are assigned to current user, and are in active sprint before agent dispatch.",
+    "enabled": true,
+    "boardId": 1,
+    "sprintCustomField": "customfield_10020",
+    "validationRules": {
+      "taskMustExist": {
+        "enabled": true,
+        "errorMessage": "Task {issueKey} not found in Jira",
+        "autoFix": false
+      },
+      "taskMustBeAssigned": {
+        "enabled": true,
+        "errorMessage": "Task {issueKey} not assigned to current user",
+        "autoFix": true,
+        "autoFixAction": "jira_edit_issue with assignee field"
+      },
+      "taskMustBeInActiveSprint": {
+        "enabled": true,
+        "errorMessage": "Task {issueKey} not in active sprint",
+        "autoFix": true,
+        "autoFixAction": "jira_move_issues_to_sprint"
+      }
+    },
+    "targetAgents": [
+      "backend-developer",
+      "frontend-developer",
+      "code-refactorer",
+      "platform-windows-developer",
+      "platform-linux-developer",
+      "platform-macos-developer",
+      "technical-writer",
+      "ui-design-ux",
+      "ui-design-lead"
+    ],
+    "enforcementLayers": {
+      "layer1_skill": {
+        "file": ".claude/skills/pre-task-validation.md",
+        "priority": -1,
+        "description": "Intercepts Task tool calls to target agents"
+      },
+      "layer2_commands": {
+        "files": [".claude/commands/act.md", ".claude/commands/implement-jira-task.md"],
+        "description": "Phase 1.5 MANDATORY Pre-Launch Validation"
+      },
+      "layer3_agents": {
+        "files": [".claude/agents/backend-developer.md", ".claude/agents/frontend-developer.md"],
+        "description": "Secondary defense - agents self-validate before starting"
+      },
+      "layer4_projectManager": {
+        "file": ".claude/agents/project-manager.md",
+        "description": "HARD BLOCKER pre-assignment checklist"
+      }
+    },
+    "autoFixPermissions": {
+      "orchestrator": true,
+      "projectManager": true,
+      "implementationAgents": false
+    }
+  }
+}

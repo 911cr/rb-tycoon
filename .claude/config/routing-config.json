@@ -1,0 +1,137 @@
+{
+  "description": "Agent routing rules for file patterns and test-only scenarios",
+  "agentRouting": {
+    "backend": {
+      "patterns": [
+        "services/**/*.cs",
+        "**/Controllers/**",
+        "**/Services/**",
+        "**/Repositories/**",
+        "**/Models/**",
+        "**/Validators/**"
+      ],
+      "agent": "backend-developer",
+      "description": "C# backend microservices"
+    },
+    "frontend": {
+      "patterns": [
+        "services/admin-dashboard/**/*.tsx",
+        "services/web-portal/**/*.tsx",
+        "**/components/**",
+        "**/app/**",
+        "**/hooks/**",
+        "**/*.module.scss"
+      ],
+      "agent": "frontend-developer",
+      "description": "Next.js/React frontend services"
+    },
+    "database": {
+      "patterns": [
+        "services/db/migrations_v2/**/*.sql"
+      ],
+      "agent": "backend-developer",
+      "description": "Database migrations (handled by backend developer)"
+    },
+    "design": {
+      "patterns": [
+        "docs/plan/*/design/**"
+      ],
+      "agent": "ui-design-lead",
+      "description": "Design specifications and wireframes"
+    },
+    "platformWindows": {
+      "patterns": [
+        "agent/windows/**/*.cs",
+        "agent/windows/**/*.json"
+      ],
+      "agent": "platform-windows-developer",
+      "description": "Windows agent development"
+    },
+    "platformLinux": {
+      "patterns": [
+        "agent/linux/**/*.cs"
+      ],
+      "agent": "platform-linux-developer",
+      "description": "Linux agent development"
+    },
+    "platformMacOS": {
+      "patterns": [
+        "agent/macos/**/*.cs"
+      ],
+      "agent": "platform-macos-developer",
+      "description": "macOS agent development"
+    },
+    "platformShared": {
+      "patterns": [
+        "agent/shared/**/*.cs"
+      ],
+      "agent": "platform-lead-developer",
+      "description": "Shared platform abstraction layer"
+    },
+    "claudeCode": {
+      "patterns": [
+        ".claude/**/*.md",
+        ".claude/**/*.json",
+        "CLAUDE.md",
+        ".mcp.json"
+      ],
+      "agent": "claude-code-hacker",
+      "description": "Claude Code configuration files"
+    }
+  },
+  "testOnlyRouting": {
+    "enabled": true,
+    "description": "Route test-only changes to QA agents instead of implementation agents",
+    "detection": {
+      "allFilesMatchTestPatterns": true,
+      "noImplementationFiles": true
+    },
+    "routing": {
+      "frontend": "frontend-qa",
+      "backend": "backend-qa",
+      "platform": "platform-qa"
+    },
+    "testPatterns": {
+      "frontend": [
+        "services/admin-dashboard/**/*.test.tsx",
+        "services/admin-dashboard/**/*.spec.tsx",
+        "services/web-portal/**/*.test.tsx",
+        "services/web-portal/**/*.spec.tsx"
+      ],
+      "backend": [
+        "tests/**/*.cs",
+        "**/*.Tests.cs",
+        "**/*.Test.cs"
+      ],
+      "platform": [
+        "agent/**/*.Tests.cs",
+        "agent/**/*.Test.cs"
+      ]
+    }
+  },
+  "routingPriority": {
+    "description": "When multiple patterns match, priority determines which agent is selected",
+    "order": [
+      "claudeCode",
+      "design",
+      "platformWindows",
+      "platformLinux",
+      "platformMacOS",
+      "platformShared",
+      "database",
+      "backend",
+      "frontend"
+    ]
+  },
+  "exclusions": {
+    "description": "Patterns that should be excluded from automatic routing",
+    "patterns": [
+      "node_modules/**",
+      "bin/**",
+      "obj/**",
+      ".git/**",
+      "*.lock",
+      "package-lock.json"
+    ]
+  }
+}

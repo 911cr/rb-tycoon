@@ -1,0 +1,585 @@
+{
+  "description": "Planning, consultation, and confidence calculation configuration for Claude Code agents",
+  "storyPoints": {
+    "fibonacci": [1, 2, 3, 5, 8, 13, 21],
+    "default": 3
+  },
+  "planDomainDetection": {
+    "description": "Domain detection for multi-agent plan consultation",
+    "matchingLogic": {
+      "filePatterns": "OR",
+      "keywords": "OR",
+      "combined": "OR",
+      "description": "ANY file pattern OR keyword match triggers domain"
+    },
+    "domains": {
+      "database": {
+        "agent": "database-advisor",
+        "weight": 1.3,
+        "filePatterns": [
+          "services/db/migrations_v2/**/*.sql",
+          "**/Repositories/**/*.cs",
+          "**/*Repository.cs"
+        ],
+        "keywords": ["migration", "schema", "query", "CRUD", "table", "index", "postgresql", "sql", "database"],
+        "description": "Any database interaction (query, migrations, CRUD, etc)"
+      },
+      "devops": {
+        "agent": "devops-engineer",
+        "weight": 1.0,
+        "filePatterns": [
+          "docker-compose*.yml",
+          "**/Dockerfile*",
+          ".github/workflows/**",
+          "**/k8s/**",
+          ".env*",
+          "scripts/**"
+        ],
+        "keywords": [
+          "docker", "kubernetes", "k8s", "ci/cd", "pipeline", "deployment", "container", "production", "dev environment",
+          "scale", "scaling", "replica", "replicas", "pods", "pod", "hpa", "autoscaler",
+          "cluster", "helm", "terraform", "infrastructure", "infra",
+          "memory limit", "cpu limit", "resource limit", "limits",
+          "ingress", "secret", "secrets", "configmap",
+          "node", "nodes", "namespace", "pvc", "statefulset", "daemonset", "cronjob"
+        ],
+        "description": "Production/dev env, CI/CD, docker builds"
+      },
+      "frontend": {
+        "agent": "frontend-developer",
+        "qaAgent": "frontend-qa",
+        "weight": 1.0,
+        "filePatterns": [
+          "services/admin-dashboard/**",
+          "services/web-portal/**"
+        ],
+        "testPatterns": [
+          "services/admin-dashboard/**/*.test.tsx",
+          "services/admin-dashboard/**/*.spec.tsx",
+          "services/web-portal/**/*.test.tsx"
+        ],
+        "keywords": ["react", "component", "ui", "frontend", "dashboard", "portal"],
+        "description": "Frontend services (admin-dashboard, web-portal)"
+      },
+      "backend": {
+        "agent": "backend-developer",
+        "qaAgent": "backend-qa",
+        "weight": 1.2,
+        "filePatterns": [
+          "services/auth-service/**/*.cs",
+          "services/company-service/**/*.cs",
+          "services/ai-engine/**/*.cs",
+          "services/workflow-engine/**/*.cs",
+          "services/data-ingestion/**/*.cs",
+          "services/integration-service/**/*.cs",
+          "services/script-management/**/*.cs",
+          "services/agent-generation/**/*.cs",
+          "services/api-gateway/**/*.cs",
+          "src/shared/**/*.cs"
+        ],
+        "testPatterns": [
+          "tests/**/*.cs",
+          "**/*.Tests.cs",
+          "**/*.Test.cs"
+        ],
+        "keywords": ["api", "endpoint", "controller", "service", ".net", "c#", "backend"],
+        "description": "C# backend microservices"
+      },
+      "network": {
+        "agent": "network-engineer-advisor",
+        "weight": 1.1,
+        "filePatterns": [
+          "**/grpc/**",
+          "**/nginx/**",
+          "**/ingress/**",
+          "services/ingress-proxy/**"
+        ],
+        "keywords": ["grpc", "websocket", "http", "mtls", "certificate", "nginx", "reverse proxy", "network", "streaming"],
+        "description": "Network requests, traffic, protocols"
+      },
+      "platform": {
+        "agent": "platform-windows-developer",
+        "qaAgent": "platform-qa",
+        "weight": 1.2,
+        "filePatterns": [
+          "agent/**",
+          "agent/windows/**/*.cs",
+          "agent/windows/**/*.json"
+        ],
+        "testPatterns": [
+          "agent/**/*.Tests.cs",
+          "agent/**/*.Test.cs"
+        ],
+        "keywords": ["windows agent", "endpoint", "telemetry", "msi", "native agent", "grpc streaming", "agent"],
+        "description": "Native Windows agent development"
+      },
+      "security": {
+        "agent": "security-engineer-advisor",
+        "weight": 1.5,
+        "filePatterns": [
+          "**/Auth*/**",
+          "**/Security/**",
+          "**/Middleware/**",
+          "services/auth-service/**"
+        ],
+        "keywords": ["authentication", "authorization", "jwt", "encryption", "security", "company isolation", "rls"],
+        "alwaysConsultFor": ["Security-sensitive changes", "Auth modifications", "Company isolation"],
+        "description": "Security, authentication, authorization"
+      },
+      "architecture": {
+        "agent": "system-architect",
+        "weight": 1.4,
+        "filePatterns": [
+          "**/new-service/**"
+        ],
+        "keywords": ["new service", "microservice", "architecture", "system design", "breaking change"],
+        "triggerConditions": ["Creating new services", "Major architectural changes"],
+        "description": "Architectural decisions, new service creation"
+      },
+      "aiPrompts": {
+        "agent": "ai-prompt-advisor",
+        "weight": 1.1,
+        "filePatterns": [
+          "services/ai-engine/**/*.cs",
+          "services/workflow-engine/**/*.cs",
+          "db/guides/**/*.sql",
+          "services/db/migrations_v2/**/*guide*.sql",
+          "services/db/migrations_v2/**/*template*.sql",
+          "services/db/migrations_v2/**/*kb*.sql",
+          "services/company-service/**/*Template*.cs",
+          "services/company-service/**/*Knowledge*.cs",
+          "services/company-service/**/*Guide*.cs"
+        ],
+        "keywords": [
+          "azure openai", "prompt", "ai", "llm", "token", "rag",
+          "troubleshooting guide", "knowledge base", "kb content",
+          "template injection", "ai agent", "assistant api",
+          "thread management", "system prompt", "chat completion",
+          "embedding", "vector search"
+        ],
+        "alwaysConsultFor": [
+          "Changes to data that will be injected into AI prompts",
+          "Troubleshooting guide modifications",
+          "Knowledge base content changes",
+          "Template content that AI will consume"
+        ],
+        "description": "AI prompt engineering, Azure OpenAI integration, and content that will be passed to AI systems"
+      },
+      "claudeCodeConfig": {
+        "agent": "claude-code-hacker",
+        "weight": 1.3,
+        "filePatterns": [
+          ".claude/agents/*.md",
+          ".claude/commands/*.md",
+          ".claude/skills/*.md",
+          ".claude/settings.json",
+          ".claude/settings.local.json",
+          ".claude/config/*.json",
+          ".claude/rules/*.md",
+          ".claude/*.md",
+          ".mcp.json",
+          "CLAUDE.md"
+        ],
+        "keywords": [
+          "agent", "claude code", "mcp server", "skill", "command",
+          "workflow orchestration", "tool permission", "hook",
+          "settings", "jira config", "routing rule", "worktree"
+        ],
+        "triggerConditions": [
+          "Creating or modifying agents",
+          "Changing MCP server configuration",
+          "Updating workflow commands",
+          "Modifying permissions or hooks",
+          "Updating project-level Claude Code settings"
+        ],
+        "alwaysConsultFor": [
+          "Any changes to .claude/** files",
+          "CLAUDE.md modifications",
+          "MCP configuration changes"
+        ],
+        "description": "Claude Code configuration including agents, commands, skills, MCP servers, permissions, and workflow orchestration"
+      },
+      "uiDesign": {
+        "agents": ["ui-design-lead", "ui-design-ux"],
+        "primaryAgent": "ui-design-lead",
+        "secondaryAgent": "ui-design-ux",
+        "weight": 0.8,
+        "phase": "planning",
+        "consultationType": "advisory",
+        "filePatterns": [
+          "services/admin-dashboard/src/components/**/*.tsx",
+          "services/admin-dashboard/src/app/**/*.tsx",
+          "services/admin-dashboard/src/app/**/page.tsx",
+          "services/web-portal/src/components/**/*.tsx",
+          "services/web-portal/src/app/**/*.tsx",
+          "**/*.module.scss"
+        ],
+        "keywords": [
+          "new page", "new component", "new modal", "new dialog",
+          "new form", "new wizard", "new dashboard", "new layout",
+          "design system", "wireframe", "user flow", "user experience",
+          "ux improvement", "visual design", "redesign", "brand",
+          "theme", "responsive design", "mobile design", "accessibility design"
+        ],
+        "excludeKeywords": [
+          "fix", "bug", "hotfix", "patch", "repair", "broken", "typo", "lint"
+        ],
+        "triggerConditions": [
+          "New UI components being created",
+          "New pages or routes being added",
+          "Visual design changes or redesigns",
+          "New user flows or interactions"
+        ],
+        "skipConditions": [
+          "Bug fixes to existing UI",
+          "Using existing MUI components as-is",
+          "Pure functionality fixes"
+        ],
+        "consultationMode": {
+          "mandatory": false,
+          "recommended": true,
+          "escalationNote": "If skipped and design issues found in QA, create subtask for design review"
+        },
+        "agentSelection": {
+          "simple": ["ui-design-lead"],
+          "complex": ["ui-design-lead", "ui-design-ux"],
+          "complexityIndicators": ["user flow", "wizard", "multi-step", "form", "accessibility", "wcag"]
+        },
+        "description": "Planning consultation for new UI/UX features. Ensures brand consistency, design system compliance, and accessibility before implementation."
+      },
+      "productionReadiness": {
+        "agent": "staff-engineer-advisor",
+        "weight": 1.2,
+        "triggerConditions": [
+          "High-risk changes",
+          "Breaking changes",
+          "Performance-critical features",
+          "Production deployment concerns"
+        ],
+        "keywords": [
+          "production",
+          "performance",
+          "scalability",
+          "reliability",
+          "breaking change"
+        ]
+      },
+      "sharedLibrary": {
+        "agent": "staff-engineer-advisor",
+        "weight": 1.5,
+        "filePatterns": ["src/shared/**/*.cs"],
+        "alwaysConsult": true,
+        "description": "Shared library changes affect multiple services - requires staff-level review"
+      }
+    },
+    "complexityEscalation": {
+      "enabled": true,
+      "thresholds": {
+        "agentCount": 3,
+        "serviceCount": 3,
+        "description": "If >3 agents OR >3 microservices, escalate"
+      },
+      "serviceDetection": {
+        "pattern": "services/([^/]+)/",
+        "description": "Count unique service directories affected"
+      },
+      "escalationAgents": ["system-architect", "staff-engineer-advisor"],
+      "escalationMode": "supplement",
+      "description": "Add architects to existing agents, don't replace"
+    },
+    "mandatoryReviewRules": [
+      {
+        "trigger": ["security", "database"],
+        "mandatoryAgents": ["staff-engineer-advisor"],
+        "reasoning": "Company isolation and encryption changes are high-risk"
+      },
+      {
+        "trigger": ["platform", "network"],
+        "mandatoryAgents": ["security-engineer-advisor"],
+        "reasoning": "Windows agent network security affects platform trust model"
+      },
+      {
+        "trigger": ["security", "sharedLibrary"],
+        "mandatoryAgents": ["staff-engineer-advisor", "security-engineer-advisor"],
+        "reasoning": "Shared security utilities affect all services"
+      },
+      {
+        "trigger": ["database"],
+        "condition": "affectedServices > 2",
+        "mandatoryAgents": ["system-architect"],
+        "reasoning": "Multi-service schema changes require migration coordination"
+      },
+      {
+        "trigger": ["claudeCodeConfig", "security"],
+        "mandatoryAgents": ["staff-engineer-advisor"],
+        "reasoning": "Changes affecting both Claude Code configuration and security require senior review"
+      }
+    ],
+    "fallbackConfig": {
+      "fallbackAgent": "project-manager",
+      "fallbackReasoning": "When no domains detected, project-manager analyzes and selects agents",
+      "consultationTimeoutMs": 120000,
+      "consultationRetryAttempts": 1,
+      "onAllTimeouts": "proceedWithoutConsultation",
+      "onAllTimeoutsJiraLabel": "plan-advisory-timeout"
+    },
+    "conflictResolution": {
+      "detectionStrategy": "semanticSimilarity",
+      "resolutionAgent": "staff-engineer-advisor",
+      "resolutionFlow": [
+        "Detect conflicting recommendations",
+        "Summarize both positions",
+        "Invoke staff-engineer-advisor for tie-breaking",
+        "Document rationale in plan"
+      ]
+    },
+    "domainCombinationRules": {
+      "backendWithTests": {
+        "trigger": ["backend", "backendQa"],
+        "resolution": "sequential",
+        "agents": ["backend-developer", "backend-qa"],
+        "reasoning": "Implementation first, then QA validation"
+      }
+    },
+    "consultationConfig": {
+      "execution": {
+        "mode": "parallel",
+        "maxConcurrentAgents": 20,
+        "timeoutMs": 120000,
+        "timeoutAction": "continue_without"
+      },
+      "fallback": {
+        "onTimeout": "mark_domain_as_unvalidated",
+        "onError": "retry_once_then_skip",
+        "retryDelayMs": 2000
+      },
+      "thresholds": {
+        "minDomainsForConsultation": 1,
+        "description": "Consult ALL agents with skin in the game - NO UPPER LIMITS"
+      }
+    },
+    "quickPlanKeywords": [
+      "quick plan",
+      "simple plan",
+      "no consultation",
+      "skip agents"
+    ]
+  },
+  "advisoryTriggers": {
+    "aiPrompt": {
+      "keywords": [
+        "azure openai",
+        "prompt engineering",
+        "token optimization",
+        "rag",
+        "retrieval augmented generation",
+        "ai quality",
+        "hallucination",
+        "ai agent",
+        "llm",
+        "azure ai foundry"
+      ],
+      "advisor": "ai-prompt-advisor",
+      "description": "Consult for Azure OpenAI integration, prompt design, and AI quality"
+    },
+    "security": {
+      "keywords": [
+        "authentication",
+        "authorization",
+        "encryption",
+        "security vulnerability",
+        "compliance",
+        "gdpr",
+        "soc2",
+        "hipaa",
+        "company isolation",
+        "company data isolation",
+        "rls policy",
+        "data leakage",
+        "owasp",
+        "xss",
+        "sql injection"
+      ],
+      "advisor": "security-engineer-advisor",
+      "description": "Consult for security architecture, encryption, and compliance"
+    },
+    "network": {
+      "keywords": [
+        "grpc",
+        "websocket",
+        "http/2",
+        "network",
+        "certificate",
+        "mtls",
+        "load balancer",
+        "reverse proxy",
+        "nginx",
+        "connection pooling",
+        "protocol",
+        "latency",
+        "throughput"
+      ],
+      "advisor": "network-engineer-advisor",
+      "description": "Consult for network protocols, gRPC optimization, and infrastructure"
+    },
+    "infrastructure": {
+      "keywords": [
+        "docker",
+        "kubernetes",
+        "k8s",
+        "k3s",
+        "ci/cd",
+        "github actions",
+        "deployment",
+        "containerization",
+        "wsl",
+        "vm",
+        "infrastructure",
+        "infra",
+        "scale",
+        "scaling",
+        "replica",
+        "replicas",
+        "pods",
+        "pod",
+        "hpa",
+        "autoscaler",
+        "cluster",
+        "helm",
+        "terraform",
+        "memory limit",
+        "cpu limit",
+        "resource limit",
+        "ingress",
+        "secret",
+        "secrets",
+        "configmap",
+        "namespace",
+        "pvc",
+        "statefulset",
+        "daemonset",
+        "cronjob",
+        "node",
+        "nodes"
+      ],
+      "advisor": "devops-engineer",
+      "description": "Consult for containerization, CI/CD pipelines, Kubernetes operations, and deployment"
+    },
+    "database": {
+      "keywords": [
+        "database",
+        "postgresql",
+        "postgres",
+        "sql",
+        "index",
+        "query optimization",
+        "explain analyze",
+        "migration",
+        "schema",
+        "normalization",
+        "denormalization",
+        "foreign key",
+        "primary key",
+        "n+1",
+        "query performance",
+        "table design",
+        "column type",
+        "constraint",
+        "trigger",
+        "stored procedure",
+        "view",
+        "materialized view",
+        "partitioning",
+        "sharding",
+        "replication",
+        "backup",
+        "redis",
+        "caching",
+        "vector database",
+        "pgvector",
+        "connection pool",
+        "transaction",
+        "deadlock",
+        "vacuum"
+      ],
+      "advisor": "database-advisor",
+      "description": "Consult for database design, query optimization, and storage decisions"
+    }
+  },
+  "planCoordinator": {
+    "agent": "system-architect",
+    "description": "Central coordinator for all plan mode requests",
+    "consultationAuthority": "full",
+    "modes": {
+      "standard": {
+        "description": "System-architect decides which agents to consult based on complexity",
+        "agentConsultation": "selective"
+      },
+      "quick": {
+        "description": "Skip agent consultation entirely for simple changes",
+        "agentConsultation": "none",
+        "trigger": "/quick-plan"
+      },
+      "comprehensive": {
+        "description": "Consult ALL relevant agents for maximum validation",
+        "agentConsultation": "all",
+        "trigger": "/consult-agents"
+      }
+    },
+    "routing": {
+      "planMode": "always route to system-architect",
+      "orchestratorRole": "route only, do not plan directly"
+    }
+  },
+  "planConsultationCache": {
+    "enabled": true,
+    "storageType": "hybrid",
+    "directories": {
+      "cacheRoot": ".claude/cache",
+      "planConsultations": ".claude/cache/plan-consultations"
+    },
+    "ttl": {
+      "agentRecommendations": "4h",
+      "confidenceScores": "24h",
+      "fileAnalysis": "1h",
+      "domainDetection": "4h"
+    },
+    "invalidation": {
+      "onPlanChange": true,
+      "onGitCommit": ["fileAnalysis"],
+      "onAgentReconsult": true,
+      "onExplicitRequest": true
+    },
+    "limits": {
+      "maxCacheSizeMb": 10,
+      "maxPlansCached": 20
+    }
+  },
+  "confidenceCalculation": {
+    "formula": "risk_weighted_effort_average_with_critical_floors",
+    "riskWeights": {
+      "security": 1.5,
+      "architecture": 1.4,
+      "database": 1.3,
+      "claudeCodeConfig": 1.3,
+      "backend": 1.2,
+      "aiPrompts": 1.1,
+      "performance": 1.1,
+      "frontend": 1.0,
+      "devops": 1.0,
+      "testing": 0.9,
+      "uiDesign": 0.8
+    },
+    "criticalDomains": ["security", "architecture", "database", "claudeCodeConfig"],
+    "criticalFloorMultiplier": 0.85,
+    "thresholds": {
+      "high": 85,
+      "medium": 70,
+      "low": 50
+    },
+    "alerts": {
+      "criticalDomainBlocking": 60,
+      "criticalDomainWarning": 80
+    }
+  }
+}

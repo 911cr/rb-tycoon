@@ -1,0 +1,54 @@
+{
+  "// INSTRUCTIONS": "Copy this file to settings.local.json and customize.",
+  "// HARD ENFORCEMENT": "Uncomment the deny section to block Edit/Write/NotebookEdit/git commit in the main thread.",
+
+  "env": {
+    "JIRA_BASE_URL": "https://YOUR_ORG.atlassian.net",
+    "JIRA_EMAIL": "your.email@example.com",
+    "JIRA_API_TOKEN": "your-jira-api-token",
+    "POSTGRES_PROD_MCP_USER": "your-prod-user",
+    "POSTGRES_PROD_MCP_PASSWORD": "your-prod-password",
+    "POSTGRES_PROD_MCP_HOST": "localhost",
+    "POSTGRES_PROD_MCP_PORT": "15432",
+    "POSTGRES_PROD_MCP_DATABASE": "your-database",
+    "POSTGRES_LOCAL_MCP_USER": "msp",
+    "POSTGRES_LOCAL_MCP_PASSWORD": "msp_password",
+    "POSTGRES_LOCAL_MCP_HOST": "localhost",
+    "POSTGRES_LOCAL_MCP_PORT": "5433",
+    "POSTGRES_LOCAL_MCP_DATABASE": "msp",
+    "CODACY_ACCOUNT_API_TOKEN": "your-codacy-token"
+  },
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:docs.github.com)",
+      "WebFetch(domain:github.com)",
+      "mcp__playwright__browser_navigate",
+      "mcp__playwright__browser_console_messages",
+      "mcp__playwright__browser_take_screenshot",
+      "mcp__playwright__browser_snapshot",
+      "mcp__playwright__browser_fill_form",
+      "mcp__playwright__browser_click",
+      "mcp__playwright__browser_wait_for",
+      "mcp__playwright__browser_press_key",
+      "mcp__playwright__browser_network_requests",
+      "Bash(git worktree:*)",
+      "mcp__playwright__browser_resize",
+      "Skill(commit)",
+      "Skill(agent-help)"
+    ]
+  },
+  "// UNCOMMENT BELOW FOR HARD ENFORCEMENT": "This will block file editing in the main thread. Agents will also be blocked, so use carefully.",
+  "// permissions_with_hard_enforcement": {
+    "// deny": [
+      "Edit",
+      "Write",
+      "NotebookEdit",
+      "Bash(git commit:*)"
+    ]
+  },
+  "enabledMcpjsonServers": [
+    "atlassian",
+    "curl"
+  ],
+  "outputStyle": "default"
+}

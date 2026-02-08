@@ -1,0 +1,125 @@
+{
+  "description": "Quality assurance thresholds and standards for Claude Code agents",
+  "qaThresholds": {
+    "codeCoverage": {
+      "overall": {
+        "minimum": 80,
+        "target": 90,
+        "critical": 100,
+        "description": "Overall code coverage requirements by level: minimum (blockers), target (recommended), critical (security paths)"
+      },
+      "diff": {
+        "minimum": 80,
+        "target": 90,
+        "description": "Diff coverage (changed files only): minimum is BLOCKER even if overall is high",
+        "isBlockerOnFail": true
+      }
+    },
+    "performance": {
+      "apiResponseTimeMs": 1000,
+      "p95Threshold": 1000,
+      "p99Threshold": 2000,
+      "description": "API response time thresholds in milliseconds"
+    }
+  },
+  "testingStandards": {
+    "backend": {
+      "unitTestRequired": true,
+      "integrationTestRequired": true,
+      "companyIsolationTestRequired": true,
+      "migrationVerificationRequired": true,
+      "apiContractVerificationRequired": true,
+      "agent": "backend-qa"
+    },
+    "frontend": {
+      "unitTestRequired": true,
+      "accessibilityTestRequired": true,
+      "responsiveDesignTestRequired": true,
+      "keyboardNavigationRequired": true,
+      "screenReaderSupportRequired": true,
+      "wcagLevel": "AA",
+      "agent": "frontend-qa"
+    },
+    "platform": {
+      "crossPlatformTestRequired": true,
+      "installerValidationRequired": true,
+      "multiDistroTestRequired": true,
+      "agent": "platform-qa"
+    }
+  },
+  "accessibilityRequirements": {
+    "standard": "WCAG 2.1 AA",
+    "colorContrast": {
+      "textMinimum": 4.5,
+      "uiComponentMinimum": 3.0
+    },
+    "touchTargets": {
+      "minimumSize": "44x44px"
+    },
+    "keyboardNavigation": {
+      "supportedKeys": ["Tab", "Enter", "Space", "Escape", "ArrowKeys"],
+      "focusManagementRequired": true
+    },
+    "ariaAttributes": {
+      "required": true,
+      "semanticHtmlPreferred": true
+    }
+  },
+  "codeQualityStandards": {
+    "solidPrinciples": {
+      "singleResponsibility": true,
+      "openClosed": true,
+      "liskovSubstitution": true,
+      "interfaceSegregation": true,
+      "dependencyInversion": true
+    },
+    "documentation": {
+      "xmlCommentsForPublicApis": true,
+      "readmeUpdatesWhenRelevant": true,
+      "clearNamingConventions": true
+    },
+    "security": {
+      "companyDataIsolation": true,
+      "inputValidation": true,
+      "noOwaspTop10Vulnerabilities": true
+    }
+  },
+  "qualityGates": {
+    "planning": {
+      "requirements": ["ICE score > 7.0", "User approval"],
+      "owner": "product-strategy-advisor"
+    },
+    "design": {
+      "requirements": ["Architecture approved", "ADRs created"],
+      "owner": "system-architect"
+    },
+    "implementation": {
+      "requirements": ["All tasks completed", "Semantic commits"],
+      "owner": "project-manager"
+    },
+    "qaBackend": {
+      "requirements": [">80% overall coverage", ">80% diff coverage (BLOCKER)", "Company isolation verified", "All tests pass", "Edge case tests written"],
+      "owner": "backend-qa"
+    },
+    "qaFrontend": {
+      "requirements": [">80% overall coverage", ">80% diff coverage (BLOCKER)", "Lint gate passed (changed files)", "WCAG AA compliant", "All tests pass", "Edge case tests written"],
+      "lintGate": {
+        "enabled": true,
+        "blockOnErrors": true,
+        "blockOnWarnings": false,
+        "diffBasedOnly": true,
+        "fullScanReport": true,
+        "command": "docker compose exec admin-dashboard npm run lint"
+      },
+      "owner": "frontend-qa"
+    },
+    "readiness": {
+      "requirements": ["<1s API p95", "Company isolation enforced", "No blockers"],
+      "owner": "staff-engineer-advisor"
+    },
+    "review": {
+      "requirements": ["No blocker/critical issues", "PR created"],
+      "owner": "senior-code-reviewer"
+    }
+  }
+}

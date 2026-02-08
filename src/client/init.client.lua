@@ -132,6 +132,44 @@ end)
 ClientAPI.SetReady()
 
 -- ═══════════════════════════════════════════════════════════════════════════════
+-- RENDERER INITIALIZATION
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+local Rendering = player:WaitForChild("PlayerScripts"):FindFirstChild("Rendering")
+    or script.Parent:FindFirstChild("Rendering")
+
+local CityRenderer, BattleRenderer
+
+if Rendering then
+    -- Initialize renderers
+    local cityRendererModule = Rendering:FindFirstChild("CityRenderer")
+    if cityRendererModule then
+        local success, err = pcall(function()
+            CityRenderer = require(cityRendererModule)
+            CityRenderer:Init()
+        end)
+        if success then
+            print("[CLIENT] CityRenderer initialized")
+        else
+            warn("[CLIENT] Failed to initialize CityRenderer:", err)
+        end
+    end
+
+    local battleRendererModule = Rendering:FindFirstChild("BattleRenderer")
+    if battleRendererModule then
+        local success, err = pcall(function()
+            BattleRenderer = require(battleRendererModule)
+            BattleRenderer:Init()
+        end)
+        if success then
+            print("[CLIENT] BattleRenderer initialized")
+        else
+            warn("[CLIENT] Failed to initialize BattleRenderer:", err)
+        end
+    end
+end
+
+-- ═══════════════════════════════════════════════════════════════════════════════
 -- CONTROLLER INITIALIZATION
 -- ═══════════════════════════════════════════════════════════════════════════════
 
@@ -165,6 +203,94 @@ if Controllers then
             end
         end
     end
+end
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- WIRE UP RENDERERS TO DATA AND CONTROLLERS
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+-- Render buildings when player data is synced
+Events.SyncPlayerData.OnClientEvent:Connect(function(data)
+    if CityRenderer and data.buildings then
+        CityRenderer:RenderAllBuildings(data.buildings)
+    end
+end)
+
+-- Connect CityRenderer to CityController
+if CityRenderer and Controllers then
+    local cityControllerModule = Controllers:FindFirstChild("CityController")
+    if cityControllerModule then
+        local CityController = require(cityControllerModule)
+
+        -- Building click -> select
+        CityRenderer.BuildingClicked:Connect(function(buildingId)
+            CityController:SelectBuilding(buildingId)
+        end)
+
+        -- Placement mode updates
+        CityController.PlacementModeEntered:Connect(function(buildingType)
+            CityRenderer:ShowPlacementPreview(buildingType)
+        end)
+
+        CityController.PlacementModeExited:Connect(function()
+            CityRenderer:HidePlacementPreview()
+        end)
+
+        -- Building selection for highlight
+        CityController.BuildingSelected:Connect(function(buildingId)
+            CityRenderer:SelectBuilding(buildingId)
+        end)
+
+        CityController.BuildingDeselected:Connect(function()
+            CityRenderer:DeselectBuilding()
+        end)
+    end
+end
+
+-- Connect BattleRenderer to BattleController
+if BattleRenderer and Controllers then
+    local battleControllerModule = Controllers:FindFirstChild("BattleController")
+    if battleControllerModule then
+        local BattleController = require(battleControllerModule)
+
+        -- Battle start -> activate renderer
+        BattleController.BattleStarted:Connect(function(battleId)
+            BattleRenderer:Activate()
+        end)
+
+        -- Battle end -> deactivate renderer
+        BattleController.BattleEnded:Connect(function(result)
+            BattleRenderer:Deactivate()
+        end)
+
+        -- Deploy click from renderer
+        BattleRenderer.DeployPositionClicked:Connect(function(position)
+            BattleController:HandleDeployInput(position)
+        end)
+    end
+
+    -- Update battle visuals from server state
+    Events.BattleTick.OnClientEvent:Connect(function(state)
+        if not BattleRenderer then return end
+
+        -- Update troop positions
+        if state.troops then
+            for id, troopData in state.troops do
+                if troopData.health and troopData.health <= 0 then
+                    BattleRenderer:RemoveTroop(id)
+                elseif troopData.position then
+                    -- Check if troop exists
+                    local existingTroop = BattleRenderer:UpdateTroopPosition(id, troopData.position)
+                    if not existingTroop then
+                        BattleRenderer:RenderTroop(id, troopData)
+                    end
+                    if troopData.healthPercent then
+                        BattleRenderer:UpdateTroopHealth(id, troopData.healthPercent)
+                    end
+                end
+            end
+        end
+    end)
 end
 
 print("Battle Tycoon: Conquest - Client Ready!")

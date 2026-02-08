@@ -30,6 +30,9 @@
         "UI": {
           "$path": "src/client/UI"
         },
+        "Rendering": {
+          "$path": "src/client/Rendering"
+        },
         "Client": {
           "$path": "src/client/init.client.lua"
         }

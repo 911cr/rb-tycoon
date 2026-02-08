@@ -1,0 +1,104 @@
+{
+  "description": "Unified concurrency limits for Claude Code agent execution. Prevents system overload from too many concurrent agents or worktrees.",
+  "version": "1.1.0",
+  "createdDate": "2026-01-21",
+  "updatedDate": "2026-01-23",
+  "createdReason": "Root cause fix for session crash caused by spawning 9 QA agents simultaneously",
+  "updateReason": "Removed batch terminology - execution is dependency-based, not batch-based",
+
+  "worktrees": {
+    "maxActive": 8,
+    "description": "Maximum number of active worktrees at any time. Create worktrees just-in-time when dependencies are satisfied. Conservative limit for stability."
+  },
+
+  "agents": {
+    "implementation": {
+      "maxConcurrent": 8,
+      "spawnDelayMs": 2000,
+      "types": [
+        "backend-developer",
+        "frontend-developer",
+        "code-refactorer",
+        "platform-windows-developer",
+        "platform-linux-developer",
+        "platform-macos-developer",
+        "technical-writer"
+      ],
+      "description": "Implementation agents that modify code. Most resource-intensive."
+    },
+    "qa": {
+      "maxConcurrent": 8,
+      "spawnDelayMs": 2000,
+      "types": [
+        "backend-qa",
+        "frontend-qa",
+        "platform-qa"
+      ],
+      "description": "QA agents that run tests. Similar resource usage to implementation agents."
+    },
+    "advisory": {
+      "maxConcurrent": 5,
+      "spawnDelayMs": 1000,
+      "types": [
+        "database-advisor",
+        "security-engineer-advisor",
+        "network-engineer-advisor",
+        "ai-prompt-advisor",
+        "devops-engineer",
+        "staff-engineer-advisor",
+        "system-architect"
+      ],
+      "description": "Advisory agents for consultation. Lighter-weight, higher concurrency allowed."
+    },
+    "review": {
+      "maxConcurrent": 2,
+      "spawnDelayMs": 3000,
+      "types": [
+        "senior-code-reviewer"
+      ],
+      "description": "Code review agents. Resource-intensive due to full codebase analysis."
+    }
+  },
+
+  "systemTotal": {
+    "maxConcurrentAgents": 8,
+    "description": "Absolute maximum of 8 agents running simultaneously across ALL categories. Conservative limit for stability."
+  },
+
+  "spawnProtocol": {
+    "preSpawnChecks": [
+      "Count currently running agents via TaskOutput",
+      "Verify last spawn was >= spawnDelayMs ago",
+      "Check system total limit not exceeded"
+    ],
+    "spawnSequence": [
+      "1. Spawn agent",
+      "2. Wait spawnDelayMs",
+      "3. Verify agent status is 'running' via TaskOutput",
+      "4. Only then proceed to next spawn"
+    ],
+    "overloadDetection": {
+      "consecutiveFailures": 3,
+      "pauseDurationMs": 30000,
+      "resumeMode": "single",
+      "description": "If 3 consecutive TaskOutput calls fail, pause spawning for 30s, then resume with 1 agent at a time"
+    }
+  },
+
+  "justInTimeExecution": {
+    "enabled": true,
+    "description": "Just-in-time worktree creation based on dependency completion. NO BATCHES.",
+    "rules": [
+      "Parse plan state file for dependency graph",
+      "Start ALL tasks with zero dependencies immediately (up to maxActive worktrees)",
+      "Create worktree for a task ONLY when ALL its dependencies are MERGED",
+      "As tasks merge, check for newly unblocked tasks and start them",
+      "Natural rolling execution based on actual completion order"
+    ],
+    "mergeRequirement": {
+      "enforcement": "MANDATORY",
+      "description": "A task's dependencies must be MERGED (not just complete) before its worktree can be created",
+      "mergeOrder": "One at a time (worktree-merging lock prevents concurrent merges)"
+    }
+  }
+}

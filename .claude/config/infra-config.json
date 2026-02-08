@@ -1,0 +1,94 @@
+{
+  "description": "Infrastructure request and DevOps workflow configuration",
+  "infraRequest": {
+    "label": "devops-terraform-request",
+    "errorLabel": "infra-error",
+    "taskTemplate": "infra-change-request",
+    "defaultPriority": "Medium",
+    "targetProject": "ai-toolkit-terraform",
+    "processingCommand": "/complete-jira-ai-it-for-msps-requests",
+    "description": "Cross-project infrastructure change requests for Terraform Cloud deployment",
+    "terraformManagedLabel": "managed=terraform",
+    "productionContexts": ["ai-toolkit-production"],
+    "assignToSprint": true,
+    "assignToCurrentUser": true
+  },
+  "devOpsWorkflow": {
+    "onTerraformManagedResource": "use-request-infra-change",
+    "onNonTerraformResource": "execute-directly-with-confirmation",
+    "forbiddenActions": [
+      "kubectl scale",
+      "kubectl patch",
+      "kubectl apply",
+      "kubectl delete",
+      "kubectl rollout restart"
+    ],
+    "description": "Workflow rules for infrastructure changes"
+  },
+  "terraformResources": {
+    "description": "Resources managed via Terraform (require infra-change-request)",
+    "managed": [
+      "kubernetes deployments",
+      "kubernetes services",
+      "kubernetes configmaps",
+      "kubernetes secrets",
+      "kubernetes ingress",
+      "kubernetes hpa",
+      "kubernetes pvc",
+      "kubernetes statefulsets",
+      "kubernetes daemonsets",
+      "kubernetes cronjobs"
+    ],
+    "directlyModifiable": [
+      "docker-compose.yml",
+      "Dockerfile",
+      ".env files",
+      "scripts/*"
+    ]
+  },
+  "kubernetesContexts": {
+    "production": {
+      "name": "ai-toolkit-production",
+      "allowDirectChanges": false,
+      "requiresInfraRequest": true
+    },
+    "local": {
+      "name": "ai-toolkit-local",
+      "allowDirectChanges": true,
+      "requiresInfraRequest": false
+    },
+    "fresh": {
+      "name": "ai-toolkit-fresh",
+      "allowDirectChanges": true,
+      "requiresInfraRequest": false
+    }
+  },
+  "infraChangeRequestTemplate": {
+    "requiredFields": [
+      "summary",
+      "description",
+      "targetEnvironment",
+      "changeType",
+      "impact"
+    ],
+    "optionalFields": [
+      "rollbackPlan",
+      "testingSteps",
+      "dependencies"
+    ],
+    "changeTypes": [
+      "Scale",
+      "Configuration",
+      "Deployment",
+      "Network",
+      "Storage",
+      "Security"
+    ],
+    "impactLevels": [
+      "Low",
+      "Medium",
+      "High",
+      "Critical"
+    ]
+  }
+}
