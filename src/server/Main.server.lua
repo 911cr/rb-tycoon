@@ -224,6 +224,8 @@ end)
 local function sendFoodSupplyUpdate(player)
     if DataService and DataService.GetFoodSupplyStatus then
         local status = DataService:GetFoodSupplyStatus(player)
+        print(string.format("[FoodSupply] Sending to %s: +%.1f/-%.1f paused=%s",
+            player.Name, status.production, status.usage, tostring(status.paused)))
         FoodSupplyUpdate:FireClient(player, status.production, status.usage, status.paused)
     end
 end

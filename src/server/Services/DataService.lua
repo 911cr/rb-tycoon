@@ -508,16 +508,26 @@ function DataService:CalculateFoodProduction(player: Player): number
     if not data then return 0 end
 
     local totalProduction = 0
+    local farmCount = 0
+    local upgradingCount = 0
 
     for _, building in data.buildings do
-        if building.type == "Farm" and building.state ~= "Upgrading" then
-            local levelData = BuildingData.GetLevelData("Farm", building.level)
-            if levelData and levelData.productionRate then
-                -- productionRate is per hour, convert to per minute
-                totalProduction += levelData.productionRate / 60
+        if building.type == "Farm" then
+            if building.state ~= "Upgrading" then
+                local levelData = BuildingData.GetLevelData("Farm", building.level)
+                if levelData and levelData.productionRate then
+                    -- productionRate is per hour, convert to per minute
+                    totalProduction += levelData.productionRate / 60
+                    farmCount += 1
+                end
+            else
+                upgradingCount += 1
             end
         end
     end
+
+    print(string.format("[FoodSupply] %s: %d farms producing, %d upgrading, total=%.1f/min",
+        player.Name, farmCount, upgradingCount, totalProduction))
 
     return totalProduction
 end
@@ -555,6 +565,10 @@ function DataService:UpdateFoodSupplyState(player: Player)
 
     -- Update maxFarmPlots based on TH level
     data.maxFarmPlots = BuildingData.MaxFarmPlotsPerTH[data.townHallLevel] or 2
+
+    -- Debug
+    print(string.format("[FoodSupply] Player %s: Production=%.1f/min, Usage=%.1f/min, Paused=%s",
+        player.Name, data.foodProduction, data.foodUsage, tostring(data.trainingPaused)))
 end
 
 --[[

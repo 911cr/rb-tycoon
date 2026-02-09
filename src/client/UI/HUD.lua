@@ -491,6 +491,10 @@ end
     Updates the food supply display with production and usage per minute.
 ]]
 function HUD:UpdateFoodSupply(production: number, usage: number, isPaused: boolean)
+    print(string.format("[HUD] UpdateFoodSupply: +%.1f/-%.1f paused=%s, labels exist: prod=%s usage=%s",
+        production, usage, tostring(isPaused),
+        tostring(_foodProductionLabel ~= nil), tostring(_foodUsageLabel ~= nil)))
+
     if _foodProductionLabel then
         _foodProductionLabel.Text = string.format("+%d/m", math.floor(production))
         _foodProductionLabel.TextColor3 = Color3.fromRGB(100, 200, 100)
@@ -619,9 +623,17 @@ function HUD:Init()
     end)
 
     -- Listen for food supply updates (sent after farm/troop changes)
-    Events.FoodSupplyUpdate.OnClientEvent:Connect(function(production, usage, isPaused)
-        self:UpdateFoodSupply(production or 0, usage or 0, isPaused or false)
-    end)
+    local FoodSupplyUpdate = Events:WaitForChild("FoodSupplyUpdate", 10)
+    if FoodSupplyUpdate then
+        print("[HUD] FoodSupplyUpdate event found, connecting...")
+        FoodSupplyUpdate.OnClientEvent:Connect(function(production, usage, isPaused)
+            print(string.format("[HUD] FoodSupplyUpdate received: +%.1f/-%.1f paused=%s",
+                production or 0, usage or 0, tostring(isPaused)))
+            self:UpdateFoodSupply(production or 0, usage or 0, isPaused or false)
+        end)
+    else
+        warn("[HUD] FoodSupplyUpdate event not found!")
+    end
 
     -- Check if data already exists (in case we initialized after server sent data)
     task.defer(function()
