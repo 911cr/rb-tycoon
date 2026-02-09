@@ -202,10 +202,15 @@ local PlayerReturnPositions = {}
 -- Store which building each player is currently in (for exit orientation)
 local PlayerCurrentBuilding = {}
 
+-- Global teleport cooldown to prevent rapid entrance/exit cycling
+-- Both entrance and exit portals check this before teleporting
+local TeleportCooldown = {}
+
 -- Building exterior positions in the village (for exit orientation)
 -- The position where players exit to, and the building center to face away from
+-- IMPORTANT: exitPos must be far enough from entrance triggers to avoid re-teleporting!
 local BUILDING_EXTERIOR_POSITIONS = {
-    GoldMine = { exitPos = Vector3.new(30, 3, 50), buildingPos = Vector3.new(25, 0, 50) },        -- Exit east of building, face toward path
+    GoldMine = { exitPos = Vector3.new(38, 3, 50), buildingPos = Vector3.new(25, 0, 50) },        -- Exit east of building (X=38 clears entrance trigger at X=30-32)
     LumberMill = { exitPos = Vector3.new(90, 3, 50), buildingPos = Vector3.new(95, 0, 50) },     -- Exit west of building, face toward path
     Farm1 = { exitPos = Vector3.new(30, 3, 100), buildingPos = Vector3.new(25, 0, 100) },        -- Exit east of building
     Farm2 = { exitPos = Vector3.new(30, 3, 130), buildingPos = Vector3.new(25, 0, 130) },
@@ -295,6 +300,11 @@ local function teleportToInterior(player, buildingName)
     local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
     if not humanoidRootPart then return end
 
+    -- Check global teleport cooldown to prevent rapid entrance/exit cycling
+    if TeleportCooldown[player.UserId] then return end
+    TeleportCooldown[player.UserId] = true
+    task.delay(2, function() TeleportCooldown[player.UserId] = nil end)
+
     -- Save return position and which building the player entered
     PlayerReturnPositions[player.UserId] = humanoidRootPart.Position
     PlayerCurrentBuilding[player.UserId] = buildingName
@@ -317,6 +327,11 @@ local function teleportToVillage(player)
     if not character then return end
     local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
     if not humanoidRootPart then return end
+
+    -- Check global teleport cooldown to prevent rapid entrance/exit cycling
+    if TeleportCooldown[player.UserId] then return end
+    TeleportCooldown[player.UserId] = true
+    task.delay(2, function() TeleportCooldown[player.UserId] = nil end)
 
     -- Get which building the player is exiting from
     local buildingName = PlayerCurrentBuilding[player.UserId]
@@ -393,6 +408,330 @@ local function createExitPortal(parent, position)
     createSign(parent, "EXIT", position + Vector3.new(0, 5, 0), Vector3.new(3, 1, 0.3))
 
     return portal
+end
+
+-- Create BARN exterior (red barn with gambrel roof for Farms)
+-- facingDirection: "north" (default/-Z back), "south" (+Z back), "east" (+X door), "west" (-X door)
+local function createBarnExterior(name, position, size, buildingName, facingDirection)
+    facingDirection = facingDirection or "north"
+
+    local exterior = Instance.new("Model")
+    exterior.Name = name .. "_Exterior"
+
+    local wallHeight = size.Y
+    local wallThickness = 1
+
+    -- Classic barn colors
+    local barnRed = Color3.fromRGB(139, 35, 35)
+    local barnRedDark = Color3.fromRGB(110, 28, 28)
+    local whiteTrim = Color3.fromRGB(245, 245, 240)
+    local roofGray = Color3.fromRGB(80, 80, 85)
+    local floorColor = Color3.fromRGB(90, 65, 40)
+
+    -- Calculate rotation based on facing direction
+    local rotation = 0
+    if facingDirection == "south" then
+        rotation = 180
+    elseif facingDirection == "east" then
+        rotation = -90
+    elseif facingDirection == "west" then
+        rotation = 90
+    end
+
+    -- Helper to rotate offset around Y axis
+    local function rotateOffset(offset)
+        local rad = math.rad(rotation)
+        local cos, sin = math.cos(rad), math.sin(rad)
+        return Vector3.new(
+            offset.X * cos - offset.Z * sin,
+            offset.Y,
+            offset.X * sin + offset.Z * cos
+        )
+    end
+
+    -- Dirt floor inside barn
+    local floor = Instance.new("Part")
+    floor.Name = "BarnFloor"
+    floor.Size = Vector3.new(size.X, 0.5, size.Z)
+    floor.Position = position + Vector3.new(0, 0.25, 0)
+    floor.Orientation = Vector3.new(0, rotation, 0)
+    floor.Anchored = true
+    floor.Material = Enum.Material.Ground
+    floor.Color = floorColor
+    floor.Parent = exterior
+
+    -- Back wall (solid red)
+    local backWall = Instance.new("Part")
+    backWall.Name = "BarnBackWall"
+    backWall.Size = Vector3.new(size.X, wallHeight, wallThickness)
+    backWall.Position = position + rotateOffset(Vector3.new(0, wallHeight/2, -size.Z/2 + wallThickness/2))
+    backWall.Orientation = Vector3.new(0, rotation, 0)
+    backWall.Anchored = true
+    backWall.Material = Enum.Material.Wood
+    backWall.Color = barnRed
+    backWall.Parent = exterior
+
+    -- Left wall
+    local leftWall = Instance.new("Part")
+    leftWall.Name = "BarnLeftWall"
+    leftWall.Size = Vector3.new(wallThickness, wallHeight, size.Z)
+    leftWall.Position = position + rotateOffset(Vector3.new(-size.X/2 + wallThickness/2, wallHeight/2, 0))
+    leftWall.Orientation = Vector3.new(0, rotation, 0)
+    leftWall.Anchored = true
+    leftWall.Material = Enum.Material.Wood
+    leftWall.Color = barnRed
+    leftWall.Parent = exterior
+
+    -- Right wall
+    local rightWall = Instance.new("Part")
+    rightWall.Name = "BarnRightWall"
+    rightWall.Size = Vector3.new(wallThickness, wallHeight, size.Z)
+    rightWall.Position = position + rotateOffset(Vector3.new(size.X/2 - wallThickness/2, wallHeight/2, 0))
+    rightWall.Orientation = Vector3.new(0, rotation, 0)
+    rightWall.Anchored = true
+    rightWall.Material = Enum.Material.Wood
+    rightWall.Color = barnRed
+    rightWall.Parent = exterior
+
+    -- Front wall left (beside large barn doors)
+    local doorWidth = 8 -- Large barn doors
+    local frontLeft = Instance.new("Part")
+    frontLeft.Name = "BarnFrontLeft"
+    frontLeft.Size = Vector3.new((size.X - doorWidth) / 2, wallHeight, wallThickness)
+    frontLeft.Position = position + rotateOffset(Vector3.new(-(size.X/4 + doorWidth/4), wallHeight/2, size.Z/2 - wallThickness/2))
+    frontLeft.Orientation = Vector3.new(0, rotation, 0)
+    frontLeft.Anchored = true
+    frontLeft.Material = Enum.Material.Wood
+    frontLeft.Color = barnRed
+    frontLeft.Parent = exterior
+
+    -- Front wall right (beside large barn doors)
+    local frontRight = Instance.new("Part")
+    frontRight.Name = "BarnFrontRight"
+    frontRight.Size = Vector3.new((size.X - doorWidth) / 2, wallHeight, wallThickness)
+    frontRight.Position = position + rotateOffset(Vector3.new((size.X/4 + doorWidth/4), wallHeight/2, size.Z/2 - wallThickness/2))
+    frontRight.Orientation = Vector3.new(0, rotation, 0)
+    frontRight.Anchored = true
+    frontRight.Material = Enum.Material.Wood
+    frontRight.Color = barnRed
+    frontRight.Parent = exterior
+
+    -- Door frame top (above barn doors)
+    local doorTop = Instance.new("Part")
+    doorTop.Name = "BarnDoorTop"
+    doorTop.Size = Vector3.new(doorWidth, 2, wallThickness)
+    doorTop.Position = position + rotateOffset(Vector3.new(0, wallHeight - 1, size.Z/2 - wallThickness/2))
+    doorTop.Orientation = Vector3.new(0, rotation, 0)
+    doorTop.Anchored = true
+    doorTop.Material = Enum.Material.Wood
+    doorTop.Color = barnRed
+    doorTop.Parent = exterior
+
+    -- White trim around door frame
+    local doorFrameLeft = Instance.new("Part")
+    doorFrameLeft.Name = "DoorFrameLeft"
+    doorFrameLeft.Size = Vector3.new(0.4, wallHeight - 2, wallThickness + 0.1)
+    doorFrameLeft.Position = position + rotateOffset(Vector3.new(-doorWidth/2, (wallHeight - 2)/2, size.Z/2 - wallThickness/2))
+    doorFrameLeft.Orientation = Vector3.new(0, rotation, 0)
+    doorFrameLeft.Anchored = true
+    doorFrameLeft.Material = Enum.Material.Wood
+    doorFrameLeft.Color = whiteTrim
+    doorFrameLeft.Parent = exterior
+
+    local doorFrameRight = Instance.new("Part")
+    doorFrameRight.Name = "DoorFrameRight"
+    doorFrameRight.Size = Vector3.new(0.4, wallHeight - 2, wallThickness + 0.1)
+    doorFrameRight.Position = position + rotateOffset(Vector3.new(doorWidth/2, (wallHeight - 2)/2, size.Z/2 - wallThickness/2))
+    doorFrameRight.Orientation = Vector3.new(0, rotation, 0)
+    doorFrameRight.Anchored = true
+    doorFrameRight.Material = Enum.Material.Wood
+    doorFrameRight.Color = whiteTrim
+    doorFrameRight.Parent = exterior
+
+    local doorFrameTopTrim = Instance.new("Part")
+    doorFrameTopTrim.Name = "DoorFrameTopTrim"
+    doorFrameTopTrim.Size = Vector3.new(doorWidth + 0.8, 0.4, wallThickness + 0.1)
+    doorFrameTopTrim.Position = position + rotateOffset(Vector3.new(0, wallHeight - 2.2, size.Z/2 - wallThickness/2))
+    doorFrameTopTrim.Orientation = Vector3.new(0, rotation, 0)
+    doorFrameTopTrim.Anchored = true
+    doorFrameTopTrim.Material = Enum.Material.Wood
+    doorFrameTopTrim.Color = whiteTrim
+    doorFrameTopTrim.Parent = exterior
+
+    -- Open barn doors (swung outward)
+    local doorHeight = wallHeight - 2.5
+    local singleDoorWidth = doorWidth / 2 - 0.3
+
+    local leftDoor = Instance.new("Part")
+    leftDoor.Name = "BarnDoorLeft"
+    leftDoor.Size = Vector3.new(singleDoorWidth, doorHeight, 0.3)
+    local leftDoorPos = position + rotateOffset(Vector3.new(-doorWidth/2 - singleDoorWidth/3, doorHeight/2, size.Z/2 + 1))
+    leftDoor.CFrame = CFrame.new(leftDoorPos) * CFrame.Angles(0, math.rad(rotation + 50), 0)
+    leftDoor.Anchored = true
+    leftDoor.Material = Enum.Material.Wood
+    leftDoor.Color = barnRedDark
+    leftDoor.Parent = exterior
+
+    local rightDoor = Instance.new("Part")
+    rightDoor.Name = "BarnDoorRight"
+    rightDoor.Size = Vector3.new(singleDoorWidth, doorHeight, 0.3)
+    local rightDoorPos = position + rotateOffset(Vector3.new(doorWidth/2 + singleDoorWidth/3, doorHeight/2, size.Z/2 + 1))
+    rightDoor.CFrame = CFrame.new(rightDoorPos) * CFrame.Angles(0, math.rad(rotation - 50), 0)
+    rightDoor.Anchored = true
+    rightDoor.Material = Enum.Material.Wood
+    rightDoor.Color = barnRedDark
+    rightDoor.Parent = exterior
+
+    -- X pattern on doors (classic barn style)
+    local function addDoorX(door)
+        local x1 = Instance.new("Part")
+        x1.Name = "DoorX1"
+        x1.Size = Vector3.new(0.15, doorHeight * 0.7, 0.05)
+        x1.CFrame = door.CFrame * CFrame.new(0, 0, 0.18) * CFrame.Angles(0, 0, math.rad(25))
+        x1.Anchored = true
+        x1.Material = Enum.Material.Wood
+        x1.Color = whiteTrim
+        x1.Parent = exterior
+
+        local x2 = Instance.new("Part")
+        x2.Name = "DoorX2"
+        x2.Size = Vector3.new(0.15, doorHeight * 0.7, 0.05)
+        x2.CFrame = door.CFrame * CFrame.new(0, 0, 0.18) * CFrame.Angles(0, 0, math.rad(-25))
+        x2.Anchored = true
+        x2.Material = Enum.Material.Wood
+        x2.Color = whiteTrim
+        x2.Parent = exterior
+    end
+    addDoorX(leftDoor)
+    addDoorX(rightDoor)
+
+    -- White trim along top of walls
+    local topTrim = Instance.new("Part")
+    topTrim.Name = "TopTrim"
+    topTrim.Size = Vector3.new(size.X + 0.5, 0.4, size.Z + 0.5)
+    topTrim.Position = position + Vector3.new(0, wallHeight + 0.2, 0)
+    topTrim.Orientation = Vector3.new(0, rotation, 0)
+    topTrim.Anchored = true
+    topTrim.Material = Enum.Material.Wood
+    topTrim.Color = whiteTrim
+    topTrim.Parent = exterior
+
+    -- Gambrel roof (classic barn roof - 4 panels)
+    local roofHeight = size.Y * 0.6
+    local roofOverhang = 1.5
+
+    -- Lower left roof panel (steep angle)
+    local roofLowerLeft = Instance.new("Part")
+    roofLowerLeft.Name = "RoofLowerLeft"
+    roofLowerLeft.Size = Vector3.new(size.X * 0.35, 0.4, size.Z + roofOverhang * 2)
+    roofLowerLeft.CFrame = CFrame.new(position + rotateOffset(Vector3.new(-size.X * 0.35, wallHeight + roofHeight * 0.35, 0)))
+        * CFrame.Angles(0, math.rad(rotation), math.rad(55))
+    roofLowerLeft.Anchored = true
+    roofLowerLeft.Material = Enum.Material.Metal
+    roofLowerLeft.Color = roofGray
+    roofLowerLeft.Parent = exterior
+
+    -- Lower right roof panel (steep angle)
+    local roofLowerRight = Instance.new("Part")
+    roofLowerRight.Name = "RoofLowerRight"
+    roofLowerRight.Size = Vector3.new(size.X * 0.35, 0.4, size.Z + roofOverhang * 2)
+    roofLowerRight.CFrame = CFrame.new(position + rotateOffset(Vector3.new(size.X * 0.35, wallHeight + roofHeight * 0.35, 0)))
+        * CFrame.Angles(0, math.rad(rotation), math.rad(-55))
+    roofLowerRight.Anchored = true
+    roofLowerRight.Material = Enum.Material.Metal
+    roofLowerRight.Color = roofGray
+    roofLowerRight.Parent = exterior
+
+    -- Upper left roof panel (shallow angle)
+    local roofUpperLeft = Instance.new("Part")
+    roofUpperLeft.Name = "RoofUpperLeft"
+    roofUpperLeft.Size = Vector3.new(size.X * 0.35, 0.4, size.Z + roofOverhang * 2)
+    roofUpperLeft.CFrame = CFrame.new(position + rotateOffset(Vector3.new(-size.X * 0.12, wallHeight + roofHeight * 0.8, 0)))
+        * CFrame.Angles(0, math.rad(rotation), math.rad(20))
+    roofUpperLeft.Anchored = true
+    roofUpperLeft.Material = Enum.Material.Metal
+    roofUpperLeft.Color = roofGray
+    roofUpperLeft.Parent = exterior
+
+    -- Upper right roof panel (shallow angle)
+    local roofUpperRight = Instance.new("Part")
+    roofUpperRight.Name = "RoofUpperRight"
+    roofUpperRight.Size = Vector3.new(size.X * 0.35, 0.4, size.Z + roofOverhang * 2)
+    roofUpperRight.CFrame = CFrame.new(position + rotateOffset(Vector3.new(size.X * 0.12, wallHeight + roofHeight * 0.8, 0)))
+        * CFrame.Angles(0, math.rad(rotation), math.rad(-20))
+    roofUpperRight.Anchored = true
+    roofUpperRight.Material = Enum.Material.Metal
+    roofUpperRight.Color = roofGray
+    roofUpperRight.Parent = exterior
+
+    -- Roof ridge (peak)
+    local roofRidge = Instance.new("Part")
+    roofRidge.Name = "RoofRidge"
+    roofRidge.Size = Vector3.new(0.5, 0.3, size.Z + roofOverhang * 2)
+    roofRidge.Position = position + Vector3.new(0, wallHeight + roofHeight + 0.15, 0)
+    roofRidge.Orientation = Vector3.new(0, rotation, 0)
+    roofRidge.Anchored = true
+    roofRidge.Material = Enum.Material.Metal
+    roofRidge.Color = Color3.fromRGB(60, 60, 65)
+    roofRidge.Parent = exterior
+
+    -- Hay bales outside barn (decorative)
+    local hayColors = {
+        Color3.fromRGB(218, 190, 130),
+        Color3.fromRGB(195, 170, 115),
+    }
+    for i = 1, 3 do
+        local hay = Instance.new("Part")
+        hay.Name = "HayBale" .. i
+        hay.Size = Vector3.new(1.2, 0.8, 1)
+        hay.Position = position + rotateOffset(Vector3.new(-size.X/2 - 2 + (i-1) * 1.5, 0.9, size.Z/4))
+        hay.Orientation = Vector3.new(0, rotation + (i * 15), 0)
+        hay.Anchored = true
+        hay.Material = Enum.Material.Fabric
+        hay.Color = hayColors[(i % 2) + 1]
+        hay.Parent = exterior
+    end
+
+    -- Entrance trigger (invisible, walk-through teleport)
+    local entrance = Instance.new("Part")
+    entrance.Name = "Entrance"
+    entrance.Size = Vector3.new(doorWidth - 1, wallHeight - 2, 2)
+    entrance.Position = position + rotateOffset(Vector3.new(0, (wallHeight - 2)/2, size.Z/2 + 1))
+    entrance.Orientation = Vector3.new(0, rotation, 0)
+    entrance.Anchored = true
+    entrance.Transparency = 1
+    entrance.CanCollide = false
+    entrance.Parent = exterior
+
+    -- Debounce to prevent multiple teleports
+    local debounce = {}
+    entrance.Touched:Connect(function(hit)
+        local character = hit.Parent
+        local humanoid = character and character:FindFirstChild("Humanoid")
+        if not humanoid then return end
+
+        local player = Players:GetPlayerFromCharacter(character)
+        if not player then return end
+
+        if debounce[player.UserId] then return end
+        debounce[player.UserId] = true
+
+        teleportToInterior(player, buildingName)
+
+        task.delay(1, function()
+            debounce[player.UserId] = nil
+        end)
+    end)
+
+    -- Building sign (centered above door)
+    createSign(exterior, name, position + rotateOffset(Vector3.new(0, wallHeight + roofHeight + 1.5, size.Z/2 + 1)), Vector3.new(8, 2.5, 0.3))
+
+    -- Torches by entrance
+    createTorch(exterior, position + rotateOffset(Vector3.new(-doorWidth/2 - 1.5, 4, size.Z/2 + 0.5)))
+    createTorch(exterior, position + rotateOffset(Vector3.new(doorWidth/2 + 1.5, 4, size.Z/2 + 0.5)))
+
+    exterior.Parent = villageFolder
+    return exterior
 end
 
 -- Create building exterior (shell with entrance)
@@ -1616,61 +1955,228 @@ local function createGoldMine()
     local exteriorX, exteriorZ = 25, 50
     local extGround = GROUND_Y
 
-    -- Create mine entrance (not a building - a cave opening)
+    -- Create mine entrance (rocky hillside with cave opening)
     local mineEntrance = Instance.new("Model")
     mineEntrance.Name = "GoldMine_Exterior"
 
-    -- Rock formation around entrance (rotated to face east)
-    local entranceRock = Instance.new("Part")
-    entranceRock.Name = "EntranceRock"
-    entranceRock.Size = Vector3.new(8, 12, 16)  -- Swapped X and Z for east-facing
-    entranceRock.Position = Vector3.new(exteriorX, extGround + 6, exteriorZ)
-    entranceRock.Anchored = true
-    entranceRock.Material = Enum.Material.Rock
-    entranceRock.Color = Color3.fromRGB(80, 75, 70)
-    entranceRock.Parent = mineEntrance
+    -- Main rocky hillside/cliff (irregular shape using multiple rocks)
+    local rockColors = {
+        Color3.fromRGB(75, 70, 65),
+        Color3.fromRGB(85, 80, 75),
+        Color3.fromRGB(70, 65, 60),
+        Color3.fromRGB(90, 85, 80),
+    }
 
-    -- Cave opening (dark hole) - faces EAST (+X toward path)
+    -- Large back rock (forms the main cliff face)
+    local mainCliff = Instance.new("Part")
+    mainCliff.Name = "MainCliff"
+    mainCliff.Size = Vector3.new(12, 14, 18)
+    mainCliff.Position = Vector3.new(exteriorX - 2, extGround + 5, exteriorZ)
+    mainCliff.Anchored = true
+    mainCliff.Material = Enum.Material.Rock
+    mainCliff.Color = rockColors[1]
+    mainCliff.Parent = mineEntrance
+
+    -- Upper rock formation (makes it look more natural/irregular)
+    local upperRock = Instance.new("Part")
+    upperRock.Name = "UpperRock"
+    upperRock.Size = Vector3.new(10, 6, 14)
+    upperRock.Position = Vector3.new(exteriorX - 1, extGround + 13, exteriorZ + 1)
+    upperRock.Orientation = Vector3.new(5, 10, -8)
+    upperRock.Anchored = true
+    upperRock.Material = Enum.Material.Rock
+    upperRock.Color = rockColors[2]
+    upperRock.Parent = mineEntrance
+
+    -- Side rock (left side of entrance)
+    local leftRock = Instance.new("Part")
+    leftRock.Name = "LeftRock"
+    leftRock.Size = Vector3.new(8, 10, 8)
+    leftRock.Position = Vector3.new(exteriorX, extGround + 4, exteriorZ - 8)
+    leftRock.Orientation = Vector3.new(-5, 15, 10)
+    leftRock.Anchored = true
+    leftRock.Material = Enum.Material.Rock
+    leftRock.Color = rockColors[3]
+    leftRock.Parent = mineEntrance
+
+    -- Side rock (right side of entrance)
+    local rightRock = Instance.new("Part")
+    rightRock.Name = "RightRock"
+    rightRock.Size = Vector3.new(8, 10, 8)
+    rightRock.Position = Vector3.new(exteriorX, extGround + 4, exteriorZ + 8)
+    rightRock.Orientation = Vector3.new(8, -12, -6)
+    rightRock.Anchored = true
+    rightRock.Material = Enum.Material.Rock
+    rightRock.Color = rockColors[4]
+    rightRock.Parent = mineEntrance
+
+    -- Scattered boulders BEHIND and to the SIDES of entrance (not blocking path)
+    -- Path comes from +X (east), so boulders go at -X (west/behind) or far Z (sides)
+    local boulderPositions = {
+        -- Behind the cliff (west side, not visible from path but adds depth)
+        { pos = Vector3.new(exteriorX - 8, extGround + 1, exteriorZ - 4), size = Vector3.new(3, 2.5, 3), rot = Vector3.new(10, 25, 5) },
+        { pos = Vector3.new(exteriorX - 6, extGround + 0.8, exteriorZ + 5), size = Vector3.new(2.5, 2, 2.5), rot = Vector3.new(-8, 40, 12) },
+        -- Far to the sides (won't block approach)
+        { pos = Vector3.new(exteriorX + 2, extGround + 0.5, exteriorZ - 14), size = Vector3.new(2, 1.5, 2), rot = Vector3.new(15, -20, 8) },
+        { pos = Vector3.new(exteriorX + 2, extGround + 0.6, exteriorZ + 14), size = Vector3.new(2.2, 1.8, 2.2), rot = Vector3.new(5, 60, -10) },
+        -- Small ones tucked against the cliff sides
+        { pos = Vector3.new(exteriorX + 3, extGround + 0.4, exteriorZ - 10), size = Vector3.new(1.5, 1.2, 1.5), rot = Vector3.new(-5, 30, 15) },
+        { pos = Vector3.new(exteriorX + 3, extGround + 0.5, exteriorZ + 10), size = Vector3.new(1.8, 1.4, 1.8), rot = Vector3.new(12, -45, 5) },
+    }
+
+    for i, boulder in ipairs(boulderPositions) do
+        local rock = Instance.new("Part")
+        rock.Name = "Boulder" .. i
+        rock.Size = boulder.size
+        rock.Position = boulder.pos
+        rock.Orientation = boulder.rot
+        rock.Anchored = true
+        rock.Material = Enum.Material.Rock
+        rock.Color = rockColors[(i % #rockColors) + 1]
+        rock.Parent = mineEntrance
+    end
+
+    -- Small rock debris along the SIDES of the entrance path (not in the middle)
+    for i = 1, 8 do
+        local debris = Instance.new("Part")
+        debris.Name = "Debris" .. i
+        -- Alternate between left side (Z-) and right side (Z+) of the path
+        local sideOffset = (i % 2 == 0) and (exteriorZ + 6 + math.random() * 4) or (exteriorZ - 6 - math.random() * 4)
+        debris.Size = Vector3.new(0.5 + math.random() * 0.8, 0.4 + math.random() * 0.5, 0.5 + math.random() * 0.8)
+        debris.Position = Vector3.new(
+            exteriorX + 4 + math.random() * 4,  -- Near the entrance but to the sides
+            extGround + 0.2,
+            sideOffset
+        )
+        debris.Orientation = Vector3.new(math.random() * 30, math.random() * 360, math.random() * 30)
+        debris.Anchored = true
+        debris.Material = Enum.Material.Rock
+        debris.Color = rockColors[(i % #rockColors) + 1]
+        debris.Parent = mineEntrance
+    end
+
+    -- THE CAVE ENTRANCE (dark hole carved into rock)
     local caveOpening = Instance.new("Part")
     caveOpening.Name = "CaveOpening"
-    caveOpening.Size = Vector3.new(4, 7, 6)  -- Swapped for east-facing
-    caveOpening.Position = Vector3.new(exteriorX + 5, extGround + 3.5, exteriorZ)
+    caveOpening.Size = Vector3.new(3, 7, 8)
+    caveOpening.Position = Vector3.new(exteriorX + 4, extGround + 3.5, exteriorZ)
     caveOpening.Anchored = true
     caveOpening.Material = Enum.Material.Slate
-    caveOpening.Color = Color3.fromRGB(20, 18, 15)
+    caveOpening.Color = Color3.fromRGB(10, 8, 5) -- Very dark, almost black
     caveOpening.Parent = mineEntrance
 
-    -- Wooden support beams at entrance (rotated for east-facing)
-    for _, zOff in {-3.5, 3.5} do
-        local beam = Instance.new("Part")
-        beam.Size = Vector3.new(0.8, 7, 0.8)
-        beam.Position = Vector3.new(exteriorX + 5, extGround + 3.5, exteriorZ + zOff)
-        beam.Anchored = true
-        beam.Material = Enum.Material.Wood
-        beam.Color = Color3.fromRGB(70, 50, 30)
-        beam.Parent = mineEntrance
+    -- Inner darkness (makes the hole look deeper)
+    local innerDark = Instance.new("Part")
+    innerDark.Name = "InnerDarkness"
+    innerDark.Size = Vector3.new(2, 6, 6)
+    innerDark.Position = Vector3.new(exteriorX + 2, extGround + 3, exteriorZ)
+    innerDark.Anchored = true
+    innerDark.Material = Enum.Material.Slate
+    innerDark.Color = Color3.fromRGB(5, 3, 2) -- Even darker inside
+    innerDark.Parent = mineEntrance
+
+    -- Wooden mine supports at entrance
+    local supportColor = Color3.fromRGB(60, 40, 25)
+    -- Left support beam
+    local leftBeam = Instance.new("Part")
+    leftBeam.Name = "LeftSupport"
+    leftBeam.Size = Vector3.new(0.8, 7, 0.8)
+    leftBeam.Position = Vector3.new(exteriorX + 5, extGround + 3.5, exteriorZ - 3.5)
+    leftBeam.Anchored = true
+    leftBeam.Material = Enum.Material.Wood
+    leftBeam.Color = supportColor
+    leftBeam.Parent = mineEntrance
+
+    -- Right support beam
+    local rightBeam = Instance.new("Part")
+    rightBeam.Name = "RightSupport"
+    rightBeam.Size = Vector3.new(0.8, 7, 0.8)
+    rightBeam.Position = Vector3.new(exteriorX + 5, extGround + 3.5, exteriorZ + 3.5)
+    rightBeam.Anchored = true
+    rightBeam.Material = Enum.Material.Wood
+    rightBeam.Color = supportColor
+    rightBeam.Parent = mineEntrance
+
+    -- Top support beam (horizontal)
+    local topBeam = Instance.new("Part")
+    topBeam.Name = "TopSupport"
+    topBeam.Size = Vector3.new(0.8, 0.6, 8)
+    topBeam.Position = Vector3.new(exteriorX + 5, extGround + 7.3, exteriorZ)
+    topBeam.Anchored = true
+    topBeam.Material = Enum.Material.Wood
+    topBeam.Color = supportColor
+    topBeam.Parent = mineEntrance
+
+    -- Torches on either side of entrance
+    createTorch(mineEntrance, Vector3.new(exteriorX + 6, extGround + 5, exteriorZ - 4.5))
+    createTorch(mineEntrance, Vector3.new(exteriorX + 6, extGround + 5, exteriorZ + 4.5))
+
+    -- Mine cart tracks off to the RIGHT side of entrance (not blocking path)
+    local trackColor = Color3.fromRGB(80, 70, 60)
+    local trackZOffset = 8  -- Offset tracks to the right side
+    for _, zOff in ipairs({-1.2, 1.2}) do
+        local rail = Instance.new("Part")
+        rail.Name = "Rail"
+        rail.Size = Vector3.new(8, 0.15, 0.25)
+        rail.Position = Vector3.new(exteriorX + 7, extGround + 0.1, exteriorZ + trackZOffset + zOff)
+        rail.Anchored = true
+        rail.Material = Enum.Material.Metal
+        rail.Color = trackColor
+        rail.Parent = mineEntrance
     end
-    local beamTop = Instance.new("Part")
-    beamTop.Size = Vector3.new(0.8, 0.6, 8)  -- Rotated for east-facing
-    beamTop.Position = Vector3.new(exteriorX + 5, extGround + 7.3, exteriorZ)
-    beamTop.Anchored = true
-    beamTop.Material = Enum.Material.Wood
-    beamTop.Color = Color3.fromRGB(70, 50, 30)
-    beamTop.Parent = mineEntrance
+    -- Rail ties
+    for i = 0, 3 do
+        local tie = Instance.new("Part")
+        tie.Name = "RailTie" .. i
+        tie.Size = Vector3.new(0.6, 0.1, 3)
+        tie.Position = Vector3.new(exteriorX + 4 + i * 2, extGround + 0.05, exteriorZ + trackZOffset)
+        tie.Anchored = true
+        tie.Material = Enum.Material.Wood
+        tie.Color = Color3.fromRGB(50, 35, 20)
+        tie.Parent = mineEntrance
+    end
 
-    -- Torches at entrance (positioned for east-facing entrance)
-    createTorch(mineEntrance, Vector3.new(exteriorX + 5, extGround + 4, exteriorZ - 5))
-    createTorch(mineEntrance, Vector3.new(exteriorX + 5, extGround + 4, exteriorZ + 5))
+    -- Old mine cart off to the side (visual prop, not blocking entrance)
+    local cartBody = Instance.new("Part")
+    cartBody.Name = "MineCart"
+    cartBody.Size = Vector3.new(2.5, 1.5, 3)
+    cartBody.Position = Vector3.new(exteriorX + 9, extGround + 1, exteriorZ + trackZOffset)
+    cartBody.Anchored = true
+    cartBody.Material = Enum.Material.Metal
+    cartBody.Color = Color3.fromRGB(100, 80, 60)
+    cartBody.Parent = mineEntrance
 
-    -- Sign (facing east, toward the path)
+    -- Gold ore spilling out of cart
+    for i = 1, 3 do
+        local ore = Instance.new("Part")
+        ore.Name = "CartOre" .. i
+        ore.Shape = Enum.PartType.Ball
+        ore.Size = Vector3.new(0.6, 0.6, 0.6)
+        ore.Position = Vector3.new(exteriorX + 9 + (i-2) * 0.5, extGround + 1.9, exteriorZ + trackZOffset + (i-2) * 0.4)
+        ore.Anchored = true
+        ore.Material = Enum.Material.Metal
+        ore.Color = Color3.fromRGB(255, 200, 50) -- Gold color
+        ore.Parent = mineEntrance
+    end
+
+    -- Hanging sign off to the LEFT side (not blocking approach path)
+    local signPost = Instance.new("Part")
+    signPost.Name = "SignPost"
+    signPost.Size = Vector3.new(0.4, 5, 0.4)
+    signPost.Position = Vector3.new(exteriorX + 6, extGround + 2.5, exteriorZ - 10)
+    signPost.Anchored = true
+    signPost.Material = Enum.Material.Wood
+    signPost.Color = Color3.fromRGB(50, 35, 20)
+    signPost.Parent = mineEntrance
+
     local signBoard = Instance.new("Part")
     signBoard.Name = "Sign"
-    signBoard.Size = Vector3.new(0.3, 2, 6)
-    signBoard.Position = Vector3.new(exteriorX + 5, extGround + 9, exteriorZ)
-    signBoard.Orientation = Vector3.new(0, 90, 0)  -- Face east
+    signBoard.Size = Vector3.new(0.3, 1.8, 5)
+    signBoard.Position = Vector3.new(exteriorX + 6.2, extGround + 5.5, exteriorZ - 10)
+    signBoard.Orientation = Vector3.new(0, 90, -5)
     signBoard.Anchored = true
     signBoard.Material = Enum.Material.Wood
-    signBoard.Color = Color3.fromRGB(60, 40, 25)
+    signBoard.Color = Color3.fromRGB(70, 50, 30)
     signBoard.Parent = mineEntrance
 
     local gui = Instance.new("SurfaceGui")
@@ -1681,16 +2187,16 @@ local function createGoldMine()
     label.Size = UDim2.new(1, 0, 1, 0)
     label.BackgroundTransparency = 1
     label.Text = "GOLD MINE"
-    label.TextColor3 = Color3.fromRGB(255, 230, 180)
+    label.TextColor3 = Color3.fromRGB(255, 215, 0)
     label.TextScaled = true
     label.Font = Enum.Font.Antique
     label.Parent = gui
 
-    -- Walk-through entrance trigger (facing east)
+    -- Walk-through entrance trigger (the black hole)
     local entranceTrigger = Instance.new("Part")
     entranceTrigger.Name = "Entrance"
-    entranceTrigger.Size = Vector3.new(2, 6, 5)  -- Rotated for east-facing
-    entranceTrigger.Position = Vector3.new(exteriorX + 6, extGround + 3, exteriorZ)
+    entranceTrigger.Size = Vector3.new(3, 6, 6)
+    entranceTrigger.Position = Vector3.new(exteriorX + 4, extGround + 3, exteriorZ)
     entranceTrigger.Anchored = true
     entranceTrigger.Transparency = 1
     entranceTrigger.CanCollide = false
@@ -1727,7 +2233,7 @@ local function createGoldMine()
         smelter = Vector3.new(baseX - 15, GROUND_Y, baseZ - 20),     -- Back-left: smelter
         goldChest = Vector3.new(baseX + 15, GROUND_Y, baseZ - 20),   -- Back-right: chest (near smelter)
         -- Front-left area (walls at baseX +/- 40, so positions must be inside that range)
-        oreVein = Vector3.new(baseX - 32, GROUND_Y, baseZ + 10),     -- Left side: ore vein INSIDE room (walls at -40)
+        oreVein = Vector3.new(baseX - 37, GROUND_Y, baseZ + 10),     -- Left wall: ore vein embedded in wall (wall at -40)
         -- Front-right area (upgrades)
         upgradeKiosk = Vector3.new(baseX + 32, GROUND_Y, baseZ + 10), -- Right side: upgrade kiosk INSIDE room (walls at +40)
         -- Hire stations on SIDES of entrance portal, AGAINST entrance wall
@@ -2009,15 +2515,15 @@ local function createGoldMine()
     oreVeinBase.Color = Color3.fromRGB(65, 60, 55)
     oreVeinBase.Parent = mineModel
 
-    -- Gold veins running through the rock
+    -- Gold veins running through the rock (on +X side, facing into room)
     for i = 1, 8 do
         local goldVein = Instance.new("Part")
         goldVein.Name = "GoldVein" .. i
-        goldVein.Size = Vector3.new(1.5 + math.random(), 0.6 + math.random() * 0.4, 0.4)
+        goldVein.Size = Vector3.new(0.4, 0.6 + math.random() * 0.4, 1.5 + math.random())
         goldVein.Position = oreVeinPos + Vector3.new(
-            -4 + math.random() * 8,
+            5 + math.random() * 0.5,  -- On +X face (room-facing side)
             1 + math.random() * 5,
-            3 + math.random() * 0.5
+            -2 + math.random() * 4
         )
         goldVein.Anchored = true
         goldVein.Material = Enum.Material.Neon
@@ -2041,7 +2547,7 @@ local function createGoldMine()
     pickaxeRack.Color = Color3.fromRGB(80, 55, 35)
     pickaxeRack.Parent = mineModel
 
-    createSign(mineModel, "ORE VEIN", oreVeinPos + Vector3.new(0, 9, 3), Vector3.new(5, 1.5, 0.3))
+    createSign(mineModel, "ORE VEIN", oreVeinPos + Vector3.new(6, 9, 0), Vector3.new(0.3, 1.5, 5))  -- On +X side, facing into room
 
     -- INTERACTION: Mine Ore
     createInteraction(oreVeinBase, "Mine Ore", "Gold Vein", 1, function(player)
@@ -2442,7 +2948,7 @@ local function createGoldMine()
     end)
 
     -- ========== STATION 3: GOLD CHEST (far right of cave) ==========
-    -- Chest faces forward (toward +Z / entrance) so players can see it from the center
+    -- Chest faces toward room center (-Z direction) so players can see it from the entrance
     local chestPos = GoldMineState.positions.goldChest
 
     local goldChest = Instance.new("Part")
@@ -2451,9 +2957,9 @@ local function createGoldMine()
     goldChest.Anchored = true
     goldChest.Material = Enum.Material.Wood
     goldChest.Color = Color3.fromRGB(100, 70, 45)
-    -- Face forward toward entrance (+Z direction)
+    -- Face toward room center (-Z direction, rotated 180 degrees from original)
     local chestCenterPos = chestPos + Vector3.new(0, 1.5, 0)
-    goldChest.CFrame = CFrame.lookAt(chestCenterPos, chestCenterPos + Vector3.new(0, 0, 10))
+    goldChest.CFrame = CFrame.lookAt(chestCenterPos, chestCenterPos + Vector3.new(0, 0, -10))
     goldChest.Parent = mineModel
 
     local chestLid = Instance.new("Part")
@@ -2464,7 +2970,7 @@ local function createGoldMine()
     chestLid.CFrame = goldChest.CFrame * CFrame.new(0, 1.9, 0)
     chestLid.Parent = mineModel
 
-    -- Gold trim and lock (on front of chest, facing +Z)
+    -- Gold trim and lock (on front of chest, facing -Z toward room center)
     local goldTrim = Instance.new("Part")
     goldTrim.Size = Vector3.new(5.5, 0.4, 0.4)
     goldTrim.Anchored = true
@@ -3657,8 +4163,10 @@ end
 local LumberMillState = {
     level = 1,
     xp = 0,
-    loggers = {},       -- NPC loggers (trees → sawmill) - renamed from lumberjacks
-    haulers = {},       -- NPC haulers (sawmill → storage) - renamed from sawyers
+    loggers = {},           -- NPC loggers (trees → sawmill)
+    haulers = {},           -- NPC haulers (sawmill → storage)
+    waitingLoggers = {},    -- Array of waiting logger NPCs at hiring booth
+    waitingHaulers = {},    -- Array of waiting hauler NPCs at hiring booth
     equipment = {
         axeLevel = 1,       -- Logs per swing, chop speed
         sawmillLevel = 1,   -- Planks per log, speed at milestones
@@ -3870,92 +4378,279 @@ end
 local function createLumberMill()
     print("[4/8] Creating Lumber Mill with FOREST interior...")
 
-    -- ========== EXTERIOR IN VILLAGE ==========
+    -- ========== EXTERIOR IN VILLAGE (LUMBER YARD) ==========
     -- Right side of path, entrance facing WEST (toward main path at X=60)
     local exteriorX, exteriorZ = 95, 50
     local extGround = GROUND_Y
+    local yardWidth, yardDepth = 30, 25  -- Size of the lumber yard
 
-    -- Forest entrance with wooden arch (rotated to face west)
-    local lumberEntrance = Instance.new("Model")
-    lumberEntrance.Name = "LumberMill_Exterior"
+    local lumberYard = Instance.new("Model")
+    lumberYard.Name = "LumberMill_Exterior"
 
-    -- Wooden gate posts (facing west, toward path)
-    for _, zOff in {-4, 4} do
+    -- ===== GROUND: Dirt/sawdust floor =====
+    local yardFloor = Instance.new("Part")
+    yardFloor.Name = "YardFloor"
+    yardFloor.Size = Vector3.new(yardWidth, 0.5, yardDepth)
+    yardFloor.Position = Vector3.new(exteriorX + yardWidth/2 - 5, extGround - 0.25, exteriorZ)
+    yardFloor.Anchored = true
+    yardFloor.Material = Enum.Material.Sand  -- Sawdust look
+    yardFloor.Color = Color3.fromRGB(160, 130, 90)
+    yardFloor.Parent = lumberYard
+
+    -- ===== WOODEN FENCE PERIMETER =====
+    local fenceHeight = 4
+    local fenceColor = Color3.fromRGB(100, 70, 45)
+
+    -- Back fence (east side)
+    local backFence = Instance.new("Part")
+    backFence.Size = Vector3.new(1, fenceHeight, yardDepth)
+    backFence.Position = Vector3.new(exteriorX + yardWidth - 5, extGround + fenceHeight/2, exteriorZ)
+    backFence.Anchored = true
+    backFence.Material = Enum.Material.Wood
+    backFence.Color = fenceColor
+    backFence.Parent = lumberYard
+
+    -- North fence
+    local northFence = Instance.new("Part")
+    northFence.Size = Vector3.new(yardWidth, fenceHeight, 1)
+    northFence.Position = Vector3.new(exteriorX + yardWidth/2 - 5, extGround + fenceHeight/2, exteriorZ + yardDepth/2)
+    northFence.Anchored = true
+    northFence.Material = Enum.Material.Wood
+    northFence.Color = fenceColor
+    northFence.Parent = lumberYard
+
+    -- South fence
+    local southFence = Instance.new("Part")
+    southFence.Size = Vector3.new(yardWidth, fenceHeight, 1)
+    southFence.Position = Vector3.new(exteriorX + yardWidth/2 - 5, extGround + fenceHeight/2, exteriorZ - yardDepth/2)
+    southFence.Anchored = true
+    southFence.Material = Enum.Material.Wood
+    southFence.Color = fenceColor
+    southFence.Parent = lumberYard
+
+    -- Fence posts (vertical supports)
+    for _, pos in ipairs({
+        Vector3.new(exteriorX - 5, extGround, exteriorZ - yardDepth/2),
+        Vector3.new(exteriorX - 5, extGround, exteriorZ + yardDepth/2),
+        Vector3.new(exteriorX + yardWidth - 5, extGround, exteriorZ - yardDepth/2),
+        Vector3.new(exteriorX + yardWidth - 5, extGround, exteriorZ + yardDepth/2),
+    }) do
         local post = Instance.new("Part")
-        post.Size = Vector3.new(1.5, 10, 1.5)
-        post.Position = Vector3.new(exteriorX - 5, extGround + 5, exteriorZ + zOff)
+        post.Size = Vector3.new(1.2, fenceHeight + 2, 1.2)
+        post.Position = pos + Vector3.new(0, (fenceHeight + 2)/2, 0)
         post.Anchored = true
         post.Material = Enum.Material.Wood
-        post.Color = Color3.fromRGB(90, 60, 35)
-        post.Parent = lumberEntrance
+        post.Color = Color3.fromRGB(80, 55, 35)
+        post.Parent = lumberYard
     end
 
-    -- Wooden arch (rotated to face west)
-    local arch = Instance.new("Part")
-    arch.Size = Vector3.new(2, 1.5, 10)  -- Rotated
-    arch.Position = Vector3.new(exteriorX - 5, extGround + 10.5, exteriorZ)
-    arch.Anchored = true
-    arch.Material = Enum.Material.Wood
-    arch.Color = Color3.fromRGB(80, 55, 30)
-    arch.Parent = lumberEntrance
+    -- Front fence (west side) - with gap for entrance (entrance is 6 studs wide at center)
+    local gateGap = 4  -- Half the gate width (total gap = 8 studs)
 
-    -- Decorative trees at entrance (positioned for west-facing)
-    for _, zOff in {-8, 8} do
-        local trunk = Instance.new("Part")
-        trunk.Shape = Enum.PartType.Cylinder
-        trunk.Size = Vector3.new(12, 2, 2)
-        trunk.Position = Vector3.new(exteriorX, extGround + 6, exteriorZ + zOff)
-        trunk.Orientation = Vector3.new(0, 0, 90)
-        trunk.Anchored = true
-        trunk.Material = Enum.Material.Wood
-        trunk.Color = Color3.fromRGB(80, 55, 35)
-        trunk.Parent = lumberEntrance
+    -- Front fence - SOUTH section (from south corner to gate)
+    local frontFenceSouth = Instance.new("Part")
+    local southSectionLength = (yardDepth/2) - gateGap
+    frontFenceSouth.Size = Vector3.new(1, fenceHeight, southSectionLength)
+    frontFenceSouth.Position = Vector3.new(exteriorX - 5, extGround + fenceHeight/2, exteriorZ - gateGap - southSectionLength/2)
+    frontFenceSouth.Anchored = true
+    frontFenceSouth.Material = Enum.Material.Wood
+    frontFenceSouth.Color = fenceColor
+    frontFenceSouth.Parent = lumberYard
 
-        local leaves = Instance.new("Part")
-        leaves.Shape = Enum.PartType.Ball
-        leaves.Size = Vector3.new(8, 10, 8)
-        leaves.Position = Vector3.new(exteriorX, extGround + 14, exteriorZ + zOff)
-        leaves.Anchored = true
-        leaves.Material = Enum.Material.Grass
-        leaves.Color = Color3.fromRGB(50, 100, 40)
-        leaves.Parent = lumberEntrance
+    -- Front fence - NORTH section (from gate to north corner)
+    local frontFenceNorth = Instance.new("Part")
+    local northSectionLength = (yardDepth/2) - gateGap
+    frontFenceNorth.Size = Vector3.new(1, fenceHeight, northSectionLength)
+    frontFenceNorth.Position = Vector3.new(exteriorX - 5, extGround + fenceHeight/2, exteriorZ + gateGap + northSectionLength/2)
+    frontFenceNorth.Anchored = true
+    frontFenceNorth.Material = Enum.Material.Wood
+    frontFenceNorth.Color = fenceColor
+    frontFenceNorth.Parent = lumberYard
+
+    -- ===== SAWMILL SHED (back right corner) =====
+    local shedX, shedZ = exteriorX + 15, exteriorZ - 6
+    local shedWidth, shedDepth, shedHeight = 10, 8, 6
+
+    -- Shed base/floor
+    local shedFloor = Instance.new("Part")
+    shedFloor.Size = Vector3.new(shedWidth, 0.5, shedDepth)
+    shedFloor.Position = Vector3.new(shedX, extGround + 0.25, shedZ)
+    shedFloor.Anchored = true
+    shedFloor.Material = Enum.Material.WoodPlanks
+    shedFloor.Color = Color3.fromRGB(90, 65, 40)
+    shedFloor.Parent = lumberYard
+
+    -- Shed walls (3 walls, open front facing west)
+    local shedBack = Instance.new("Part")
+    shedBack.Size = Vector3.new(0.5, shedHeight, shedDepth)
+    shedBack.Position = Vector3.new(shedX + shedWidth/2, extGround + shedHeight/2, shedZ)
+    shedBack.Anchored = true
+    shedBack.Material = Enum.Material.Wood
+    shedBack.Color = Color3.fromRGB(85, 60, 38)
+    shedBack.Parent = lumberYard
+
+    for _, zOff in ipairs({-shedDepth/2, shedDepth/2}) do
+        local sideWall = Instance.new("Part")
+        sideWall.Size = Vector3.new(shedWidth, shedHeight, 0.5)
+        sideWall.Position = Vector3.new(shedX, extGround + shedHeight/2, shedZ + zOff)
+        sideWall.Anchored = true
+        sideWall.Material = Enum.Material.Wood
+        sideWall.Color = Color3.fromRGB(85, 60, 38)
+        sideWall.Parent = lumberYard
     end
 
-    -- Sign (facing west)
+    -- Shed roof (slanted)
+    local shedRoof = Instance.new("Part")
+    shedRoof.Size = Vector3.new(shedWidth + 2, 0.5, shedDepth + 2)
+    shedRoof.Position = Vector3.new(shedX, extGround + shedHeight + 0.25, shedZ)
+    shedRoof.Orientation = Vector3.new(0, 0, -10)  -- Slight slant
+    shedRoof.Anchored = true
+    shedRoof.Material = Enum.Material.Wood
+    shedRoof.Color = Color3.fromRGB(70, 50, 30)
+    shedRoof.Parent = lumberYard
+
+    -- Sawmill blade (circular saw in shed)
+    local sawBlade = Instance.new("Part")
+    sawBlade.Shape = Enum.PartType.Cylinder
+    sawBlade.Size = Vector3.new(0.3, 4, 4)
+    sawBlade.Position = Vector3.new(shedX - 2, extGround + 2.5, shedZ)
+    sawBlade.Orientation = Vector3.new(0, 90, 0)
+    sawBlade.Anchored = true
+    sawBlade.Material = Enum.Material.Metal
+    sawBlade.Color = Color3.fromRGB(150, 150, 160)
+    sawBlade.Parent = lumberYard
+
+    -- ===== LOG PILES (raw logs waiting to be processed) =====
+    local logPileX, logPileZ = exteriorX + 5, exteriorZ + 6
+    for row = 1, 3 do
+        for col = 1, 4 do
+            local log = Instance.new("Part")
+            log.Shape = Enum.PartType.Cylinder
+            log.Size = Vector3.new(6, 1.2, 1.2)
+            log.Position = Vector3.new(logPileX + (col-1) * 1.5, extGround + 0.6 + (row-1) * 1.1, logPileZ)
+            log.Orientation = Vector3.new(0, 0, 90)
+            log.Anchored = true
+            log.Material = Enum.Material.Wood
+            log.Color = Color3.fromRGB(90 + math.random(20), 60 + math.random(15), 35 + math.random(10))
+            log.Parent = lumberYard
+        end
+    end
+
+    -- ===== PLANK STACKS (finished lumber) =====
+    local plankX, plankZ = exteriorX + 18, exteriorZ + 8
+    for layer = 1, 4 do
+        for i = 1, 5 do
+            local plank = Instance.new("Part")
+            plank.Size = Vector3.new(6, 0.3, 1)
+            plank.Position = Vector3.new(plankX, extGround + 0.15 + (layer-1) * 0.35, plankZ - 2 + i * 1.1)
+            plank.Anchored = true
+            plank.Material = Enum.Material.Wood
+            plank.Color = Color3.fromRGB(200, 170, 120)
+            plank.Parent = lumberYard
+        end
+    end
+
+    -- ===== CHOPPING BLOCK with axe =====
+    local blockX, blockZ = exteriorX + 2, exteriorZ - 4
+    local choppingBlock = Instance.new("Part")
+    choppingBlock.Size = Vector3.new(2, 1.5, 2)
+    choppingBlock.Position = Vector3.new(blockX, extGround + 0.75, blockZ)
+    choppingBlock.Anchored = true
+    choppingBlock.Material = Enum.Material.Wood
+    choppingBlock.Color = Color3.fromRGB(100, 70, 45)
+    choppingBlock.Parent = lumberYard
+
+    -- Axe stuck in block
+    local axeHandle = Instance.new("Part")
+    axeHandle.Size = Vector3.new(0.3, 2, 0.3)
+    axeHandle.Position = Vector3.new(blockX, extGround + 2.5, blockZ)
+    axeHandle.Orientation = Vector3.new(0, 0, 15)
+    axeHandle.Anchored = true
+    axeHandle.Material = Enum.Material.Wood
+    axeHandle.Color = Color3.fromRGB(120, 80, 50)
+    axeHandle.Parent = lumberYard
+
+    local axeHead = Instance.new("Part")
+    axeHead.Size = Vector3.new(0.8, 0.3, 1.2)
+    axeHead.Position = Vector3.new(blockX - 0.3, extGround + 1.8, blockZ)
+    axeHead.Orientation = Vector3.new(0, 0, 15)
+    axeHead.Anchored = true
+    axeHead.Material = Enum.Material.Metal
+    axeHead.Color = Color3.fromRGB(100, 100, 110)
+    axeHead.Parent = lumberYard
+
+    -- ===== TREE STUMPS (decoration) =====
+    for _, pos in ipairs({
+        Vector3.new(exteriorX + 8, extGround, exteriorZ - 8),
+        Vector3.new(exteriorX + 22, extGround, exteriorZ + 5),
+    }) do
+        local stump = Instance.new("Part")
+        stump.Shape = Enum.PartType.Cylinder
+        stump.Size = Vector3.new(1.5, 2.5, 2.5)
+        stump.Position = pos + Vector3.new(0, 0.75, 0)
+        stump.Anchored = true
+        stump.Material = Enum.Material.Wood
+        stump.Color = Color3.fromRGB(90, 65, 40)
+        stump.Parent = lumberYard
+    end
+
+    -- ===== ENTRANCE GATE (west side, facing path) =====
+    -- Gate posts
+    for _, zOff in ipairs({-3, 3}) do
+        local gatePost = Instance.new("Part")
+        gatePost.Size = Vector3.new(1.5, 8, 1.5)
+        gatePost.Position = Vector3.new(exteriorX - 5, extGround + 4, exteriorZ + zOff)
+        gatePost.Anchored = true
+        gatePost.Material = Enum.Material.Wood
+        gatePost.Color = Color3.fromRGB(80, 55, 35)
+        gatePost.Parent = lumberYard
+    end
+
+    -- Gate crossbeam
+    local gateCross = Instance.new("Part")
+    gateCross.Size = Vector3.new(1, 1.5, 8)
+    gateCross.Position = Vector3.new(exteriorX - 5, extGround + 8, exteriorZ)
+    gateCross.Anchored = true
+    gateCross.Material = Enum.Material.Wood
+    gateCross.Color = Color3.fromRGB(80, 55, 35)
+    gateCross.Parent = lumberYard
+
+    -- ===== SIGN =====
     local signBoard = Instance.new("Part")
     signBoard.Name = "Sign"
-    signBoard.Size = Vector3.new(0.3, 2, 8)
-    signBoard.Position = Vector3.new(exteriorX - 5, extGround + 12.5, exteriorZ)
-    signBoard.Orientation = Vector3.new(0, -90, 0)  -- Face west
+    signBoard.Size = Vector3.new(0.5, 2.5, 10)
+    signBoard.Position = Vector3.new(exteriorX - 5.5, extGround + 10, exteriorZ)
     signBoard.Anchored = true
     signBoard.Material = Enum.Material.Wood
     signBoard.Color = Color3.fromRGB(60, 40, 25)
-    signBoard.Parent = lumberEntrance
+    signBoard.Parent = lumberYard
 
     local gui = Instance.new("SurfaceGui")
-    gui.Face = Enum.NormalId.Front
+    gui.Face = Enum.NormalId.Left  -- Face west toward path
     gui.Parent = signBoard
 
     local label = Instance.new("TextLabel")
     label.Size = UDim2.new(1, 0, 1, 0)
     label.BackgroundTransparency = 1
-    label.Text = "LUMBER MILL"
+    label.Text = "LUMBER YARD"
     label.TextColor3 = Color3.fromRGB(255, 230, 180)
     label.TextScaled = true
     label.Font = Enum.Font.Antique
     label.Parent = gui
 
-    createTorch(lumberEntrance, Vector3.new(exteriorX - 5, extGround + 6, exteriorZ - 5))
-    createTorch(lumberEntrance, Vector3.new(exteriorX - 5, extGround + 6, exteriorZ + 5))
+    -- Torches at entrance
+    createTorch(lumberYard, Vector3.new(exteriorX - 5, extGround + 6, exteriorZ - 4))
+    createTorch(lumberYard, Vector3.new(exteriorX - 5, extGround + 6, exteriorZ + 4))
 
-    -- Walk-through entrance (facing west)
+    -- ===== WALK-THROUGH ENTRANCE TRIGGER =====
     local entranceTrigger = Instance.new("Part")
-    entranceTrigger.Size = Vector3.new(2, 8, 6)  -- Rotated for west-facing
+    entranceTrigger.Name = "Entrance"
+    entranceTrigger.Size = Vector3.new(2, 8, 6)
     entranceTrigger.Position = Vector3.new(exteriorX - 6, extGround + 4, exteriorZ)
     entranceTrigger.Anchored = true
     entranceTrigger.Transparency = 1
     entranceTrigger.CanCollide = false
-    entranceTrigger.Parent = lumberEntrance
+    entranceTrigger.Parent = lumberYard
 
     local debounce = {}
     entranceTrigger.Touched:Connect(function(hit)
@@ -3970,7 +4665,7 @@ local function createLumberMill()
         task.delay(1, function() debounce[player.UserId] = nil end)
     end)
 
-    lumberEntrance.Parent = villageFolder
+    lumberYard.Parent = villageFolder
 
     -- ========== FOREST INTERIOR ==========
     local basePos = INTERIOR_POSITIONS.LumberMill
@@ -3980,15 +4675,16 @@ local function createLumberMill()
     local baseX, baseZ = basePos.X, basePos.Z
     local GROUND_Y = basePos.Y
 
-    -- Store positions for workers (UPDATED: kiosks on SIDES, not blocking entrance)
+    -- Store positions for workers (matching gold mine pattern: ±20 X, +25 Z near portal)
     LumberMillState.positions = {
         treesLeft = Vector3.new(baseX - 26, GROUND_Y, baseZ),       -- Left tree grove
         treesRight = Vector3.new(baseX + 26, GROUND_Y, baseZ),      -- Right tree grove
         sawmill = Vector3.new(baseX, GROUND_Y, baseZ - 18),         -- Sawmill in BACK center
         woodStorage = Vector3.new(baseX - 12, GROUND_Y, baseZ - 18),-- Output pile (left of sawmill)
         storageChest = Vector3.new(baseX + 12, GROUND_Y, baseZ - 18),-- Storage chest (right of sawmill)
-        upgradeKiosk = Vector3.new(baseX + 35, GROUND_Y, baseZ + 20), -- RIGHT side of entrance
-        hiringKiosk = Vector3.new(baseX - 35, GROUND_Y, baseZ + 20),  -- LEFT side of entrance
+        hireLogger = Vector3.new(baseX - 20, GROUND_Y, baseZ + 25), -- LEFT of portal (like gold mine)
+        hireHauler = Vector3.new(baseX + 20, GROUND_Y, baseZ + 25), -- RIGHT of portal (like gold mine)
+        upgradeKiosk = Vector3.new(baseX, GROUND_Y, baseZ + 10),    -- Center, behind spawn
         workerSpawn = Vector3.new(baseX, GROUND_Y, baseZ - 10),     -- Near sawmill
     }
 
@@ -4859,8 +5555,8 @@ local function createLumberMill()
         end
     end)
 
-    -- ========== STEP 5: HIRE WORKERS KIOSK (LEFT SIDE - not blocking entrance) ==========
-    local hiringArea = LumberMillState.positions.hiringKiosk
+    -- ========== STEP 5: HIRE LOGGERS (LEFT of portal, like gold mine) ==========
+    local hiringArea = LumberMillState.positions.hireLogger
 
     local loggerBoard = Instance.new("Part")
     loggerBoard.Name = "LoggerHiringBoard"
@@ -4873,14 +5569,18 @@ local function createLumberMill()
 
     createSign(millModel, "HIRE LOGGERS", hiringArea + Vector3.new(0, 5, 0), Vector3.new(6, 1.2, 0.3))
 
-    -- Waiting logger NPCs (visual)
-    for i = 1, 2 do
+    -- Waiting logger NPCs (stored in array like gold mine)
+    LumberMillState.waitingLoggers = {}
+    for i = 1, 3 do
+        local waitingLoggerPos = Vector3.new(hiringArea.X + (i - 2) * 3, GROUND_Y, hiringArea.Z - 2)
         local waitingLogger = createWorkerNPC(
             "Logger " .. i,
-            hiringArea + Vector3.new(-3 + i * 3, 0, 3),
+            waitingLoggerPos,
             Color3.fromRGB(180, 50, 50) -- Red plaid
         )
+        setNPCStatus(waitingLogger, "For hire!")
         waitingLogger.Parent = millModel
+        table.insert(LumberMillState.waitingLoggers, waitingLogger)
     end
 
     -- INTERACTION: Hire Logger
@@ -4893,10 +5593,34 @@ local function createLumberMill()
             return
         end
 
+        -- Check if there are waiting workers
+        if #LumberMillState.waitingLoggers == 0 then
+            print(string.format("[LumberMill] %s: No loggers available to hire!", player.Name))
+            return
+        end
+
         local cost = LoggerCosts[loggerCount + 1]
         local loggerId = loggerCount + 1
 
-        -- Create visible logger NPC
+        -- Remove one waiting worker from the stand (they walk away to work)
+        local waitingWorker = table.remove(LumberMillState.waitingLoggers, 1)
+        if waitingWorker then
+            -- Make the waiting worker walk away before destroying
+            setNPCStatus(waitingWorker, "Hired!")
+            task.spawn(function()
+                local walkAwayPos = LumberMillState.positions.workerSpawn + Vector3.new(loggerCount * 3, 0, 0)
+                walkNPCTo(waitingWorker, walkAwayPos, 6, function()
+                    waitingWorker:Destroy()
+                end)
+            end)
+        end
+
+        -- Check if booth is now empty
+        if #LumberMillState.waitingLoggers == 0 then
+            print("[LumberMill] Logger booth is now empty!")
+        end
+
+        -- Create visible logger NPC at spawn position
         local spawnPos = LumberMillState.positions.workerSpawn + Vector3.new(loggerCount * 3, 0, 0)
         local logger = createWorkerNPC(
             "Logger " .. loggerId,
@@ -5038,8 +5762,8 @@ local function createLumberMill()
         print(string.format("[LumberMill] Logger #%d will chop trees → deliver to sawmill → repeat!", loggerId))
     end)
 
-    -- ========== HIRE HAULERS STATION ==========
-    local haulerArea = hiringArea + Vector3.new(0, 0, -8)  -- Behind logger board
+    -- ========== HIRE HAULERS STATION (RIGHT of portal, like gold mine) ==========
+    local haulerArea = LumberMillState.positions.hireHauler
 
     local haulerBoard = Instance.new("Part")
     haulerBoard.Name = "HaulerHiringBoard"
@@ -5052,15 +5776,18 @@ local function createLumberMill()
 
     createSign(millModel, "HIRE HAULERS", haulerArea + Vector3.new(0, 5, 0), Vector3.new(6, 1.5, 0.3))
 
-    -- Waiting hauler NPCs
-    for i = 1, 2 do
+    -- Waiting hauler NPCs (stored in array like gold mine)
+    LumberMillState.waitingHaulers = {}
+    for i = 1, 3 do
+        local waitingHaulerPos = Vector3.new(haulerArea.X + (i - 2) * 3, GROUND_Y, haulerArea.Z - 2)
         local waitingHauler = createWorkerNPC(
             "Hauler " .. i,
-            haulerArea + Vector3.new(-3 + i * 3, 0, 3),
+            waitingHaulerPos,
             Color3.fromRGB(60, 100, 60) -- Green work clothes
         )
         setNPCStatus(waitingHauler, "For hire!")
         waitingHauler.Parent = millModel
+        table.insert(LumberMillState.waitingHaulers, waitingHauler)
     end
 
     -- INTERACTION: Hire Hauler
@@ -5073,10 +5800,34 @@ local function createLumberMill()
             return
         end
 
+        -- Check if there are waiting workers
+        if #LumberMillState.waitingHaulers == 0 then
+            print(string.format("[LumberMill] %s: No haulers available to hire!", player.Name))
+            return
+        end
+
         local cost = HaulerCosts[haulerCount + 1]
         local haulerId = haulerCount + 1
 
-        -- Create visible hauler NPC
+        -- Remove one waiting worker from the stand (they walk away to work)
+        local waitingWorker = table.remove(LumberMillState.waitingHaulers, 1)
+        if waitingWorker then
+            -- Make the waiting worker walk away before destroying
+            setNPCStatus(waitingWorker, "Hired!")
+            task.spawn(function()
+                local walkAwayPos = LumberMillState.positions.workerSpawn + Vector3.new(haulerCount * 3 + 10, 0, 0)
+                walkNPCTo(waitingWorker, walkAwayPos, 6, function()
+                    waitingWorker:Destroy()
+                end)
+            end)
+        end
+
+        -- Check if booth is now empty
+        if #LumberMillState.waitingHaulers == 0 then
+            print("[LumberMill] Hauler booth is now empty!")
+        end
+
+        -- Create visible hauler NPC at spawn position
         local spawnPos = LumberMillState.positions.workerSpawn + Vector3.new(haulerCount * 3 + 10, 0, 0)
         local hauler = createWorkerNPC(
             "Hauler " .. haulerId,
@@ -5741,17 +6492,16 @@ local function createFarm(farmNumber)
     -- This makes all existing code in this function use the correct farm
     local FarmState = currentFarmState
 
-    -- ========== EXTERIOR IN VILLAGE ==========
+    -- ========== EXTERIOR IN VILLAGE (RED BARN) ==========
     local exteriorData = FARM_EXTERIOR_POSITIONS[farmNumber]
     local exteriorX, exteriorZ = exteriorData.x, exteriorData.z
     local facingDirection = exteriorData.facing
 
-    local exterior = createBuildingExterior(
+    -- Use the barn exterior for farms (red barn with gambrel roof)
+    local exterior = createBarnExterior(
         farmName:upper(),
         Vector3.new(exteriorX, GROUND_Y, exteriorZ),
-        Vector3.new(18, 8, 15),
-        Color3.fromRGB(180, 160, 80), -- Thatched roof
-        Color3.fromRGB(140, 100, 60), -- Wood walls
+        Vector3.new(18, 10, 15), -- Slightly taller for barn proportions
         farmKey,
         facingDirection
     )
