@@ -195,7 +195,37 @@ initService(DailyRewardService, "DailyRewardService")
 initService(LeaderboardService, "LeaderboardService")
 
 -- ═══════════════════════════════════════════════════════════════════════════════
--- STEP 5: Connect events to service handlers
+-- STEP 5: Connect service signals for food supply updates
+-- ═══════════════════════════════════════════════════════════════════════════════
+print("[SERVER] Connecting service signals...")
+
+-- Listen for building upgrade completion to update food supply
+if BuildingService and BuildingService.UpgradeCompleted then
+    BuildingService.UpgradeCompleted:Connect(function(player, building)
+        if building.type == "Farm" then
+            print(string.format("[FoodSupply] Farm upgrade complete for %s, sending update", player.Name))
+            if DataService and DataService.GetFoodSupplyStatus then
+                local status = DataService:GetFoodSupplyStatus(player)
+                FoodSupplyUpdate:FireClient(player, status.production, status.usage, status.paused)
+            end
+        end
+    end)
+end
+
+-- Listen for troop training completion to update food supply
+if TroopService and TroopService.TrainingCompleted then
+    TroopService.TrainingCompleted:Connect(function(player, troopType, quantity)
+        print(string.format("[FoodSupply] Training complete for %s (%dx %s), sending update",
+            player.Name, quantity, troopType))
+        if DataService and DataService.GetFoodSupplyStatus then
+            local status = DataService:GetFoodSupplyStatus(player)
+            FoodSupplyUpdate:FireClient(player, status.production, status.usage, status.paused)
+        end
+    end)
+end
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- STEP 6: Connect events to service handlers
 -- ═══════════════════════════════════════════════════════════════════════════════
 print("[SERVER] Connecting event handlers...")
 
