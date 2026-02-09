@@ -617,63 +617,71 @@ local function createBarnExterior(name, position, size, buildingName, facingDire
     topTrim.Parent = exterior
 
     -- Gambrel roof (classic barn roof - 4 panels)
-    local roofHeight = size.Y * 0.6
+    -- Using simple angled triangular roof instead of complex gambrel for reliability
     local roofOverhang = 1.5
+    local roofPeakHeight = 5 -- Height of roof peak above walls
 
-    -- Lower left roof panel (steep angle)
-    local roofLowerLeft = Instance.new("Part")
-    roofLowerLeft.Name = "RoofLowerLeft"
-    roofLowerLeft.Size = Vector3.new(size.X * 0.35, 0.4, size.Z + roofOverhang * 2)
-    roofLowerLeft.CFrame = CFrame.new(position + rotateOffset(Vector3.new(-size.X * 0.35, wallHeight + roofHeight * 0.35, 0)))
-        * CFrame.Angles(0, math.rad(rotation), math.rad(55))
-    roofLowerLeft.Anchored = true
-    roofLowerLeft.Material = Enum.Material.Metal
-    roofLowerLeft.Color = roofGray
-    roofLowerLeft.Parent = exterior
+    -- Left roof slope (from wall top to center peak)
+    local roofLeft = Instance.new("Part")
+    roofLeft.Name = "RoofLeft"
+    -- Width needs to span from left edge to center, accounting for slope
+    local roofSlopeWidth = math.sqrt((size.X/2)^2 + roofPeakHeight^2) + 0.5
+    roofLeft.Size = Vector3.new(roofSlopeWidth, 0.5, size.Z + roofOverhang * 2)
+    -- Position at midpoint between wall top-left and peak
+    local roofLeftPos = position + rotateOffset(Vector3.new(-size.X/4, wallHeight + roofPeakHeight/2, 0))
+    -- Calculate slope angle
+    local slopeAngle = math.deg(math.atan2(roofPeakHeight, size.X/2))
+    roofLeft.Position = roofLeftPos
+    roofLeft.Orientation = Vector3.new(0, rotation, slopeAngle)
+    roofLeft.Anchored = true
+    roofLeft.Material = Enum.Material.Metal
+    roofLeft.Color = roofGray
+    roofLeft.Parent = exterior
 
-    -- Lower right roof panel (steep angle)
-    local roofLowerRight = Instance.new("Part")
-    roofLowerRight.Name = "RoofLowerRight"
-    roofLowerRight.Size = Vector3.new(size.X * 0.35, 0.4, size.Z + roofOverhang * 2)
-    roofLowerRight.CFrame = CFrame.new(position + rotateOffset(Vector3.new(size.X * 0.35, wallHeight + roofHeight * 0.35, 0)))
-        * CFrame.Angles(0, math.rad(rotation), math.rad(-55))
-    roofLowerRight.Anchored = true
-    roofLowerRight.Material = Enum.Material.Metal
-    roofLowerRight.Color = roofGray
-    roofLowerRight.Parent = exterior
+    -- Right roof slope (from wall top to center peak)
+    local roofRight = Instance.new("Part")
+    roofRight.Name = "RoofRight"
+    roofRight.Size = Vector3.new(roofSlopeWidth, 0.5, size.Z + roofOverhang * 2)
+    local roofRightPos = position + rotateOffset(Vector3.new(size.X/4, wallHeight + roofPeakHeight/2, 0))
+    roofRight.Position = roofRightPos
+    roofRight.Orientation = Vector3.new(0, rotation, -slopeAngle)
+    roofRight.Anchored = true
+    roofRight.Material = Enum.Material.Metal
+    roofRight.Color = roofGray
+    roofRight.Parent = exterior
 
-    -- Upper left roof panel (shallow angle)
-    local roofUpperLeft = Instance.new("Part")
-    roofUpperLeft.Name = "RoofUpperLeft"
-    roofUpperLeft.Size = Vector3.new(size.X * 0.35, 0.4, size.Z + roofOverhang * 2)
-    roofUpperLeft.CFrame = CFrame.new(position + rotateOffset(Vector3.new(-size.X * 0.12, wallHeight + roofHeight * 0.8, 0)))
-        * CFrame.Angles(0, math.rad(rotation), math.rad(20))
-    roofUpperLeft.Anchored = true
-    roofUpperLeft.Material = Enum.Material.Metal
-    roofUpperLeft.Color = roofGray
-    roofUpperLeft.Parent = exterior
-
-    -- Upper right roof panel (shallow angle)
-    local roofUpperRight = Instance.new("Part")
-    roofUpperRight.Name = "RoofUpperRight"
-    roofUpperRight.Size = Vector3.new(size.X * 0.35, 0.4, size.Z + roofOverhang * 2)
-    roofUpperRight.CFrame = CFrame.new(position + rotateOffset(Vector3.new(size.X * 0.12, wallHeight + roofHeight * 0.8, 0)))
-        * CFrame.Angles(0, math.rad(rotation), math.rad(-20))
-    roofUpperRight.Anchored = true
-    roofUpperRight.Material = Enum.Material.Metal
-    roofUpperRight.Color = roofGray
-    roofUpperRight.Parent = exterior
-
-    -- Roof ridge (peak)
+    -- Roof ridge cap (peak)
     local roofRidge = Instance.new("Part")
     roofRidge.Name = "RoofRidge"
-    roofRidge.Size = Vector3.new(0.5, 0.3, size.Z + roofOverhang * 2)
-    roofRidge.Position = position + Vector3.new(0, wallHeight + roofHeight + 0.15, 0)
+    roofRidge.Size = Vector3.new(1, 0.6, size.Z + roofOverhang * 2)
+    roofRidge.Position = position + Vector3.new(0, wallHeight + roofPeakHeight, 0)
     roofRidge.Orientation = Vector3.new(0, rotation, 0)
     roofRidge.Anchored = true
     roofRidge.Material = Enum.Material.Metal
     roofRidge.Color = Color3.fromRGB(60, 60, 65)
     roofRidge.Parent = exterior
+
+    -- Front gable (triangular wall piece under roof at front)
+    local frontGable = Instance.new("WedgePart")
+    frontGable.Name = "FrontGable"
+    frontGable.Size = Vector3.new(roofPeakHeight, size.X, 0.5)
+    local gableFrontPos = position + rotateOffset(Vector3.new(0, wallHeight + roofPeakHeight/2, size.Z/2 + 0.25))
+    frontGable.CFrame = CFrame.new(gableFrontPos) * CFrame.Angles(0, math.rad(rotation), math.rad(-90))
+    frontGable.Anchored = true
+    frontGable.Material = Enum.Material.Wood
+    frontGable.Color = barnRed
+    frontGable.Parent = exterior
+
+    -- Back gable (triangular wall piece under roof at back)
+    local backGable = Instance.new("WedgePart")
+    backGable.Name = "BackGable"
+    backGable.Size = Vector3.new(roofPeakHeight, size.X, 0.5)
+    local gableBackPos = position + rotateOffset(Vector3.new(0, wallHeight + roofPeakHeight/2, -size.Z/2 - 0.25))
+    backGable.CFrame = CFrame.new(gableBackPos) * CFrame.Angles(0, math.rad(rotation + 180), math.rad(-90))
+    backGable.Anchored = true
+    backGable.Material = Enum.Material.Wood
+    backGable.Color = barnRed
+    backGable.Parent = exterior
 
     -- Hay bales outside barn (decorative)
     local hayColors = {
