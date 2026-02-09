@@ -17,10 +17,9 @@ local BalanceConfig = {}
 BalanceConfig.Economy = {
     -- Starting resources for new players
     StartingResources = {
-        gold = 1000,
-        wood = 1000,
-        food = 500,
-        gems = 50, -- Generous start to show gem value
+        gold = 500,
+        wood = 500,
+        food = 250,
     },
 
     -- Loot percentages
@@ -30,11 +29,11 @@ BalanceConfig.Economy = {
         StorageProtection = 0.05, -- 5% of resources protected per storage level
     },
 
-    -- VIP bonuses
+    -- VIP bonuses (earned through achievements/progression)
     VIP = {
         ResourceProductionBonus = 0.20, -- +20%
         UpgradeTimeReduction = 0.20, -- -20%
-        DailyGems = 50,
+        DailyGoldBonus = 5000,
     },
 }
 
@@ -122,17 +121,19 @@ BalanceConfig.Progression = {
     },
 
     -- Building counts per TH level
+    -- Note: All buildings except Farm and Wall are now single-instance
+    -- Farm count matches MaxFarmPlotsPerTH in BuildingData (uses farmPlots system)
     BuildingCounts = {
-        [1] = { GoldMine = 1, LumberMill = 1, Farm = 1, GoldStorage = 1, ArmyCamp = 1, Barracks = 1, Cannon = 2, Wall = 25 },
-        [2] = { GoldMine = 2, LumberMill = 2, Farm = 2, GoldStorage = 1, ArmyCamp = 1, Barracks = 1, Cannon = 2, ArcherTower = 1, Wall = 50 },
-        [3] = { GoldMine = 3, LumberMill = 3, Farm = 3, GoldStorage = 2, ArmyCamp = 2, Barracks = 2, Cannon = 2, ArcherTower = 2, Mortar = 1, Wall = 75 },
-        [4] = { GoldMine = 4, LumberMill = 4, Farm = 4, GoldStorage = 2, ArmyCamp = 2, Barracks = 2, Cannon = 3, ArcherTower = 3, Mortar = 1, AirDefense = 1, Wall = 100 },
-        [5] = { GoldMine = 5, LumberMill = 5, Farm = 5, GoldStorage = 2, ArmyCamp = 3, Barracks = 3, Cannon = 3, ArcherTower = 3, Mortar = 2, AirDefense = 1, WizardTower = 1, Wall = 125 },
-        [6] = { GoldMine = 5, LumberMill = 5, Farm = 5, GoldStorage = 3, ArmyCamp = 3, Barracks = 3, Cannon = 4, ArcherTower = 4, Mortar = 2, AirDefense = 2, WizardTower = 2, Wall = 150 },
-        [7] = { GoldMine = 6, LumberMill = 6, Farm = 6, GoldStorage = 3, ArmyCamp = 4, Barracks = 4, Cannon = 5, ArcherTower = 5, Mortar = 3, AirDefense = 2, WizardTower = 2, Wall = 175 },
-        [8] = { GoldMine = 6, LumberMill = 6, Farm = 6, GoldStorage = 4, ArmyCamp = 4, Barracks = 4, Cannon = 5, ArcherTower = 5, Mortar = 3, AirDefense = 3, WizardTower = 3, Wall = 200 },
-        [9] = { GoldMine = 6, LumberMill = 6, Farm = 6, GoldStorage = 4, ArmyCamp = 4, Barracks = 4, Cannon = 6, ArcherTower = 6, Mortar = 4, AirDefense = 3, WizardTower = 3, Wall = 225 },
-        [10] = { GoldMine = 6, LumberMill = 6, Farm = 6, GoldStorage = 4, ArmyCamp = 4, Barracks = 4, Cannon = 6, ArcherTower = 6, Mortar = 4, AirDefense = 4, WizardTower = 4, Wall = 250 },
+        [1] = { GoldMine = 1, LumberMill = 1, Farm = 2, GoldStorage = 1, ArmyCamp = 1, Barracks = 1, Cannon = 1, Wall = 25 },
+        [2] = { GoldMine = 1, LumberMill = 1, Farm = 3, GoldStorage = 1, ArmyCamp = 1, Barracks = 1, Cannon = 1, ArcherTower = 1, Wall = 50 },
+        [3] = { GoldMine = 1, LumberMill = 1, Farm = 4, GoldStorage = 1, ArmyCamp = 1, Barracks = 1, Cannon = 1, ArcherTower = 1, Mortar = 1, Wall = 75 },
+        [4] = { GoldMine = 1, LumberMill = 1, Farm = 4, GoldStorage = 1, ArmyCamp = 1, Barracks = 1, Cannon = 1, ArcherTower = 1, Mortar = 1, AirDefense = 1, Wall = 100 },
+        [5] = { GoldMine = 1, LumberMill = 1, Farm = 5, GoldStorage = 1, ArmyCamp = 1, Barracks = 1, Cannon = 1, ArcherTower = 1, Mortar = 1, AirDefense = 1, WizardTower = 1, Wall = 125 },
+        [6] = { GoldMine = 1, LumberMill = 1, Farm = 5, GoldStorage = 1, ArmyCamp = 1, Barracks = 1, Cannon = 1, ArcherTower = 1, Mortar = 1, AirDefense = 1, WizardTower = 1, Wall = 150 },
+        [7] = { GoldMine = 1, LumberMill = 1, Farm = 6, GoldStorage = 1, ArmyCamp = 1, Barracks = 1, Cannon = 1, ArcherTower = 1, Mortar = 1, AirDefense = 1, WizardTower = 1, Wall = 175 },
+        [8] = { GoldMine = 1, LumberMill = 1, Farm = 6, GoldStorage = 1, ArmyCamp = 1, Barracks = 1, Cannon = 1, ArcherTower = 1, Mortar = 1, AirDefense = 1, WizardTower = 1, Wall = 200 },
+        [9] = { GoldMine = 1, LumberMill = 1, Farm = 6, GoldStorage = 1, ArmyCamp = 1, Barracks = 1, Cannon = 1, ArcherTower = 1, Mortar = 1, AirDefense = 1, WizardTower = 1, Wall = 225 },
+        [10] = { GoldMine = 1, LumberMill = 1, Farm = 6, GoldStorage = 1, ArmyCamp = 1, Barracks = 1, Cannon = 1, ArcherTower = 1, Mortar = 1, AirDefense = 1, WizardTower = 1, Wall = 250 },
     },
 
     -- XP per action
@@ -162,36 +163,33 @@ BalanceConfig.Progression = {
 }
 
 --[[
-    MONETIZATION
+    PROGRESSION COSTS (All in gold - earned through gameplay)
 ]]
-BalanceConfig.Monetization = {
-    -- Gem costs for time skips
-    GemSkipRate = 1, -- 1 gem per minute (minimum 1)
+BalanceConfig.ProgressionCosts = {
+    -- Gold costs for time skips (expensive to encourage patience)
+    GoldSkipRate = 100, -- 100 gold per minute remaining
 
-    -- Gem packages (for reference - actual shop in MarketplaceService)
-    GemPackages = {
-        { name = "Handful", gems = 80, robux = 99 },
-        { name = "Pouch", gems = 500, robux = 449 },
-        { name = "Bag", gems = 1200, robux = 899 },
-        { name = "Box", gems = 2500, robux = 1599 },
-        { name = "Chest", gems = 6500, robux = 3399 },
-        { name = "Vault", gems = 14000, robux = 5999 },
-    },
-
-    -- Battle Pass
-    BattlePass = {
-        SeasonLength = 28, -- days
-        TotalTiers = 50,
-        XPPerTier = 1000,
-        PremiumCost = 450, -- robux
-    },
-
-    -- Builder costs
+    -- Builder costs (expensive - long-term goals)
     BuilderCosts = {
-        [2] = 0, -- Free with VIP
-        [3] = 500, -- gems
-        [4] = 1000,
-        [5] = 2000,
+        [2] = 25000,   -- 2nd builder - early milestone
+        [3] = 75000,   -- 3rd builder - mid-game goal
+        [4] = 200000,  -- 4th builder - late-game
+        [5] = 500000,  -- 5th builder - endgame achievement
+    },
+
+    -- Shield costs (protection from attacks)
+    ShieldCosts = {
+        ["1d"] = 10000,  -- 24 hours
+        ["2d"] = 18000,  -- 48 hours
+        ["7d"] = 50000,  -- 7 days
+    },
+
+    -- Resource boost costs (buy resources with gold)
+    ResourceBoosts = {
+        wood_5k = { resource = "wood", amount = 5000, cost = 7500 },
+        wood_20k = { resource = "wood", amount = 20000, cost = 25000 },
+        food_2k = { resource = "food", amount = 2000, cost = 5000 },
+        food_10k = { resource = "food", amount = 10000, cost = 20000 },
     },
 }
 

@@ -15,6 +15,8 @@ local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Types = require(ReplicatedStorage.Shared.Types.PlayerTypes)
 local BalanceConfig = require(ReplicatedStorage.Shared.Constants.BalanceConfig)
+local BuildingData = require(ReplicatedStorage.Shared.Constants.BuildingData)
+local TroopData = require(ReplicatedStorage.Shared.Constants.TroopData)
 local Signal = require(ReplicatedStorage.Shared.Modules.Signal)
 
 local DataService = {}
@@ -28,8 +30,22 @@ DataService.PlayerDataError = Signal.new()
 -- Private state
 local _playerData: {[number]: Types.PlayerData} = {}
 local _sessionLocks: {[number]: number} = {}
-local _dataStore = DataStoreService:GetDataStore("BattleTycoon_PlayerData_v1")
+local _dataStore = nil
+local _useLocalData = false -- True when DataStore is unavailable (Studio testing)
 local _initialized = false
+
+-- Try to get DataStore, fall back to local-only mode if unavailable
+local success, result = pcall(function()
+    return DataStoreService:GetDataStore("BattleTycoon_PlayerData_v1")
+end)
+
+if success then
+    _dataStore = result
+    print("[DataService] DataStore connected")
+else
+    _useLocalData = true
+    warn("[DataService] DataStore unavailable, using local-only mode (data won't persist)")
+end
 
 -- Constants
 local DATA_SAVE_INTERVAL = 300 -- 5 minutes
@@ -70,7 +86,6 @@ local function createDefaultData(userId: number, username: string): Types.Player
             gold = startingResources.gold,
             wood = startingResources.wood,
             food = startingResources.food,
-            gems = startingResources.gems,
         },
         storageCapacity = {
             gold = 5000,
@@ -102,7 +117,14 @@ local function createDefaultData(userId: number, username: string): Types.Player
         -- Military
         troops = {},
         spells = {},
-        armyCampCapacity = 20,
+        armyCampCapacity = 20, -- Deprecated: kept for compatibility
+
+        -- Food Supply System
+        foodProduction = 0,
+        foodUsage = 0,
+        trainingPaused = false,
+        farmPlots = 1,
+        maxFarmPlots = BuildingData.MaxFarmPlotsPerTH[1] or 2,
 
         -- Builders
         builders = {
@@ -152,7 +174,6 @@ local function validatePlayerData(data: Types.PlayerData): Types.PlayerData
     data.resources.gold = math.max(0, sanitizeNumber(data.resources.gold, 0))
     data.resources.wood = math.max(0, sanitizeNumber(data.resources.wood, 0))
     data.resources.food = math.max(0, sanitizeNumber(data.resources.food, 0))
-    data.resources.gems = math.max(0, sanitizeNumber(data.resources.gems, 0))
 
     -- Ensure progression is valid
     data.townHallLevel = math.clamp(data.townHallLevel or 1, 1, 10)
@@ -193,6 +214,25 @@ local function validatePlayerData(data: Types.PlayerData): Types.PlayerData
     -- Ensure settings exist
     data.settings = data.settings or { musicEnabled = true, sfxEnabled = true, notificationsEnabled = true }
 
+    -- Food Supply System migration
+    if data.foodProduction == nil then data.foodProduction = 0 end
+    if data.foodUsage == nil then data.foodUsage = 0 end
+    if data.trainingPaused == nil then data.trainingPaused = false end
+
+    -- Set farmPlots based on existing farm count (migration)
+    if data.farmPlots == nil then
+        local farmCount = 0
+        for _, building in data.buildings do
+            if building.type == "Farm" then
+                farmCount += 1
+            end
+        end
+        data.farmPlots = math.max(1, farmCount)
+    end
+
+    -- Set maxFarmPlots based on TH level
+    data.maxFarmPlots = BuildingData.MaxFarmPlotsPerTH[data.townHallLevel] or 2
+
     return data
 end
 
@@ -202,6 +242,12 @@ end
     FIXED: Uses UpdateAsync for atomic check-and-set to prevent race conditions.
 ]]
 local function acquireSessionLock(userId: number): boolean
+    -- In local mode, always succeed (no DataStore)
+    if _useLocalData then
+        _sessionLocks[userId] = os.time()
+        return true
+    end
+
     local lockKey = SESSION_LOCK_KEY_PREFIX .. userId
     local lockStore = DataStoreService:GetDataStore("BattleTycoon_SessionLocks")
 
@@ -239,6 +285,12 @@ end
     Releases the session lock for the player.
 ]]
 local function releaseSessionLock(userId: number)
+    -- In local mode, just clear local state
+    if _useLocalData then
+        _sessionLocks[userId] = nil
+        return
+    end
+
     local lockKey = SESSION_LOCK_KEY_PREFIX .. userId
     local lockStore = DataStoreService:GetDataStore("BattleTycoon_SessionLocks")
 
@@ -255,6 +307,22 @@ end
 function DataService:LoadPlayerData(player: Player): Types.PlayerDataResult
     local userId = player.UserId
     local username = player.Name
+
+    -- In local mode, skip session lock and just create default data
+    if _useLocalData then
+        local data = _playerData[userId]
+        if not data then
+            data = createDefaultData(userId, username)
+            _playerData[userId] = data
+        end
+        data.lastLoginAt = os.time()
+        DataService.PlayerDataLoaded:Fire(player, data)
+        return {
+            success = true,
+            data = data,
+            error = nil,
+        }
+    end
 
     -- Acquire session lock
     if not acquireSessionLock(userId) then
@@ -314,6 +382,12 @@ function DataService:SavePlayerData(player: Player): boolean
     if not data then
         warn("No data to save for", userId)
         return false
+    end
+
+    -- In local mode, data is only in memory (no persistence)
+    if _useLocalData then
+        DataService.PlayerDataSaved:Fire(player)
+        return true
     end
 
     local success, err = pcall(function()
@@ -384,12 +458,6 @@ function DataService:UpdateResources(player: Player, changes: Types.ResourceData
         data.resources.food = math.min(data.resources.food, data.storageCapacity.food)
     end
 
-    if changes.gems then
-        local sanitizedGems = sanitizeNumber(changes.gems, 0)
-        data.resources.gems = math.max(0, data.resources.gems + sanitizedGems)
-        -- Gems have no cap
-    end
-
     return true
 end
 
@@ -404,13 +472,11 @@ function DataService:DeductResources(player: Player, cost: Types.ResourceData): 
     if (cost.gold or 0) > data.resources.gold then return false end
     if (cost.wood or 0) > data.resources.wood then return false end
     if (cost.food or 0) > data.resources.food then return false end
-    if (cost.gems or 0) > data.resources.gems then return false end
 
     -- Deduct
     data.resources.gold -= (cost.gold or 0)
     data.resources.wood -= (cost.wood or 0)
     data.resources.food -= (cost.food or 0)
-    data.resources.gems -= (cost.gems or 0)
 
     return true
 end
@@ -425,9 +491,81 @@ function DataService:CanAfford(player: Player, cost: Types.ResourceData): boolea
     if (cost.gold or 0) > data.resources.gold then return false end
     if (cost.wood or 0) > data.resources.wood then return false end
     if (cost.food or 0) > data.resources.food then return false end
-    if (cost.gems or 0) > data.resources.gems then return false end
 
     return true
+end
+
+--[[
+    Calculates total food production per minute from all farms.
+]]
+function DataService:CalculateFoodProduction(player: Player): number
+    local data = _playerData[player.UserId]
+    if not data then return 0 end
+
+    local totalProduction = 0
+
+    for _, building in data.buildings do
+        if building.type == "Farm" and building.state ~= "Upgrading" then
+            local levelData = BuildingData.GetLevelData("Farm", building.level)
+            if levelData and levelData.productionRate then
+                -- productionRate is per hour, convert to per minute
+                totalProduction += levelData.productionRate / 60
+            end
+        end
+    end
+
+    return totalProduction
+end
+
+--[[
+    Calculates total food usage per minute from all troops.
+]]
+function DataService:CalculateFoodUsage(player: Player): number
+    local data = _playerData[player.UserId]
+    if not data then return 0 end
+
+    local totalUsage = 0
+
+    for troopType, count in data.troops do
+        local troopDef = TroopData.GetByType(troopType)
+        if troopDef and troopDef.foodUpkeep then
+            totalUsage += troopDef.foodUpkeep * count
+        end
+    end
+
+    return totalUsage
+end
+
+--[[
+    Updates the food supply state for a player.
+    Should be called after any operation that affects farms or troops.
+]]
+function DataService:UpdateFoodSupplyState(player: Player)
+    local data = _playerData[player.UserId]
+    if not data then return end
+
+    data.foodProduction = self:CalculateFoodProduction(player)
+    data.foodUsage = self:CalculateFoodUsage(player)
+    data.trainingPaused = data.foodUsage > data.foodProduction
+
+    -- Update maxFarmPlots based on TH level
+    data.maxFarmPlots = BuildingData.MaxFarmPlotsPerTH[data.townHallLevel] or 2
+end
+
+--[[
+    Gets the food supply status for a player.
+]]
+function DataService:GetFoodSupplyStatus(player: Player): {production: number, usage: number, paused: boolean}
+    local data = _playerData[player.UserId]
+    if not data then
+        return { production = 0, usage = 0, paused = false }
+    end
+
+    return {
+        production = data.foodProduction,
+        usage = data.foodUsage,
+        paused = data.trainingPaused,
+    }
 end
 
 --[[

@@ -65,6 +65,7 @@ type BuildingTarget = {
     maxHp: number,
     isDestroyed: boolean,
     category: string,
+    wasDowngraded: boolean?, -- True if farm was downgraded instead of destroyed
 }
 
 type StartBattleResult = {
@@ -520,11 +521,18 @@ function CombatService:SimulateTick(battleId: string)
             -- Apply main damage
             target.currentHp -= damage
             if target.currentHp <= 0 then
-                target.isDestroyed = true
+                -- Special handling for Farms: downgrade instead of destroy
+                if target.type == "Farm" then
+                    target.isDestroyed = false
+                    target.currentHp = 1
+                    target.wasDowngraded = true
+                else
+                    target.isDestroyed = true
 
-                -- Check if Town Hall destroyed
-                if target.type == "TownHall" then
-                    battle.townHallDestroyed = true
+                    -- Check if Town Hall destroyed
+                    if target.type == "TownHall" then
+                        battle.townHallDestroyed = true
+                    end
                 end
             end
         else
@@ -720,6 +728,22 @@ function CombatService:EndBattle(battleId: string): CombatTypes.BattleResult?
 
     -- Apply losses to defender
     if defenderData then
+        -- Apply farm downgrades (farms are downgraded to level 1, not destroyed)
+        for _, target in targets do
+            if target.type == "Farm" and target.wasDowngraded then
+                local building = defenderData.buildings[target.id]
+                if building then
+                    building.level = 1
+                    -- Reset HP to level 1 HP
+                    local farmDef = require(ReplicatedStorage.Shared.Constants.BuildingData).GetLevelData("Farm", 1)
+                    if farmDef then
+                        building.currentHp = farmDef.hp
+                        building.maxHp = farmDef.hp
+                    end
+                end
+            end
+        end
+
         -- Deduct looted resources
         defenderData.resources.gold = math.max(0, defenderData.resources.gold - loot.gold)
         defenderData.resources.wood = math.max(0, defenderData.resources.wood - loot.wood)

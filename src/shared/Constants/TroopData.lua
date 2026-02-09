@@ -24,6 +24,7 @@ TroopData.Barbarian = {
     description = "Basic melee fighter. Cheap and quick to train.",
     trainingBuilding = "Barracks",
     housingSpace = 1,
+    foodUpkeep = 1, -- Food consumed per minute
     townHallRequired = 1,
     levels = {
         {
@@ -98,6 +99,7 @@ TroopData.Archer = {
     description = "Ranged attacker. Can target both ground and air units.",
     trainingBuilding = "Barracks",
     housingSpace = 1,
+    foodUpkeep = 1, -- Food consumed per minute
     townHallRequired = 1,
     levels = {
         {
@@ -175,6 +177,7 @@ TroopData.Giant = {
     description = "Tanky unit that prioritizes attacking defenses.",
     trainingBuilding = "Barracks",
     housingSpace = 5,
+    foodUpkeep = 4, -- Food consumed per minute
     townHallRequired = 2,
     levels = {
         {
@@ -249,6 +252,7 @@ TroopData.WallBreaker = {
     description = "Suicidal bomber that deals massive damage to walls.",
     trainingBuilding = "Barracks",
     housingSpace = 2,
+    foodUpkeep = 2, -- Food consumed per minute
     townHallRequired = 3,
     levels = {
         {
@@ -331,6 +335,7 @@ TroopData.Wizard = {
     description = "Powerful ranged attacker with splash damage.",
     trainingBuilding = "Barracks",
     housingSpace = 4,
+    foodUpkeep = 5, -- Food consumed per minute
     townHallRequired = 5,
     levels = {
         {
@@ -413,6 +418,7 @@ TroopData.Dragon = {
     description = "Flying beast with devastating splash damage breath.",
     trainingBuilding = "Barracks",
     housingSpace = 20,
+    foodUpkeep = 15, -- Food consumed per minute
     townHallRequired = 7,
     levels = {
         {
@@ -500,6 +506,7 @@ TroopData.PEKKA = {
     description = "Heavily armored knight with devastating melee damage.",
     trainingBuilding = "Barracks",
     housingSpace = 25,
+    foodUpkeep = 20, -- Food consumed per minute
     townHallRequired = 8,
     levels = {
         {

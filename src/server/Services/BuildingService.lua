@@ -141,11 +141,20 @@ function BuildingService:PlaceBuilding(player: Player, buildingType: string, pos
         return { success = false, building = nil, error = "TH_TOO_LOW" }
     end
 
-    -- Check building count limit
-    local currentCount = getBuildingCount(playerData, buildingType)
-    local maxCount = getMaxBuildingCount(playerData, buildingType)
-    if currentCount >= maxCount then
-        return { success = false, building = nil, error = "MAX_COUNT_REACHED" }
+    -- Special handling for Farms - use farmPlots system
+    if buildingType == "Farm" then
+        local currentFarmCount = getBuildingCount(playerData, "Farm")
+        local farmPlots = playerData.farmPlots or 1
+        if currentFarmCount >= farmPlots then
+            return { success = false, building = nil, error = "NEED_MORE_FARM_PLOTS" }
+        end
+    else
+        -- Check building count limit for non-farm buildings
+        local currentCount = getBuildingCount(playerData, buildingType)
+        local maxCount = getMaxBuildingCount(playerData, buildingType)
+        if currentCount >= maxCount then
+            return { success = false, building = nil, error = "MAX_COUNT_REACHED" }
+        end
     end
 
     -- Validate position
@@ -210,6 +219,11 @@ function BuildingService:PlaceBuilding(player: Player, buildingType: string, pos
 
     -- Add to player data
     playerData.buildings[buildingId] = building
+
+    -- Update food supply state if Farm was placed
+    if buildingType == "Farm" then
+        DataService:UpdateFoodSupplyState(player)
+    end
 
     -- Fire event
     BuildingService.BuildingPlaced:Fire(player, building)
@@ -395,6 +409,11 @@ function BuildingService:CheckUpgrades(player: Player)
                     end
                 end
 
+                -- Update food supply state if Farm upgrade completed
+                if building.type == "Farm" then
+                    DataService:UpdateFoodSupplyState(player)
+                end
+
                 -- Fire event
                 BuildingService.UpgradeCompleted:Fire(player, building)
             end
@@ -410,6 +429,45 @@ function BuildingService:GetBuilding(player: Player, buildingId: string): Types.
     if not playerData then return nil end
 
     return playerData.buildings[buildingId]
+end
+
+--[[
+    Purchases an additional farm plot for the player.
+    Farms are the only multi-instance building.
+]]
+function BuildingService:PurchaseFarmPlot(player: Player): Types.PlacementResult
+    local playerData = DataService:GetPlayerData(player)
+    if not playerData then
+        return { success = false, building = nil, error = "NO_PLAYER_DATA" }
+    end
+
+    local currentPlots = playerData.farmPlots or 1
+    local maxPlots = playerData.maxFarmPlots or BuildingData.MaxFarmPlotsPerTH[playerData.townHallLevel] or 2
+
+    -- Check if at max for TH level
+    if currentPlots >= maxPlots then
+        return { success = false, building = nil, error = "MAX_FARM_PLOTS_FOR_TH" }
+    end
+
+    -- Get cost for next plot
+    local nextPlotNumber = currentPlots + 1
+    local cost = BuildingData.FarmPlotCosts[nextPlotNumber]
+    if not cost then
+        return { success = false, building = nil, error = "MAX_FARM_PLOTS_REACHED" }
+    end
+
+    -- Check resources
+    if not DataService:CanAfford(player, cost) then
+        return { success = false, building = nil, error = "INSUFFICIENT_RESOURCES" }
+    end
+
+    -- Deduct resources
+    DataService:DeductResources(player, cost)
+
+    -- Increment farm plots
+    playerData.farmPlots = nextPlotNumber
+
+    return { success = true, building = nil, error = nil }
 end
 
 --[[

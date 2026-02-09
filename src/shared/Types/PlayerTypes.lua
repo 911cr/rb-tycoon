@@ -10,7 +10,6 @@ export type ResourceData = {
     gold: number,
     wood: number,
     food: number,
-    gems: number,
 }
 
 export type StorageCapacity = {
@@ -87,7 +86,14 @@ export type PlayerData = {
     -- Military
     troops: {[string]: number}, -- troopType -> count
     spells: {[string]: number}, -- spellType -> count
-    armyCampCapacity: number,
+    armyCampCapacity: number, -- Deprecated: kept for compatibility
+
+    -- Food Supply System
+    foodProduction: number, -- Food produced per minute from all farms
+    foodUsage: number, -- Food consumed per minute by all troops
+    trainingPaused: boolean, -- True if foodUsage > foodProduction
+    farmPlots: number, -- Number of purchased farm slots (starts at 1)
+    maxFarmPlots: number, -- Maximum farm slots allowed at current TH level
 
     -- Builders
     builders: {BuilderData},

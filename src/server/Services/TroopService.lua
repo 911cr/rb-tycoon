@@ -181,14 +181,15 @@ function TroopService:TrainTroop(player: Player, troopType: string, quantity: nu
         return { success = false, queueItem = nil, error = "NO_TRAINING_BUILDING" }
     end
 
-    -- Check army capacity
-    local capacity = getArmyCampCapacity(playerData)
-    local currentSize = getCurrentArmySize(playerData)
-    local queuedSize = getQueuedArmySize(player.UserId)
-    local requestedSpace = quantity * troopDef.housingSpace
+    -- Check food supply state
+    if playerData.trainingPaused then
+        return { success = false, queueItem = nil, error = "FOOD_SHORTAGE" }
+    end
 
-    if currentSize + queuedSize + requestedSpace > capacity then
-        return { success = false, queueItem = nil, error = "ARMY_FULL" }
+    -- Check if these troops would exceed food supply
+    local additionalUsage = (troopDef.foodUpkeep or 1) * quantity
+    if (playerData.foodUsage or 0) + additionalUsage > (playerData.foodProduction or 0) then
+        return { success = false, queueItem = nil, error = "WOULD_EXCEED_FOOD_SUPPLY" }
     end
 
     -- Check queue size limit
@@ -349,6 +350,11 @@ function TroopService:CheckTrainingComplete(player: Player)
     for _, item in completed do
         TroopService.TrainingCompleted:Fire(player, item.troopType, item.quantity)
     end
+
+    -- Update food supply state after training completion
+    if #completed > 0 then
+        DataService:UpdateFoodSupplyState(player)
+    end
 end
 
 --[[
@@ -471,7 +477,11 @@ function TroopService:Init()
         while true do
             task.wait(1)
             for _, player in Players:GetPlayers() do
-                self:CheckTrainingComplete(player)
+                local playerData = DataService:GetPlayerData(player)
+                -- Skip training completion if food supply is paused
+                if playerData and not playerData.trainingPaused then
+                    self:CheckTrainingComplete(player)
+                end
             end
         end
     end)

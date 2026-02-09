@@ -13,6 +13,19 @@ local Components = require(script.Parent.Components)
 local ClientAPI = require(ReplicatedStorage.Shared.Modules.ClientAPI)
 local Signal = require(ReplicatedStorage.Shared.Modules.Signal)
 
+--[[
+    Formats a number for display.
+]]
+local function formatNumber(value: number): string
+    if value >= 1000000 then
+        return string.format("%.1fM", value / 1000000)
+    elseif value >= 1000 then
+        return string.format("%.1fK", value / 1000)
+    else
+        return tostring(math.floor(value))
+    end
+end
+
 local HUD = {}
 HUD.__index = HUD
 
@@ -35,45 +48,60 @@ local _initialized = false
 local _goldLabel: TextLabel
 local _woodLabel: TextLabel
 local _foodLabel: TextLabel
-local _gemsLabel: TextLabel
+local _foodProductionLabel: TextLabel
+local _foodUsageLabel: TextLabel
 local _buildersLabel: TextLabel
 local _trophyLabel: TextLabel
+local _troopsLabel: TextLabel
+local _troopsDisplay: Frame
 
 --[[
     Creates the resource bar at the top of the screen.
+    Positioned to avoid Roblox's menu button (top-left) and chat icon.
 ]]
 local function createResourceBar(parent: ScreenGui): Frame
+    -- Create a container that's positioned after the Roblox UI elements
+    -- Roblox menu button is ~48px, chat is ~48px, plus some padding
     local bar = Components.CreateFrame({
         Name = "ResourceBar",
-        Size = UDim2.new(1, 0, 0, 50),
-        Position = UDim2.new(0, 0, 0, 0),
+        Size = UDim2.new(0, 380, 0, 46),  -- Smaller now without gems
+        Position = UDim2.new(0.5, 0, 0, 8),  -- Centered at top with padding
+        AnchorPoint = Vector2.new(0.5, 0),
         BackgroundColor = Components.Colors.Background,
-        BackgroundTransparency = 0.3,
+        BackgroundTransparency = 0.2,
+        CornerRadius = Components.Sizes.CornerRadius,
         Parent = parent,
     })
+
+    -- Add border for visibility
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = Components.Colors.GoldDark
+    stroke.Thickness = 2
+    stroke.Parent = bar
 
     -- Add gradient for polish
     local gradient = Instance.new("UIGradient")
     gradient.Rotation = 90
-    gradient.Transparency = NumberSequence.new({
-        NumberSequenceKeypoint.new(0, 0),
-        NumberSequenceKeypoint.new(0.8, 0),
-        NumberSequenceKeypoint.new(1, 1),
+    gradient.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.new(1, 1, 1)),
+        ColorSequenceKeypoint.new(1, Color3.new(0.85, 0.85, 0.85)),
     })
     gradient.Parent = bar
 
-    -- Resource container (left side)
+    -- Resource container (centered)
     local resourceContainer = Components.CreateFrame({
         Name = "Resources",
-        Size = UDim2.new(0.7, 0, 1, 0),
-        Position = UDim2.new(0, 8, 0, 0),
+        Size = UDim2.new(1, -16, 1, -8),
+        Position = UDim2.new(0.5, 0, 0.5, 0),
+        AnchorPoint = Vector2.new(0.5, 0.5),
         BackgroundTransparency = 1,
         Parent = bar,
     })
 
     local listLayout = Components.CreateListLayout({
         FillDirection = Enum.FillDirection.Horizontal,
-        Padding = UDim.new(0, 8),
+        HorizontalAlignment = Enum.HorizontalAlignment.Center,
+        Padding = UDim.new(0, 12),
         VerticalAlignment = Enum.VerticalAlignment.Center,
         Parent = resourceContainer,
     })
@@ -82,7 +110,7 @@ local function createResourceBar(parent: ScreenGui): Frame
     local goldDisplay = Components.CreateResourceDisplay({
         Name = "GoldDisplay",
         ResourceType = "Gold",
-        Size = UDim2.new(0, 100, 0, 36),
+        Size = UDim2.new(0, 105, 0, 34),
         Parent = resourceContainer,
     })
     _goldLabel = goldDisplay:FindFirstChild("Amount", true) :: TextLabel
@@ -92,46 +120,74 @@ local function createResourceBar(parent: ScreenGui): Frame
     local woodDisplay = Components.CreateResourceDisplay({
         Name = "WoodDisplay",
         ResourceType = "Wood",
-        Size = UDim2.new(0, 100, 0, 36),
+        Size = UDim2.new(0, 105, 0, 34),
         Parent = resourceContainer,
     })
     _woodLabel = woodDisplay:FindFirstChild("Amount", true) :: TextLabel
     _resourceDisplays["Wood"] = woodDisplay
 
-    -- Food display
-    local foodDisplay = Components.CreateResourceDisplay({
-        Name = "FoodDisplay",
-        ResourceType = "Food",
-        Size = UDim2.new(0, 100, 0, 36),
+    -- Food supply display (production/usage)
+    local foodSupplyDisplay = Components.CreateFrame({
+        Name = "FoodSupplyDisplay",
+        Size = UDim2.new(0, 140, 0, 34),
+        BackgroundColor = Components.Colors.BackgroundLight,
+        CornerRadius = Components.Sizes.CornerRadius,
         Parent = resourceContainer,
     })
-    _foodLabel = foodDisplay:FindFirstChild("Amount", true) :: TextLabel
-    _resourceDisplays["Food"] = foodDisplay
 
-    -- Gems display (right side, premium currency)
-    local gemsDisplay = Components.CreateResourceDisplay({
-        Name = "GemsDisplay",
-        ResourceType = "Gems",
-        Size = UDim2.new(0, 90, 0, 36),
-        Position = UDim2.new(1, -100, 0.5, 0),
-        AnchorPoint = Vector2.new(1, 0.5),
-        Parent = bar,
+    -- Food icon
+    local foodIcon = Instance.new("ImageLabel")
+    foodIcon.Name = "FoodIcon"
+    foodIcon.Size = UDim2.new(0, 24, 0, 24)
+    foodIcon.Position = UDim2.new(0, 4, 0.5, 0)
+    foodIcon.AnchorPoint = Vector2.new(0, 0.5)
+    foodIcon.BackgroundTransparency = 1
+    foodIcon.Image = "rbxassetid://6031094678" -- Turkey/meat icon (matches resource display)
+    foodIcon.ImageColor3 = Components.Colors.Food or Color3.fromRGB(255, 100, 100)
+    foodIcon.ScaleType = Enum.ScaleType.Fit
+    foodIcon.Parent = foodSupplyDisplay
+
+    -- Production label (green)
+    _foodProductionLabel = Components.CreateLabel({
+        Name = "Production",
+        Text = "+0/m",
+        Size = UDim2.new(0, 50, 1, 0),
+        Position = UDim2.new(0, 30, 0, 0),
+        TextColor = Color3.fromRGB(100, 200, 100),
+        TextSize = Components.Sizes.FontSizeSmall,
+        Font = Enum.Font.GothamBold,
+        TextXAlignment = Enum.TextXAlignment.Center,
+        Parent = foodSupplyDisplay,
     })
-    _gemsLabel = gemsDisplay:FindFirstChild("Amount", true) :: TextLabel
-    _resourceDisplays["Gems"] = gemsDisplay
+
+    -- Usage label (yellow/red when over)
+    _foodUsageLabel = Components.CreateLabel({
+        Name = "Usage",
+        Text = "-0/m",
+        Size = UDim2.new(0, 50, 1, 0),
+        Position = UDim2.new(0, 85, 0, 0),
+        TextColor = Color3.fromRGB(200, 200, 100),
+        TextSize = Components.Sizes.FontSizeSmall,
+        Font = Enum.Font.GothamBold,
+        TextXAlignment = Enum.TextXAlignment.Center,
+        Parent = foodSupplyDisplay,
+    })
+
+    _resourceDisplays["FoodSupply"] = foodSupplyDisplay
 
     return bar
 end
 
 --[[
     Creates the builder status display (clickable to open profile).
+    Positioned on the left side, below the Roblox menu area.
 ]]
 local function createBuilderDisplay(parent: ScreenGui): Frame
     -- Use a button as the container for click detection
     local container = Instance.new("TextButton")
     container.Name = "BuilderDisplay"
     container.Size = UDim2.new(0, 100, 0, 36)
-    container.Position = UDim2.new(0, 8, 0, 58)
+    container.Position = UDim2.new(0, 8, 0, 62)  -- Below Roblox menu button area
     container.BackgroundColor3 = Components.Colors.BackgroundLight
     container.BorderSizePixel = 0
     container.Text = ""
@@ -144,7 +200,7 @@ local function createBuilderDisplay(parent: ScreenGui): Frame
 
     local stroke = Instance.new("UIStroke")
     stroke.Color = Components.Colors.Secondary
-    stroke.Thickness = 1
+    stroke.Thickness = 2
     stroke.Parent = container
 
     -- Click handler
@@ -152,27 +208,28 @@ local function createBuilderDisplay(parent: ScreenGui): Frame
         HUD.ProfileRequested:Fire()
     end)
 
-    -- Builder icon
+    -- Builder icon background
     local iconBg = Components.CreateFrame({
         Name = "IconBg",
         Size = UDim2.new(0, 28, 0, 28),
         Position = UDim2.new(0, 4, 0.5, 0),
         AnchorPoint = Vector2.new(0, 0.5),
         BackgroundColor = Components.Colors.Secondary,
-        CornerRadius = Components.Sizes.CornerRadiusSmall,
+        CornerRadius = UDim.new(0.5, 0),
         Parent = container,
     })
 
-    local iconLabel = Components.CreateLabel({
-        Name = "Icon",
-        Text = "B",
-        Size = UDim2.new(1, 0, 1, 0),
-        TextColor = Components.Colors.TextPrimary,
-        TextSize = Components.Sizes.FontSizeMedium,
-        Font = Enum.Font.GothamBold,
-        TextXAlignment = Enum.TextXAlignment.Center,
-        Parent = iconBg,
-    })
+    -- Builder icon (hammer image)
+    local iconImage = Instance.new("ImageLabel")
+    iconImage.Name = "IconImage"
+    iconImage.Size = UDim2.new(0, 20, 0, 20)
+    iconImage.Position = UDim2.new(0.5, 0, 0.5, 0)
+    iconImage.AnchorPoint = Vector2.new(0.5, 0.5)
+    iconImage.BackgroundTransparency = 1
+    iconImage.Image = "rbxassetid://6035053746"  -- Hammer/tool icon
+    iconImage.ImageColor3 = Color3.new(1, 1, 1)
+    iconImage.ScaleType = Enum.ScaleType.Fit
+    iconImage.Parent = iconBg
 
     -- Builder count
     _buildersLabel = Components.CreateLabel({
@@ -191,13 +248,14 @@ end
 
 --[[
     Creates the trophy display (clickable to open leaderboard).
+    Positioned next to builder display.
 ]]
 local function createTrophyDisplay(parent: ScreenGui): Frame
     -- Use a button as the container for click detection
     local container = Instance.new("TextButton")
     container.Name = "TrophyDisplay"
     container.Size = UDim2.new(0, 90, 0, 36)
-    container.Position = UDim2.new(0, 116, 0, 58)
+    container.Position = UDim2.new(0, 116, 0, 62)  -- Next to builder display
     container.BackgroundColor3 = Components.Colors.BackgroundLight
     container.BorderSizePixel = 0
     container.Text = ""
@@ -210,7 +268,7 @@ local function createTrophyDisplay(parent: ScreenGui): Frame
 
     local stroke = Instance.new("UIStroke")
     stroke.Color = Components.Colors.Warning
-    stroke.Thickness = 1
+    stroke.Thickness = 2
     stroke.Parent = container
 
     -- Click handler
@@ -218,32 +276,101 @@ local function createTrophyDisplay(parent: ScreenGui): Frame
         HUD.LeaderboardRequested:Fire()
     end)
 
-    -- Trophy icon
+    -- Trophy icon background
     local iconBg = Components.CreateFrame({
         Name = "IconBg",
         Size = UDim2.new(0, 28, 0, 28),
         Position = UDim2.new(0, 4, 0.5, 0),
         AnchorPoint = Vector2.new(0, 0.5),
         BackgroundColor = Components.Colors.Warning,
-        CornerRadius = Components.Sizes.CornerRadiusSmall,
+        CornerRadius = UDim.new(0.5, 0),
         Parent = container,
     })
 
-    local iconLabel = Components.CreateLabel({
-        Name = "Icon",
-        Text = "T",
-        Size = UDim2.new(1, 0, 1, 0),
-        TextColor = Components.Colors.TextPrimary,
-        TextSize = Components.Sizes.FontSizeMedium,
-        Font = Enum.Font.GothamBold,
-        TextXAlignment = Enum.TextXAlignment.Center,
-        Parent = iconBg,
-    })
+    -- Trophy icon (trophy/star image)
+    local iconImage = Instance.new("ImageLabel")
+    iconImage.Name = "IconImage"
+    iconImage.Size = UDim2.new(0, 20, 0, 20)
+    iconImage.Position = UDim2.new(0.5, 0, 0.5, 0)
+    iconImage.AnchorPoint = Vector2.new(0.5, 0.5)
+    iconImage.BackgroundTransparency = 1
+    iconImage.Image = "rbxassetid://6034767593"  -- Trophy/star icon
+    iconImage.ImageColor3 = Color3.new(1, 1, 1)
+    iconImage.ScaleType = Enum.ScaleType.Fit
+    iconImage.Parent = iconBg
 
     -- Trophy count
     _trophyLabel = Components.CreateLabel({
         Name = "Count",
         Text = "0",
+        Size = UDim2.new(1, -40, 1, 0),
+        Position = UDim2.new(0, 36, 0, 0),
+        TextColor = Components.Colors.TextPrimary,
+        TextSize = Components.Sizes.FontSizeMedium,
+        Font = Enum.Font.GothamBold,
+        Parent = container,
+    })
+
+    return container :: any
+end
+
+--[[
+    Creates the troop count display.
+    Positioned next to trophy display.
+]]
+local function createTroopDisplay(parent: ScreenGui): Frame
+    local container = Instance.new("TextButton")
+    container.Name = "TroopDisplay"
+    container.Size = UDim2.new(0, 100, 0, 36)
+    container.Position = UDim2.new(0, 214, 0, 62)  -- Next to trophy display
+    container.BackgroundColor3 = Components.Colors.BackgroundLight
+    container.BorderSizePixel = 0
+    container.Text = ""
+    container.AutoButtonColor = true
+    container.Parent = parent
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = Components.Sizes.CornerRadius
+    corner.Parent = container
+
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = Components.Colors.Danger or Color3.fromRGB(220, 80, 80)
+    stroke.Thickness = 2
+    stroke.Parent = container
+
+    -- Click handler (could open troop menu in future)
+    container.MouseButton1Click:Connect(function()
+        -- Could open army/troop panel
+        print("[HUD] Troop display clicked")
+    end)
+
+    -- Troop icon background
+    local iconBg = Components.CreateFrame({
+        Name = "IconBg",
+        Size = UDim2.new(0, 28, 0, 28),
+        Position = UDim2.new(0, 4, 0.5, 0),
+        AnchorPoint = Vector2.new(0, 0.5),
+        BackgroundColor = Components.Colors.Danger or Color3.fromRGB(220, 80, 80),
+        CornerRadius = UDim.new(0.5, 0),
+        Parent = container,
+    })
+
+    -- Troop icon (sword/soldier image)
+    local iconImage = Instance.new("ImageLabel")
+    iconImage.Name = "IconImage"
+    iconImage.Size = UDim2.new(0, 20, 0, 20)
+    iconImage.Position = UDim2.new(0.5, 0, 0.5, 0)
+    iconImage.AnchorPoint = Vector2.new(0.5, 0.5)
+    iconImage.BackgroundTransparency = 1
+    iconImage.Image = "rbxassetid://6034509993"  -- Sword/soldier icon
+    iconImage.ImageColor3 = Color3.new(1, 1, 1)
+    iconImage.ScaleType = Enum.ScaleType.Fit
+    iconImage.Parent = iconBg
+
+    -- Troop count (current/max)
+    _troopsLabel = Components.CreateLabel({
+        Name = "Count",
+        Text = "0/25",
         Size = UDim2.new(1, -40, 1, 0),
         Position = UDim2.new(0, 36, 0, 0),
         TextColor = Components.Colors.TextPrimary,
@@ -351,18 +478,34 @@ end
 --[[
     Updates the resource displays with current values.
 ]]
-function HUD:UpdateResources(resources: {gold: number, wood: number, food: number, gems: number})
+function HUD:UpdateResources(resources: {gold: number, wood: number, food: number})
     if _goldLabel then
         _goldLabel.Text = formatNumber(resources.gold or 0)
     end
     if _woodLabel then
         _woodLabel.Text = formatNumber(resources.wood or 0)
     end
-    if _foodLabel then
-        _foodLabel.Text = formatNumber(resources.food or 0)
+end
+
+--[[
+    Updates the food supply display with production and usage per minute.
+]]
+function HUD:UpdateFoodSupply(production: number, usage: number, isPaused: boolean)
+    if _foodProductionLabel then
+        _foodProductionLabel.Text = string.format("+%d/m", math.floor(production))
+        _foodProductionLabel.TextColor3 = Color3.fromRGB(100, 200, 100)
     end
-    if _gemsLabel then
-        _gemsLabel.Text = tostring(resources.gems or 0)
+
+    if _foodUsageLabel then
+        _foodUsageLabel.Text = string.format("-%d/m", math.floor(usage))
+        -- Color red if usage exceeds production (paused)
+        if isPaused then
+            _foodUsageLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
+        elseif usage > production * 0.8 then
+            _foodUsageLabel.TextColor3 = Color3.fromRGB(255, 200, 100) -- Warning yellow
+        else
+            _foodUsageLabel.TextColor3 = Color3.fromRGB(200, 200, 100) -- Normal
+        end
     end
 end
 
@@ -385,24 +528,29 @@ function HUD:UpdateTrophies(trophies: number)
 end
 
 --[[
+    Updates the troop count display.
+]]
+function HUD:UpdateTroops(currentTroops: number, maxTroops: number)
+    if _troopsLabel then
+        _troopsLabel.Text = string.format("%d/%d", currentTroops, maxTroops)
+
+        -- Color code based on army size
+        if currentTroops >= maxTroops then
+            _troopsLabel.TextColor3 = Components.Colors.Danger or Color3.fromRGB(220, 80, 80)
+        elseif currentTroops >= maxTroops * 0.8 then
+            _troopsLabel.TextColor3 = Components.Colors.Warning or Color3.fromRGB(240, 180, 80)
+        else
+            _troopsLabel.TextColor3 = Components.Colors.TextPrimary
+        end
+    end
+end
+
+--[[
     Shows or hides the HUD.
 ]]
 function HUD:SetVisible(visible: boolean)
     if _screenGui then
         _screenGui.Enabled = visible
-    end
-end
-
---[[
-    Formats a number for display.
-]]
-function formatNumber(value: number): string
-    if value >= 1000000 then
-        return string.format("%.1fM", value / 1000000)
-    elseif value >= 1000 then
-        return string.format("%.1fK", value / 1000)
-    else
-        return tostring(math.floor(value))
     end
 end
 
@@ -429,6 +577,7 @@ function HUD:Init()
     createResourceBar(_screenGui)
     _builderDisplay = createBuilderDisplay(_screenGui)
     createTrophyDisplay(_screenGui)
+    _troopsDisplay = createTroopDisplay(_screenGui)
     createActionBar(_screenGui)
 
     -- Listen for data updates
@@ -448,6 +597,68 @@ function HUD:Init()
         end
         if data.trophies then
             self:UpdateTrophies(data.trophies.current or 0)
+        end
+        -- Troop count
+        if data.troops ~= nil or data.armyCampCapacity ~= nil then
+            local totalTroops = 0
+            if data.troops then
+                for _, count in data.troops do
+                    totalTroops = totalTroops + count
+                end
+            end
+            self:UpdateTroops(totalTroops, data.armyCampCapacity or 25)
+        end
+        -- Food supply system
+        if data.foodProduction ~= nil or data.foodUsage ~= nil then
+            self:UpdateFoodSupply(
+                data.foodProduction or 0,
+                data.foodUsage or 0,
+                data.trainingPaused or false
+            )
+        end
+    end)
+
+    -- Check if data already exists (in case we initialized after server sent data)
+    task.defer(function()
+        task.wait(0.5) -- Brief wait for ClientAPI to be ready
+        local existingData = ClientAPI.GetPlayerData()
+        if existingData then
+            if existingData.resources then
+                self:UpdateResources(existingData.resources)
+            end
+            if existingData.builders then
+                local freeBuilders = 0
+                for _, builder in existingData.builders do
+                    if not builder.busy then
+                        freeBuilders += 1
+                    end
+                end
+                self:UpdateBuilders(freeBuilders, #existingData.builders)
+            end
+            if existingData.trophies then
+                self:UpdateTrophies(existingData.trophies.current or 0)
+            end
+            -- Troop count
+            if existingData.troops ~= nil or existingData.armyCampCapacity ~= nil then
+                local totalTroops = 0
+                if existingData.troops then
+                    for _, count in existingData.troops do
+                        totalTroops = totalTroops + count
+                    end
+                end
+                self:UpdateTroops(totalTroops, existingData.armyCampCapacity or 25)
+            end
+            -- Food supply system
+            if existingData.foodProduction ~= nil or existingData.foodUsage ~= nil then
+                self:UpdateFoodSupply(
+                    existingData.foodProduction or 0,
+                    existingData.foodUsage or 0,
+                    existingData.trainingPaused or false
+                )
+            end
+        else
+            -- Request fresh data from server
+            Events.SyncPlayerData:FireServer()
         end
     end)
 

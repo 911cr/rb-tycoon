@@ -55,7 +55,7 @@ BuildingData.GoldMine = {
     width = 3,
     height = 3,
     townHallRequired = 1,
-    maxCount = 6, -- scales with TH
+    maxCount = 1, -- Single instance only
     levels = {
         { level = 1, cost = { gold = 150 }, buildTime = minutes(1), hp = 400, productionRate = 200, storageCapacity = 500 },
         { level = 2, cost = { gold = 300 }, buildTime = minutes(5), hp = 440, productionRate = 400, storageCapacity = 1000 },
@@ -80,7 +80,7 @@ BuildingData.LumberMill = {
     width = 3,
     height = 3,
     townHallRequired = 1,
-    maxCount = 6,
+    maxCount = 1, -- Single instance only
     levels = {
         { level = 1, cost = { gold = 150 }, buildTime = minutes(1), hp = 400, productionRate = 150, storageCapacity = 400 },
         { level = 2, cost = { gold = 300 }, buildTime = minutes(5), hp = 440, productionRate = 300, storageCapacity = 800 },
@@ -101,11 +101,13 @@ BuildingData.Farm = {
     type = "Farm",
     category = "resource",
     displayName = "Farm",
-    description = "Produces food for training troops.",
+    description = "Produces food to sustain your army. Build more farms to support more troops!",
     width = 3,
     height = 3,
     townHallRequired = 1,
-    maxCount = 6,
+    maxCount = 6, -- Multi-instance allowed (uses farmPlots)
+    isMultiInstance = true, -- Only building type that allows multiples
+    cannotBeDestroyed = true, -- Downgrades to level 1 instead of being destroyed
     levels = {
         { level = 1, cost = { gold = 100 }, buildTime = minutes(1), hp = 400, productionRate = 100, storageCapacity = 300 },
         { level = 2, cost = { gold = 200 }, buildTime = minutes(5), hp = 440, productionRate = 200, storageCapacity = 600 },
@@ -126,11 +128,11 @@ BuildingData.GoldStorage = {
     type = "GoldStorage",
     category = "storage",
     displayName = "Gold Storage",
-    description = "Stores gold. Build more to increase your maximum gold.",
+    description = "Stores gold. Upgrade to increase your maximum gold.",
     width = 3,
     height = 3,
     townHallRequired = 1,
-    maxCount = 4,
+    maxCount = 1, -- Single instance only
     levels = {
         { level = 1, cost = { gold = 300 }, buildTime = minutes(1), hp = 400, storageCapacity = 1500 },
         { level = 2, cost = { gold = 750 }, buildTime = minutes(10), hp = 600, storageCapacity = 3000 },
@@ -156,7 +158,7 @@ BuildingData.Barracks = {
     width = 3,
     height = 3,
     townHallRequired = 1,
-    maxCount = 4,
+    maxCount = 1, -- Single instance only
     levels = {
         { level = 1, cost = { gold = 200 }, buildTime = minutes(1), hp = 250, trainingCapacity = 20 },
         { level = 2, cost = { gold = 1000 }, buildTime = minutes(15), hp = 290, trainingCapacity = 25 },
@@ -175,11 +177,11 @@ BuildingData.ArmyCamp = {
     type = "ArmyCamp",
     category = "military",
     displayName = "Army Camp",
-    description = "Houses your trained troops. More camps = bigger army!",
+    description = "Houses your trained troops. (Deprecated: Army size now limited by food supply)",
     width = 4,
     height = 4,
     townHallRequired = 1,
-    maxCount = 4,
+    maxCount = 1, -- Single instance only (deprecated, kept for compatibility)
     levels = {
         { level = 1, cost = { gold = 250 }, buildTime = minutes(5), hp = 250, housingCapacity = 20 },
         { level = 2, cost = { gold = 2500 }, buildTime = minutes(30), hp = 270, housingCapacity = 30 },
@@ -221,7 +223,7 @@ BuildingData.Cannon = {
     width = 3,
     height = 3,
     townHallRequired = 1,
-    maxCount = 6, -- scales with TH
+    maxCount = 1, -- Single instance only
     levels = {
         { level = 1, cost = { gold = 250 }, buildTime = minutes(1), hp = 420, damage = 9, attackSpeed = 0.8, range = 9, targetType = "ground" },
         { level = 2, cost = { gold = 1000 }, buildTime = minutes(15), hp = 470, damage = 11, attackSpeed = 0.8, range = 9, targetType = "ground" },
@@ -244,7 +246,7 @@ BuildingData.ArcherTower = {
     width = 3,
     height = 3,
     townHallRequired = 2,
-    maxCount = 6,
+    maxCount = 1, -- Single instance only
     levels = {
         { level = 1, cost = { gold = 1000 }, buildTime = minutes(5), hp = 380, damage = 11, attackSpeed = 1, range = 10, targetType = "both" },
         { level = 2, cost = { gold = 2000 }, buildTime = minutes(15), hp = 420, damage = 15, attackSpeed = 1, range = 10, targetType = "both" },
@@ -267,7 +269,7 @@ BuildingData.Mortar = {
     width = 3,
     height = 3,
     townHallRequired = 3,
-    maxCount = 4,
+    maxCount = 1, -- Single instance only
     levels = {
         { level = 1, cost = { gold = 8000 }, buildTime = hours(1), hp = 400, damage = 20, attackSpeed = 0.2, range = 11, targetType = "ground", splashRadius = 1.5 },
         { level = 2, cost = { gold = 32000 }, buildTime = hours(3), hp = 450, damage = 25, attackSpeed = 0.2, range = 11, targetType = "ground", splashRadius = 1.5 },
@@ -288,7 +290,7 @@ BuildingData.AirDefense = {
     width = 3,
     height = 3,
     townHallRequired = 4,
-    maxCount = 3,
+    maxCount = 1, -- Single instance only
     levels = {
         { level = 1, cost = { gold = 22500 }, buildTime = hours(2), hp = 800, damage = 80, attackSpeed = 1, range = 10, targetType = "air" },
         { level = 2, cost = { gold = 90000 }, buildTime = hours(4), hp = 850, damage = 110, attackSpeed = 1, range = 10, targetType = "air" },
@@ -309,7 +311,7 @@ BuildingData.WizardTower = {
     width = 3,
     height = 3,
     townHallRequired = 5,
-    maxCount = 3,
+    maxCount = 1, -- Single instance only
     levels = {
         { level = 1, cost = { gold = 180000 }, buildTime = hours(4), hp = 620, damage = 24, attackSpeed = 0.7, range = 7, targetType = "both", splashRadius = 1 },
         { level = 2, cost = { gold = 360000 }, buildTime = hours(8), hp = 660, damage = 32, attackSpeed = 0.7, range = 7, targetType = "both", splashRadius = 1 },
@@ -347,6 +349,32 @@ BuildingData.Wall = {
     },
 }
 
+--[[
+    FARM PLOT SYSTEM
+    Farms are the only multi-instance building. Players must purchase
+    additional farm plots to build more farms.
+]]
+BuildingData.FarmPlotCosts = {
+    [2] = { gold = 1000, wood = 500 },
+    [3] = { gold = 3000, wood = 1500 },
+    [4] = { gold = 10000, wood = 5000 },
+    [5] = { gold = 30000, wood = 15000 },
+    [6] = { gold = 75000, wood = 35000 },
+}
+
+BuildingData.MaxFarmPlotsPerTH = {
+    [1] = 2,
+    [2] = 3,
+    [3] = 4,
+    [4] = 4,
+    [5] = 5,
+    [6] = 5,
+    [7] = 6,
+    [8] = 6,
+    [9] = 6,
+    [10] = 6,
+}
+
 -- Helper function to get building data by type
 function BuildingData.GetByType(buildingType: string): any?
     return BuildingData[buildingType]
@@ -357,6 +385,51 @@ function BuildingData.GetLevelData(buildingType: string, level: number): any?
     local building = BuildingData[buildingType]
     if not building then return nil end
     return building.levels[level]
+end
+
+-- Category mapping from UI category names to data category names
+local CategoryMapping = {
+    Resources = { "resource", "storage" },
+    Defense = { "defense", "wall" },
+    Army = { "military" },
+    Other = { "core" },
+}
+
+-- All building types for iteration
+local AllBuildingTypes = {
+    "TownHall", "GoldMine", "LumberMill", "Farm", "GoldStorage",
+    "Barracks", "ArmyCamp", "SpellFactory",
+    "Cannon", "ArcherTower", "Mortar", "AirDefense", "WizardTower",
+    "Wall"
+}
+
+-- Helper function to get buildings by category
+function BuildingData.GetByCategory(categoryName: string): {any}
+    local results = {}
+    local targetCategories = CategoryMapping[categoryName]
+
+    if not targetCategories then
+        return results
+    end
+
+    for _, buildingType in AllBuildingTypes do
+        local building = BuildingData[buildingType]
+        if building then
+            for _, targetCategory in targetCategories do
+                if building.category == targetCategory then
+                    table.insert(results, building)
+                    break
+                end
+            end
+        end
+    end
+
+    return results
+end
+
+-- Helper function to get all building types
+function BuildingData.GetAllTypes(): {string}
+    return AllBuildingTypes
 end
 
 return BuildingData
