@@ -32,6 +32,112 @@ end)
 local GROUND_Y = 2
 local WALL_THICKNESS = 1
 
+-- Player farm data (tracks purchased plots and built farms per player)
+local PlayerFarmData = {} -- [userId] = { farmPlots = 1, builtFarms = { [1] = true } }
+
+local function getPlayerFarmData(player)
+    local userId = player.UserId
+    if not PlayerFarmData[userId] then
+        PlayerFarmData[userId] = {
+            farmPlots = 1, -- Start with 1 farm plot (Farm 1)
+            builtFarms = { [1] = true }, -- Farm 1 is built by default
+        }
+    end
+    return PlayerFarmData[userId]
+end
+
+-- Forward declaration for createFarm (defined later)
+local createFarm
+
+-- Create RemoteEvents for farm management
+local function setupFarmRemotes()
+    local remoteFolder = ReplicatedStorage:FindFirstChild("Remotes")
+    if not remoteFolder then
+        remoteFolder = Instance.new("Folder")
+        remoteFolder.Name = "Remotes"
+        remoteFolder.Parent = ReplicatedStorage
+    end
+
+    -- BuildFarm remote
+    local buildFarmRemote = Instance.new("RemoteFunction")
+    buildFarmRemote.Name = "BuildFarm"
+    buildFarmRemote.Parent = remoteFolder
+
+    buildFarmRemote.OnServerInvoke = function(player, farmNumber)
+        local farmData = getPlayerFarmData(player)
+
+        -- Check if farm is already built
+        if farmData.builtFarms[farmNumber] then
+            return { success = false, error = "Farm " .. farmNumber .. " is already built" }
+        end
+
+        -- Check if player has the plot unlocked
+        if farmNumber > farmData.farmPlots then
+            return { success = false, error = "You need to purchase Farm Plot " .. farmNumber .. " first" }
+        end
+
+        -- Build the farm
+        print(string.format("[Farm] Player %s building Farm %d", player.Name, farmNumber))
+        farmData.builtFarms[farmNumber] = true
+
+        -- Create the farm on the server
+        task.defer(function()
+            if createFarm then
+                createFarm(farmNumber)
+            end
+        end)
+
+        return { success = true }
+    end
+
+    -- PurchaseFarmPlot remote
+    local purchasePlotRemote = Instance.new("RemoteFunction")
+    purchasePlotRemote.Name = "PurchaseFarmPlot"
+    purchasePlotRemote.Parent = remoteFolder
+
+    purchasePlotRemote.OnServerInvoke = function(player, plotNumber)
+        local farmData = getPlayerFarmData(player)
+
+        -- Check if already purchased
+        if plotNumber <= farmData.farmPlots then
+            return { success = false, error = "Farm Plot " .. plotNumber .. " already purchased" }
+        end
+
+        -- Check if it's the next plot (must purchase in order)
+        if plotNumber ~= farmData.farmPlots + 1 then
+            return { success = false, error = "Must purchase plots in order" }
+        end
+
+        -- Check costs (from BuildingData)
+        local BuildingData = require(ReplicatedStorage.Shared.Constants.BuildingData)
+        local plotCost = BuildingData.FarmPlotCosts[plotNumber]
+        if not plotCost then
+            return { success = false, error = "Invalid plot number" }
+        end
+
+        -- TODO: Check player has enough resources and deduct them
+        -- For now, just grant the plot
+        print(string.format("[Farm] Player %s purchased Farm Plot %d", player.Name, plotNumber))
+        farmData.farmPlots = plotNumber
+
+        return { success = true }
+    end
+
+    -- GetFarmData remote (for client to query farm status)
+    local getFarmDataRemote = Instance.new("RemoteFunction")
+    getFarmDataRemote.Name = "GetFarmData"
+    getFarmDataRemote.Parent = remoteFolder
+
+    getFarmDataRemote.OnServerInvoke = function(player)
+        return getPlayerFarmData(player)
+    end
+
+    print("[SimpleTest] Farm remotes initialized")
+end
+
+-- Setup remotes
+setupFarmRemotes()
+
 -- Village folder
 local villageFolder = Instance.new("Folder")
 villageFolder.Name = "Village"
@@ -92,6 +198,24 @@ local INTERIOR_SPAWN_OFFSETS = {
 
 -- Store return positions for each player
 local PlayerReturnPositions = {}
+
+-- Store which building each player is currently in (for exit orientation)
+local PlayerCurrentBuilding = {}
+
+-- Building exterior positions in the village (for exit orientation)
+-- The position where players exit to, and the building center to face away from
+local BUILDING_EXTERIOR_POSITIONS = {
+    GoldMine = { exitPos = Vector3.new(30, 3, 50), buildingPos = Vector3.new(25, 0, 50) },        -- Exit east of building, face toward path
+    LumberMill = { exitPos = Vector3.new(90, 3, 50), buildingPos = Vector3.new(95, 0, 50) },     -- Exit west of building, face toward path
+    Farm1 = { exitPos = Vector3.new(30, 3, 100), buildingPos = Vector3.new(25, 0, 100) },        -- Exit east of building
+    Farm2 = { exitPos = Vector3.new(30, 3, 130), buildingPos = Vector3.new(25, 0, 130) },
+    Farm3 = { exitPos = Vector3.new(90, 3, 130), buildingPos = Vector3.new(95, 0, 130) },
+    Farm4 = { exitPos = Vector3.new(15, 3, 115), buildingPos = Vector3.new(10, 0, 115) },
+    Farm5 = { exitPos = Vector3.new(105, 3, 115), buildingPos = Vector3.new(110, 0, 115) },
+    Farm6 = { exitPos = Vector3.new(60, 3, 135), buildingPos = Vector3.new(60, 0, 140) },
+    Barracks = { exitPos = Vector3.new(90, 3, 100), buildingPos = Vector3.new(95, 0, 100) },     -- Exit west of building
+    TownHall = { exitPos = Vector3.new(60, 3, 150), buildingPos = Vector3.new(60, 0, 155) },     -- Exit south of building
+}
 
 -- ============================================================================
 -- HELPER FUNCTIONS (must be defined before they are used)
@@ -171,17 +295,18 @@ local function teleportToInterior(player, buildingName)
     local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
     if not humanoidRootPart then return end
 
-    -- Save return position
+    -- Save return position and which building the player entered
     PlayerReturnPositions[player.UserId] = humanoidRootPart.Position
+    PlayerCurrentBuilding[player.UserId] = buildingName
 
     -- Teleport to interior
     local interiorPos = INTERIOR_POSITIONS[buildingName]
     local spawnOffset = INTERIOR_SPAWN_OFFSETS[buildingName] or Vector3.new(0, 3, 22)
     if interiorPos then
-        -- Spawn near entrance, facing INTO the building (toward back wall / -Z direction)
-        -- Use CFrame.lookAt to explicitly face toward the back of the room
+        -- Spawn near entrance, facing INTO the building (toward room center)
+        -- Player spawns near Z=22 (near exit portal), should face toward Z=0 (room center)
         local spawnPos = interiorPos + spawnOffset
-        local lookAtPos = Vector3.new(spawnPos.X, spawnPos.Y, interiorPos.Z - 20) -- Look toward back wall
+        local lookAtPos = Vector3.new(spawnPos.X, spawnPos.Y, interiorPos.Z) -- Look toward room center
         humanoidRootPart.CFrame = CFrame.lookAt(spawnPos, lookAtPos)
         print(string.format("[Teleport] %s entered %s interior", player.Name, buildingName))
     end
@@ -193,10 +318,33 @@ local function teleportToVillage(player)
     local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
     if not humanoidRootPart then return end
 
+    -- Get which building the player is exiting from
+    local buildingName = PlayerCurrentBuilding[player.UserId]
+    local exteriorData = buildingName and BUILDING_EXTERIOR_POSITIONS[buildingName]
+
     -- Return to saved position or default spawn
     local returnPos = PlayerReturnPositions[player.UserId] or Vector3.new(60, GROUND_Y + 3, 20)
-    humanoidRootPart.CFrame = CFrame.new(returnPos + Vector3.new(0, 2, 0))
-    print(string.format("[Teleport] %s returned to village", player.Name))
+    local exitPos = returnPos + Vector3.new(0, 2, 0)
+
+    if exteriorData then
+        -- Use the predefined exit position and face away from the building
+        exitPos = exteriorData.exitPos + Vector3.new(0, 2, 0)
+        local buildingPos = exteriorData.buildingPos
+
+        -- Calculate direction away from building (at same Y level)
+        local awayDirection = (Vector3.new(exitPos.X, 0, exitPos.Z) - Vector3.new(buildingPos.X, 0, buildingPos.Z)).Unit
+        local lookAtPos = exitPos + awayDirection * 10
+
+        humanoidRootPart.CFrame = CFrame.lookAt(exitPos, lookAtPos)
+    else
+        -- Fallback: just set position without specific orientation
+        humanoidRootPart.CFrame = CFrame.new(exitPos)
+    end
+
+    -- Clear the stored building
+    PlayerCurrentBuilding[player.UserId] = nil
+
+    print(string.format("[Teleport] %s returned to village from %s", player.Name, buildingName or "unknown"))
 end
 
 -- Create exit portal for interiors
@@ -612,6 +760,8 @@ end
 -- Clean up player resources when they leave
 Players.PlayerRemoving:Connect(function(player)
     PlayerResources[player.UserId] = nil
+    PlayerReturnPositions[player.UserId] = nil
+    PlayerCurrentBuilding[player.UserId] = nil
 end)
 
 -- ============================================================================

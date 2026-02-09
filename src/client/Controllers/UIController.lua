@@ -490,12 +490,48 @@ function UIController:Init()
         BuildMenu:Init()
 
         -- Connect BuildMenu events
-        BuildMenu.BuildingSelected:Connect(function(buildingType)
+        BuildMenu.BuildingSelected:Connect(function(buildingType, farmNumber)
             BuildMenu:Hide()
 
-            -- Get CityController to enter placement mode
-            local CityController = require(script.Parent.CityController)
-            CityController:EnterPlacementMode(buildingType)
+            -- For walk-through tycoon, handle Farm building directly
+            if buildingType == "Farm" and farmNumber then
+                print("[UIController] Building Farm " .. farmNumber)
+
+                -- Request server to build the farm via RemoteFunction
+                local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+                if remotes then
+                    local buildFarm = remotes:FindFirstChild("BuildFarm")
+                    if buildFarm then
+                        local success, result = pcall(function()
+                            return buildFarm:InvokeServer(farmNumber)
+                        end)
+                        if success and result and result.success then
+                            -- Show success notification
+                            if HUD and HUD.ShowNotification then
+                                HUD:ShowNotification("Farm " .. farmNumber .. " built!", "success")
+                            end
+                            print("[UIController] Farm " .. farmNumber .. " built successfully!")
+                        else
+                            -- Show error notification
+                            local errorMsg = (result and result.error) or "Failed to build farm"
+                            if HUD and HUD.ShowNotification then
+                                HUD:ShowNotification(errorMsg, "error")
+                            end
+                            warn("[UIController] Failed to build farm: " .. errorMsg)
+                        end
+                    else
+                        warn("[UIController] BuildFarm remote not found")
+                    end
+                else
+                    warn("[UIController] Remotes folder not found")
+                end
+            else
+                -- Legacy: city builder placement mode (not used in walk-through tycoon)
+                local CityController = require(script.Parent.CityController)
+                if CityController and CityController.EnterPlacementMode then
+                    CityController:EnterPlacementMode(buildingType)
+                end
+            end
         end)
     end
 
@@ -565,8 +601,12 @@ function UIController:Init()
             if item.price then
                 -- Real money purchase - would go through Roblox MarketplaceService
                 print("[UI] Real money purchase requested:", item.id)
+            elseif item.expansion then
+                -- Farm plot expansion purchase
+                print("[UI] Farm plot purchase requested:", item.id)
+                Events.PurchaseFarmPlot:FireServer()
             else
-                -- Gem purchase
+                -- Gold purchase (builders, resources, boosts)
                 Events.ShopPurchase:FireServer(item.id)
             end
         end)
@@ -652,6 +692,8 @@ function UIController:Init()
                     Notifications:Success("Joined alliance!")
                 elseif action == "ShopPurchase" then
                     Notifications:Success("Purchase complete!")
+                elseif action == "PurchaseFarmPlot" then
+                    Notifications:Success("Farm plot purchased! You can now build another farm.")
                 elseif action == "ClaimQuestReward" then
                     Notifications:Success("Quest reward claimed!")
                 elseif action == "ClaimDailyReward" then
@@ -687,6 +729,20 @@ function UIController:Init()
                     Notifications:Warning("Spell storage full!")
                 elseif errorMsg == "FACTORY_LEVEL_TOO_LOW" then
                     Notifications:Warning("Upgrade your Spell Factory!")
+                elseif errorMsg == "NEED_MORE_FARM_PLOTS" then
+                    Notifications:Warning("Buy a farm plot first! Check the Expand tab in Shop.")
+                    -- Auto-open shop to Expansion tab
+                    task.defer(function()
+                        task.wait(0.5)
+                        if ShopUI then
+                            ShopUI:SwitchCategory("Expansion")
+                            ShopUI:Show()
+                        end
+                    end)
+                elseif errorMsg == "MAX_FARM_PLOTS_FOR_TH" then
+                    Notifications:Warning("Upgrade Town Hall to unlock more farm plots!")
+                elseif errorMsg == "MAX_FARM_PLOTS_REACHED" then
+                    Notifications:Info("You have the maximum number of farm plots!")
                 else
                     Notifications:Error(action .. " failed")
                 end

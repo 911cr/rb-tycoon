@@ -193,4 +193,167 @@ function ClientAPI.RequestDataSync()
     end
 end
 
+-- Shop actions
+function ClientAPI.ShopPurchase(itemId: string)
+    if _isReady then
+        local action = _actions["ShopPurchase"]
+        if action then action(itemId) end
+    else
+        table.insert(_queuedCalls, {name = "ShopPurchase", args = {itemId}})
+    end
+end
+
+-- Farm building (walk-through tycoon)
+function ClientAPI.BuildFarm(farmNumber: number): {success: boolean, error: string?}?
+    if _isReady then
+        local action = _actions["BuildFarm"]
+        if action then
+            return action(farmNumber)
+        else
+            return { success = false, error = "BuildFarm action not registered" }
+        end
+    else
+        -- For synchronous result, we can't queue this
+        return { success = false, error = "Client API not ready" }
+    end
+end
+
+function ClientAPI.PurchaseFarmPlot(plotNumber: number): {success: boolean, error: string?}?
+    if _isReady then
+        local action = _actions["PurchaseFarmPlot"]
+        if action then
+            return action(plotNumber)
+        else
+            return { success = false, error = "PurchaseFarmPlot action not registered" }
+        end
+    else
+        return { success = false, error = "Client API not ready" }
+    end
+end
+
+-- Matchmaking actions
+function ClientAPI.FindOpponent()
+    if _isReady then
+        local action = _actions["FindOpponent"]
+        if action then action() end
+    else
+        table.insert(_queuedCalls, {name = "FindOpponent", args = {}})
+    end
+end
+
+function ClientAPI.NextOpponent()
+    if _isReady then
+        local action = _actions["NextOpponent"]
+        if action then action() end
+    else
+        table.insert(_queuedCalls, {name = "NextOpponent", args = {}})
+    end
+end
+
+-- Tutorial actions
+function ClientAPI.CompleteTutorial()
+    if _isReady then
+        local action = _actions["CompleteTutorial"]
+        if action then action() end
+    else
+        table.insert(_queuedCalls, {name = "CompleteTutorial", args = {}})
+    end
+end
+
+-- Quest actions
+function ClientAPI.GetDailyQuests(): any?
+    if _isReady then
+        local action = _actions["GetDailyQuests"]
+        if action then return action() end
+    end
+    return {}
+end
+
+function ClientAPI.GetAchievements(): any?
+    if _isReady then
+        local action = _actions["GetAchievements"]
+        if action then return action() end
+    end
+    return {}
+end
+
+function ClientAPI.ClaimQuestReward(questId: string)
+    if _isReady then
+        local action = _actions["ClaimQuestReward"]
+        if action then action(questId) end
+    else
+        table.insert(_queuedCalls, {name = "ClaimQuestReward", args = {questId}})
+    end
+end
+
+-- Daily reward actions
+function ClientAPI.GetDailyRewardInfo(): any?
+    if _isReady then
+        local action = _actions["GetDailyRewardInfo"]
+        if action then return action() end
+    end
+    return nil
+end
+
+function ClientAPI.ClaimDailyReward()
+    if _isReady then
+        local action = _actions["ClaimDailyReward"]
+        if action then action() end
+    else
+        table.insert(_queuedCalls, {name = "ClaimDailyReward", args = {}})
+    end
+end
+
+-- Spell actions
+function ClientAPI.BrewSpell(spellType: string)
+    if _isReady then
+        local action = _actions["BrewSpell"]
+        if action then action(spellType) end
+    else
+        table.insert(_queuedCalls, {name = "BrewSpell", args = {spellType}})
+    end
+end
+
+function ClientAPI.CancelSpellBrewing(queueIndex: number)
+    if _isReady then
+        local action = _actions["CancelSpellBrewing"]
+        if action then action(queueIndex) end
+    else
+        table.insert(_queuedCalls, {name = "CancelSpellBrewing", args = {queueIndex}})
+    end
+end
+
+function ClientAPI.GetSpellQueue(): any?
+    if _isReady then
+        local action = _actions["GetSpellQueue"]
+        if action then return action() end
+    end
+    return {}
+end
+
+-- Leaderboard actions
+function ClientAPI.GetLeaderboard(count: number?): any?
+    if _isReady then
+        local action = _actions["GetLeaderboard"]
+        if action then return action(count or 100) end
+    end
+    return {}
+end
+
+function ClientAPI.GetPlayerRank(): any?
+    if _isReady then
+        local action = _actions["GetPlayerRank"]
+        if action then return action() end
+    end
+    return nil
+end
+
+function ClientAPI.GetLeaderboardInfo(): any?
+    if _isReady then
+        local action = _actions["GetLeaderboardInfo"]
+        if action then return action() end
+    end
+    return nil
+end
+
 return ClientAPI
