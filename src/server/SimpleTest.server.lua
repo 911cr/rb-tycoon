@@ -732,7 +732,7 @@ local function createBarnExterior(name, position, size, buildingName, facingDire
     end)
 
     -- Building sign (centered above door)
-    createSign(exterior, name, position + rotateOffset(Vector3.new(0, wallHeight + roofHeight + 1.5, size.Z/2 + 1)), Vector3.new(8, 2.5, 0.3))
+    createSign(exterior, name, position + rotateOffset(Vector3.new(0, wallHeight + roofPeakHeight + 1.5, size.Z/2 + 1)), Vector3.new(8, 2.5, 0.3))
 
     -- Torches by entrance
     createTorch(exterior, position + rotateOffset(Vector3.new(-doorWidth/2 - 1.5, 4, size.Z/2 + 0.5)))
@@ -4623,11 +4623,11 @@ local function createLumberMill()
     gateCross.Color = Color3.fromRGB(80, 55, 35)
     gateCross.Parent = lumberYard
 
-    -- ===== SIGN =====
+    -- ===== LARGE SIGN WITH PRODUCTION RATE =====
     local signBoard = Instance.new("Part")
     signBoard.Name = "Sign"
-    signBoard.Size = Vector3.new(0.5, 2.5, 10)
-    signBoard.Position = Vector3.new(exteriorX - 5.5, extGround + 10, exteriorZ)
+    signBoard.Size = Vector3.new(0.5, 6, 14)  -- Much larger sign
+    signBoard.Position = Vector3.new(exteriorX - 5.5, extGround + 11, exteriorZ)
     signBoard.Anchored = true
     signBoard.Material = Enum.Material.Wood
     signBoard.Color = Color3.fromRGB(60, 40, 25)
@@ -4637,14 +4637,70 @@ local function createLumberMill()
     gui.Face = Enum.NormalId.Left  -- Face west toward path
     gui.Parent = signBoard
 
-    local label = Instance.new("TextLabel")
-    label.Size = UDim2.new(1, 0, 1, 0)
-    label.BackgroundTransparency = 1
-    label.Text = "LUMBER YARD"
-    label.TextColor3 = Color3.fromRGB(255, 230, 180)
-    label.TextScaled = true
-    label.Font = Enum.Font.Antique
-    label.Parent = gui
+    -- Title label (large)
+    local titleLabel = Instance.new("TextLabel")
+    titleLabel.Name = "TitleLabel"
+    titleLabel.Size = UDim2.new(1, 0, 0.6, 0)
+    titleLabel.Position = UDim2.new(0, 0, 0, 0)
+    titleLabel.BackgroundTransparency = 1
+    titleLabel.Text = "LUMBER YARD"
+    titleLabel.TextColor3 = Color3.fromRGB(255, 230, 180)
+    titleLabel.TextScaled = true
+    titleLabel.Font = Enum.Font.Antique
+    titleLabel.Parent = gui
+
+    -- Production rate label (below title)
+    local productionLabel = Instance.new("TextLabel")
+    productionLabel.Name = "ProductionLabel"
+    productionLabel.Size = UDim2.new(1, 0, 0.35, 0)
+    productionLabel.Position = UDim2.new(0, 0, 0.6, 0)
+    productionLabel.BackgroundTransparency = 1
+    productionLabel.Text = "+0 wood/min"
+    productionLabel.TextColor3 = Color3.fromRGB(180, 255, 180)  -- Green for production
+    productionLabel.TextScaled = true
+    productionLabel.Font = Enum.Font.GothamBold
+    productionLabel.Parent = gui
+
+    -- Function to update production rate display
+    local function updateLumberYardProduction()
+        -- Calculate production based on workers and upgrades
+        local loggerCount = #LumberMillState.loggers
+        local haulerCount = #LumberMillState.haulers
+        local sawmillStats = getSawmillStats(LumberMillState.equipment.sawmillLevel)
+        local loggerStats = getLoggerStats(LumberMillState.equipment.loggerLevel)
+
+        -- Estimate: each logger produces ~logCapacity logs per cycle (~30 sec cycle)
+        -- Sawmill converts logs to planks at planksPerLog rate
+        -- Haulers deliver planks to storage
+
+        local logsPerMinute = loggerCount * (loggerStats.logCapacity * 2)  -- ~2 cycles per minute
+        local planksPerMinute = math.min(logsPerMinute, haulerCount * 10) * sawmillStats.planksPerLog
+
+        -- Only count production if we have both loggers and haulers
+        local effectiveProduction = (loggerCount > 0 and haulerCount > 0) and planksPerMinute or 0
+
+        productionLabel.Text = string.format("+%d wood/min", effectiveProduction)
+
+        -- Color based on production level
+        if effectiveProduction == 0 then
+            productionLabel.TextColor3 = Color3.fromRGB(150, 150, 150)  -- Gray when idle
+        elseif effectiveProduction < 10 then
+            productionLabel.TextColor3 = Color3.fromRGB(180, 255, 180)  -- Light green
+        else
+            productionLabel.TextColor3 = Color3.fromRGB(100, 255, 100)  -- Bright green
+        end
+    end
+
+    -- Store update function for use when workers are hired
+    LumberMillState.updateExteriorSign = updateLumberYardProduction
+
+    -- Update sign periodically
+    task.spawn(function()
+        while true do
+            updateLumberYardProduction()
+            task.wait(5)  -- Update every 5 seconds
+        end
+    end)
 
     -- Torches at entrance
     createTorch(lumberYard, Vector3.new(exteriorX - 5, extGround + 6, exteriorZ - 4))
@@ -10181,20 +10237,350 @@ end
 local function createTownHall()
     print("[7/8] Creating Town Hall with full progression loop...")
 
-    -- ========== EXTERIOR IN VILLAGE ==========
+    -- ========== EXTERIOR IN VILLAGE (Grand Medieval Town Hall) ==========
     -- At the end of the main path, faces south toward incoming players
     local exteriorX, exteriorZ = 60, 155
+    local extGround = GROUND_Y
 
-    -- Create exterior building shell
-    createBuildingExterior(
-        "TOWN HALL",
-        Vector3.new(exteriorX, GROUND_Y, exteriorZ),
-        Vector3.new(20, 14, 18),
-        Color3.fromRGB(110, 100, 95), -- Elegant stone roof
-        Color3.fromRGB(130, 120, 110), -- Grand cobblestone walls
-        "TownHall",
-        "south" -- Entrance faces the main path (toward gate)
-    )
+    local townHallExterior = Instance.new("Model")
+    townHallExterior.Name = "TownHall_Exterior"
+
+    -- Color palette for town hall
+    local stoneColor = Color3.fromRGB(180, 175, 165)      -- Light stone walls
+    local darkStoneColor = Color3.fromRGB(120, 115, 105) -- Darker stone accents
+    local roofColor = Color3.fromRGB(80, 60, 50)         -- Dark wood/slate roof
+    local woodColor = Color3.fromRGB(90, 60, 40)         -- Wood trim
+    local goldAccent = Color3.fromRGB(180, 150, 50)      -- Gold decorations
+
+    -- ===== MAIN BUILDING BASE =====
+    local mainBuilding = Instance.new("Part")
+    mainBuilding.Name = "MainBuilding"
+    mainBuilding.Size = Vector3.new(28, 12, 20)
+    mainBuilding.Position = Vector3.new(exteriorX, extGround + 6, exteriorZ)
+    mainBuilding.Anchored = true
+    mainBuilding.Material = Enum.Material.Brick
+    mainBuilding.Color = stoneColor
+    mainBuilding.Parent = townHallExterior
+
+    -- ===== CENTRAL CLOCK TOWER =====
+    local towerBase = Instance.new("Part")
+    towerBase.Name = "TowerBase"
+    towerBase.Size = Vector3.new(10, 20, 10)
+    towerBase.Position = Vector3.new(exteriorX, extGround + 10, exteriorZ)
+    towerBase.Anchored = true
+    towerBase.Material = Enum.Material.Brick
+    towerBase.Color = stoneColor
+    towerBase.Parent = townHallExterior
+
+    -- Tower upper section (narrower)
+    local towerUpper = Instance.new("Part")
+    towerUpper.Name = "TowerUpper"
+    towerUpper.Size = Vector3.new(8, 8, 8)
+    towerUpper.Position = Vector3.new(exteriorX, extGround + 24, exteriorZ)
+    towerUpper.Anchored = true
+    towerUpper.Material = Enum.Material.Brick
+    towerUpper.Color = darkStoneColor
+    towerUpper.Parent = townHallExterior
+
+    -- Tower spire/roof (pointed)
+    local towerSpire = Instance.new("Part")
+    towerSpire.Name = "TowerSpire"
+    towerSpire.Size = Vector3.new(6, 10, 6)
+    towerSpire.Position = Vector3.new(exteriorX, extGround + 33, exteriorZ)
+    towerSpire.Anchored = true
+    towerSpire.Material = Enum.Material.Slate
+    towerSpire.Color = roofColor
+    towerSpire.Parent = townHallExterior
+
+    -- Spire top point
+    local spireTop = Instance.new("Part")
+    spireTop.Name = "SpireTop"
+    spireTop.Size = Vector3.new(2, 6, 2)
+    spireTop.Position = Vector3.new(exteriorX, extGround + 41, exteriorZ)
+    spireTop.Anchored = true
+    spireTop.Material = Enum.Material.Slate
+    spireTop.Color = roofColor
+    spireTop.Parent = townHallExterior
+
+    -- Gold ornament on top
+    local spireOrnament = Instance.new("Part")
+    spireOrnament.Name = "SpireOrnament"
+    spireOrnament.Shape = Enum.PartType.Ball
+    spireOrnament.Size = Vector3.new(1.5, 1.5, 1.5)
+    spireOrnament.Position = Vector3.new(exteriorX, extGround + 44.5, exteriorZ)
+    spireOrnament.Anchored = true
+    spireOrnament.Material = Enum.Material.Metal
+    spireOrnament.Color = goldAccent
+    spireOrnament.Parent = townHallExterior
+
+    -- Clock face (facing south toward players)
+    local clockFace = Instance.new("Part")
+    clockFace.Name = "ClockFace"
+    clockFace.Shape = Enum.PartType.Cylinder
+    clockFace.Size = Vector3.new(0.5, 5, 5)
+    clockFace.Position = Vector3.new(exteriorX, extGround + 24, exteriorZ - 4)
+    clockFace.Orientation = Vector3.new(90, 0, 0)
+    clockFace.Anchored = true
+    clockFace.Material = Enum.Material.SmoothPlastic
+    clockFace.Color = Color3.fromRGB(240, 235, 220)
+    clockFace.Parent = townHallExterior
+
+    -- Clock hands
+    local hourHand = Instance.new("Part")
+    hourHand.Name = "HourHand"
+    hourHand.Size = Vector3.new(0.3, 1.5, 0.1)
+    hourHand.Position = Vector3.new(exteriorX, extGround + 24.5, exteriorZ - 4.3)
+    hourHand.Orientation = Vector3.new(0, 0, 30)
+    hourHand.Anchored = true
+    hourHand.Material = Enum.Material.Metal
+    hourHand.Color = Color3.fromRGB(20, 20, 20)
+    hourHand.Parent = townHallExterior
+
+    local minuteHand = Instance.new("Part")
+    minuteHand.Name = "MinuteHand"
+    minuteHand.Size = Vector3.new(0.2, 2, 0.1)
+    minuteHand.Position = Vector3.new(exteriorX + 0.3, extGround + 24.8, exteriorZ - 4.3)
+    minuteHand.Orientation = Vector3.new(0, 0, -45)
+    minuteHand.Anchored = true
+    minuteHand.Material = Enum.Material.Metal
+    minuteHand.Color = Color3.fromRGB(20, 20, 20)
+    minuteHand.Parent = townHallExterior
+
+    -- ===== MAIN ROOF (two-sided peaked) =====
+    -- Left roof section
+    local roofLeft = Instance.new("Part")
+    roofLeft.Name = "RoofLeft"
+    roofLeft.Size = Vector3.new(12, 2, 22)
+    roofLeft.Position = Vector3.new(exteriorX - 8, extGround + 14, exteriorZ)
+    roofLeft.Orientation = Vector3.new(0, 0, 25)
+    roofLeft.Anchored = true
+    roofLeft.Material = Enum.Material.Slate
+    roofLeft.Color = roofColor
+    roofLeft.Parent = townHallExterior
+
+    -- Right roof section
+    local roofRight = Instance.new("Part")
+    roofRight.Name = "RoofRight"
+    roofRight.Size = Vector3.new(12, 2, 22)
+    roofRight.Position = Vector3.new(exteriorX + 8, extGround + 14, exteriorZ)
+    roofRight.Orientation = Vector3.new(0, 0, -25)
+    roofRight.Anchored = true
+    roofRight.Material = Enum.Material.Slate
+    roofRight.Color = roofColor
+    roofRight.Parent = townHallExterior
+
+    -- ===== GRAND ENTRANCE (facing south) =====
+    -- Stone steps leading up to entrance
+    for i = 1, 4 do
+        local step = Instance.new("Part")
+        step.Name = "Step" .. i
+        step.Size = Vector3.new(12, 0.5, 2)
+        step.Position = Vector3.new(exteriorX, extGround + (i-1) * 0.5 + 0.25, exteriorZ - 10 - (4-i) * 2)
+        step.Anchored = true
+        step.Material = Enum.Material.Marble
+        step.Color = darkStoneColor
+        step.Parent = townHallExterior
+    end
+
+    -- Entrance platform
+    local entrancePlatform = Instance.new("Part")
+    entrancePlatform.Name = "EntrancePlatform"
+    entrancePlatform.Size = Vector3.new(14, 0.5, 6)
+    entrancePlatform.Position = Vector3.new(exteriorX, extGround + 2.25, exteriorZ - 7)
+    entrancePlatform.Anchored = true
+    entrancePlatform.Material = Enum.Material.Marble
+    entrancePlatform.Color = darkStoneColor
+    entrancePlatform.Parent = townHallExterior
+
+    -- Grand entrance columns (4 columns)
+    local columnPositions = {-5, -2, 2, 5}
+    for i, xOff in ipairs(columnPositions) do
+        -- Column base
+        local columnBase = Instance.new("Part")
+        columnBase.Name = "ColumnBase" .. i
+        columnBase.Size = Vector3.new(1.8, 1, 1.8)
+        columnBase.Position = Vector3.new(exteriorX + xOff, extGround + 3, exteriorZ - 7)
+        columnBase.Anchored = true
+        columnBase.Material = Enum.Material.Marble
+        columnBase.Color = Color3.fromRGB(200, 195, 185)
+        columnBase.Parent = townHallExterior
+
+        -- Column shaft
+        local column = Instance.new("Part")
+        column.Name = "Column" .. i
+        column.Shape = Enum.PartType.Cylinder
+        column.Size = Vector3.new(6, 1.2, 1.2)
+        column.Position = Vector3.new(exteriorX + xOff, extGround + 6.5, exteriorZ - 7)
+        column.Orientation = Vector3.new(0, 0, 90)
+        column.Anchored = true
+        column.Material = Enum.Material.Marble
+        column.Color = Color3.fromRGB(220, 215, 205)
+        column.Parent = townHallExterior
+
+        -- Column capital (top)
+        local columnTop = Instance.new("Part")
+        columnTop.Name = "ColumnTop" .. i
+        columnTop.Size = Vector3.new(2, 1, 2)
+        columnTop.Position = Vector3.new(exteriorX + xOff, extGround + 10, exteriorZ - 7)
+        columnTop.Anchored = true
+        columnTop.Material = Enum.Material.Marble
+        columnTop.Color = Color3.fromRGB(200, 195, 185)
+        columnTop.Parent = townHallExterior
+    end
+
+    -- Entrance portico roof (above columns)
+    local porticoRoof = Instance.new("Part")
+    porticoRoof.Name = "PorticoRoof"
+    porticoRoof.Size = Vector3.new(16, 1.5, 8)
+    porticoRoof.Position = Vector3.new(exteriorX, extGround + 11.5, exteriorZ - 7)
+    porticoRoof.Anchored = true
+    porticoRoof.Material = Enum.Material.Marble
+    porticoRoof.Color = darkStoneColor
+    porticoRoof.Parent = townHallExterior
+
+    -- Triangular pediment above entrance
+    local pediment = Instance.new("Part")
+    pediment.Name = "Pediment"
+    pediment.Size = Vector3.new(14, 4, 1)
+    pediment.Position = Vector3.new(exteriorX, extGround + 14, exteriorZ - 7)
+    pediment.Anchored = true
+    pediment.Material = Enum.Material.Marble
+    pediment.Color = stoneColor
+    pediment.Parent = townHallExterior
+
+    -- Dark entrance doorway
+    local doorway = Instance.new("Part")
+    doorway.Name = "Doorway"
+    doorway.Size = Vector3.new(6, 7, 2)
+    doorway.Position = Vector3.new(exteriorX, extGround + 6, exteriorZ - 9)
+    doorway.Anchored = true
+    doorway.Material = Enum.Material.Slate
+    doorway.Color = Color3.fromRGB(30, 25, 20)
+    doorway.Parent = townHallExterior
+
+    -- Wooden double doors (decorative)
+    local leftDoor = Instance.new("Part")
+    leftDoor.Name = "LeftDoor"
+    leftDoor.Size = Vector3.new(2.5, 6, 0.3)
+    leftDoor.Position = Vector3.new(exteriorX - 1.3, extGround + 5.5, exteriorZ - 8.5)
+    leftDoor.Anchored = true
+    leftDoor.Material = Enum.Material.Wood
+    leftDoor.Color = woodColor
+    leftDoor.Parent = townHallExterior
+
+    local rightDoor = Instance.new("Part")
+    rightDoor.Name = "RightDoor"
+    rightDoor.Size = Vector3.new(2.5, 6, 0.3)
+    rightDoor.Position = Vector3.new(exteriorX + 1.3, extGround + 5.5, exteriorZ - 8.5)
+    rightDoor.Anchored = true
+    rightDoor.Material = Enum.Material.Wood
+    rightDoor.Color = woodColor
+    rightDoor.Parent = townHallExterior
+
+    -- Door handles (gold)
+    for _, xOff in ipairs({-0.3, 2.9}) do
+        local handle = Instance.new("Part")
+        handle.Name = "DoorHandle"
+        handle.Shape = Enum.PartType.Ball
+        handle.Size = Vector3.new(0.4, 0.4, 0.4)
+        handle.Position = Vector3.new(exteriorX + xOff - 1, extGround + 5.5, exteriorZ - 8.3)
+        handle.Anchored = true
+        handle.Material = Enum.Material.Metal
+        handle.Color = goldAccent
+        handle.Parent = townHallExterior
+    end
+
+    -- ===== WINDOWS =====
+    -- Side windows on main building
+    for _, side in ipairs({-1, 1}) do
+        for i = 1, 2 do
+            local window = Instance.new("Part")
+            window.Name = "Window"
+            window.Size = Vector3.new(3, 4, 0.3)
+            window.Position = Vector3.new(exteriorX + side * 10, extGround + 6, exteriorZ - 5 + i * 8)
+            window.Orientation = Vector3.new(0, 90, 0)
+            window.Anchored = true
+            window.Material = Enum.Material.Glass
+            window.Color = Color3.fromRGB(150, 180, 220)
+            window.Transparency = 0.3
+            window.Parent = townHallExterior
+        end
+    end
+
+    -- ===== DECORATIVE ELEMENTS =====
+    -- Royal banners on either side of entrance
+    for _, xOff in ipairs({-7, 7}) do
+        local bannerPole = Instance.new("Part")
+        bannerPole.Name = "BannerPole"
+        bannerPole.Size = Vector3.new(0.3, 8, 0.3)
+        bannerPole.Position = Vector3.new(exteriorX + xOff, extGround + 8, exteriorZ - 6)
+        bannerPole.Orientation = Vector3.new(0, 0, 20 * (xOff > 0 and -1 or 1))
+        bannerPole.Anchored = true
+        bannerPole.Material = Enum.Material.Metal
+        bannerPole.Color = goldAccent
+        bannerPole.Parent = townHallExterior
+
+        local banner = Instance.new("Part")
+        banner.Name = "Banner"
+        banner.Size = Vector3.new(0.1, 5, 3)
+        banner.Position = Vector3.new(exteriorX + xOff + (xOff > 0 and 1 or -1), extGround + 9, exteriorZ - 6)
+        banner.Anchored = true
+        banner.Material = Enum.Material.Fabric
+        banner.Color = Color3.fromRGB(150, 50, 50) -- Royal red
+        banner.Parent = townHallExterior
+    end
+
+    -- Torches at entrance
+    createTorch(townHallExterior, Vector3.new(exteriorX - 6.5, extGround + 6, exteriorZ - 8))
+    createTorch(townHallExterior, Vector3.new(exteriorX + 6.5, extGround + 6, exteriorZ - 8))
+
+    -- "TOWN HALL" sign above entrance
+    local signBoard = Instance.new("Part")
+    signBoard.Name = "TownHallSign"
+    signBoard.Size = Vector3.new(10, 2, 0.3)
+    signBoard.Position = Vector3.new(exteriorX, extGround + 17, exteriorZ - 5)
+    signBoard.Anchored = true
+    signBoard.Material = Enum.Material.Wood
+    signBoard.Color = woodColor
+    signBoard.Parent = townHallExterior
+
+    local signGui = Instance.new("SurfaceGui")
+    signGui.Face = Enum.NormalId.Front
+    signGui.Parent = signBoard
+
+    local signLabel = Instance.new("TextLabel")
+    signLabel.Size = UDim2.new(1, 0, 1, 0)
+    signLabel.BackgroundTransparency = 1
+    signLabel.Text = "TOWN HALL"
+    signLabel.TextColor3 = Color3.fromRGB(255, 215, 0)
+    signLabel.TextScaled = true
+    signLabel.Font = Enum.Font.Antique
+    signLabel.Parent = signGui
+
+    -- ===== ENTRANCE TRIGGER =====
+    local entranceTrigger = Instance.new("Part")
+    entranceTrigger.Name = "Entrance"
+    entranceTrigger.Size = Vector3.new(5, 6, 3)
+    entranceTrigger.Position = Vector3.new(exteriorX, extGround + 5.5, exteriorZ - 9)
+    entranceTrigger.Anchored = true
+    entranceTrigger.Transparency = 1
+    entranceTrigger.CanCollide = false
+    entranceTrigger.Parent = townHallExterior
+
+    local debounce = {}
+    entranceTrigger.Touched:Connect(function(hit)
+        local character = hit.Parent
+        local humanoid = character and character:FindFirstChild("Humanoid")
+        if not humanoid then return end
+        local player = Players:GetPlayerFromCharacter(character)
+        if not player then return end
+        if debounce[player.UserId] then return end
+        debounce[player.UserId] = true
+        teleportToInterior(player, "TownHall")
+        task.delay(1, function() debounce[player.UserId] = nil end)
+    end)
+
+    townHallExterior.Parent = villageFolder
 
     -- ========== GRAND HALL INTERIOR ==========
     local basePos = INTERIOR_POSITIONS.TownHall
