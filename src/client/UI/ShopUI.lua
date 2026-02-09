@@ -2,7 +2,8 @@
 --[[
     ShopUI.lua
 
-    In-game shop for purchasing gems, resources, and special items.
+    In-game shop for purchasing builders, shields, and resource conversions.
+    All purchases use gold (earned through gameplay).
 ]]
 
 local Players = game:GetService("Players")
@@ -26,48 +27,43 @@ local _panel: Frame
 local _contentContainer: ScrollingFrame
 local _isVisible = false
 local _initialized = false
-local _currentCategory = "Gems"
+local _currentCategory = "Builders"
 
--- Shop categories
+-- Shop categories (no more Gems category)
 local Categories = {
-    { id = "Gems", name = "Gems", icon = "G" },
-    { id = "Resources", name = "Resources", icon = "R" },
     { id = "Builders", name = "Builders", icon = "B" },
-    { id = "Special", name = "Special", icon = "S" },
+    { id = "Expansion", name = "Expand", icon = "E" },
+    { id = "Resources", name = "Resources", icon = "R" },
+    { id = "Boosts", name = "Boosts", icon = "S" },
 }
 
--- Shop items
+-- Shop items (all priced in gold)
 local ShopItems = {
-    Gems = {
-        { id = "gems_100", name = "Pile of Gems", gems = 100, price = "$0.99", featured = false },
-        { id = "gems_500", name = "Bag of Gems", gems = 500, price = "$4.99", featured = false },
-        { id = "gems_1200", name = "Box of Gems", gems = 1200, price = "$9.99", featured = true },
-        { id = "gems_2500", name = "Chest of Gems", gems = 2500, price = "$19.99", featured = false },
-        { id = "gems_6500", name = "Vault of Gems", gems = 6500, price = "$49.99", featured = false },
-        { id = "gems_14000", name = "Mountain of Gems", gems = 14000, price = "$99.99", featured = true },
+    Builders = {
+        { id = "builder_2", name = "2nd Builder", goldCost = 25000, permanent = true, description = "Build 2 things at once!" },
+        { id = "builder_3", name = "3rd Builder", goldCost = 75000, permanent = true, description = "Build 3 things at once!" },
+        { id = "builder_4", name = "4th Builder", goldCost = 200000, permanent = true, description = "Build 4 things at once!", featured = true },
+        { id = "builder_5", name = "5th Builder", goldCost = 500000, permanent = true, description = "Maximum building speed!" },
+    },
+    Expansion = {
+        { id = "farm_plot_2", name = "2nd Farm Plot", goldCost = 1000, woodCost = 500, expansion = true, plotNumber = 2, description = "Build a second farm!" },
+        { id = "farm_plot_3", name = "3rd Farm Plot", goldCost = 3000, woodCost = 1500, expansion = true, plotNumber = 3, description = "More food production!" },
+        { id = "farm_plot_4", name = "4th Farm Plot", goldCost = 10000, woodCost = 5000, expansion = true, plotNumber = 4, description = "Expand your farms!", featured = true },
+        { id = "farm_plot_5", name = "5th Farm Plot", goldCost = 30000, woodCost = 15000, expansion = true, plotNumber = 5, description = "Feed a larger army!" },
+        { id = "farm_plot_6", name = "6th Farm Plot", goldCost = 75000, woodCost = 35000, expansion = true, plotNumber = 6, description = "Maximum farm capacity!", featured = true },
     },
     Resources = {
-        { id = "gold_10k", name = "Gold Pack", resource = "gold", amount = 10000, gems = 50 },
-        { id = "gold_50k", name = "Gold Chest", resource = "gold", amount = 50000, gems = 200 },
-        { id = "gold_200k", name = "Gold Vault", resource = "gold", amount = 200000, gems = 700 },
-        { id = "wood_10k", name = "Wood Pack", resource = "wood", amount = 10000, gems = 50 },
-        { id = "wood_50k", name = "Wood Chest", resource = "wood", amount = 50000, gems = 200 },
-        { id = "food_5k", name = "Food Pack", resource = "food", amount = 5000, gems = 30 },
-        { id = "food_25k", name = "Food Chest", resource = "food", amount = 25000, gems = 120 },
+        { id = "wood_5k", name = "Wood Pack", resource = "wood", amount = 5000, goldCost = 7500, description = "Quick wood boost" },
+        { id = "wood_20k", name = "Wood Crate", resource = "wood", amount = 20000, goldCost = 25000, description = "Large wood shipment" },
+        { id = "wood_50k", name = "Wood Warehouse", resource = "wood", amount = 50000, goldCost = 55000, description = "Massive wood delivery", featured = true },
+        { id = "food_2k", name = "Food Pack", resource = "food", amount = 2000, goldCost = 5000, description = "Quick food boost" },
+        { id = "food_10k", name = "Food Crate", resource = "food", amount = 10000, goldCost = 20000, description = "Large food shipment" },
+        { id = "food_25k", name = "Food Warehouse", resource = "food", amount = 25000, goldCost = 45000, description = "Massive food delivery", featured = true },
     },
-    Builders = {
-        { id = "builder_2", name = "2nd Builder", gems = 250, permanent = true },
-        { id = "builder_3", name = "3rd Builder", gems = 500, permanent = true },
-        { id = "builder_4", name = "4th Builder", gems = 1000, permanent = true },
-        { id = "builder_5", name = "5th Builder", gems = 2000, permanent = true },
-    },
-    Special = {
-        { id = "shield_1d", name = "1-Day Shield", gems = 100, duration = "24h" },
-        { id = "shield_2d", name = "2-Day Shield", gems = 150, duration = "48h" },
-        { id = "shield_7d", name = "Week Shield", gems = 400, duration = "7 days" },
-        { id = "vip_week", name = "VIP (1 Week)", gems = 200, duration = "7 days", bonus = "+20% Resources" },
-        { id = "vip_month", name = "VIP (1 Month)", gems = 600, duration = "30 days", bonus = "+20% Resources" },
-        { id = "starter_pack", name = "Starter Pack", price = "$4.99", featured = true, contents = "500 Gems + 50K Gold + Shield" },
+    Boosts = {
+        { id = "shield_1d", name = "1-Day Shield", goldCost = 10000, duration = "24 hours", description = "Protection from attacks" },
+        { id = "shield_2d", name = "2-Day Shield", goldCost = 18000, duration = "48 hours", description = "Extended protection" },
+        { id = "shield_7d", name = "Week Shield", goldCost = 50000, duration = "7 days", description = "Maximum protection", featured = true },
     },
 }
 
@@ -95,7 +91,7 @@ local function getResourceColor(resource: string): Color3
     elseif resource == "food" then
         return Components.Colors.Food
     else
-        return Components.Colors.Gems
+        return Components.Colors.Primary
     end
 end
 
@@ -141,9 +137,15 @@ local function createItemCard(item: any, parent: GuiObject): Frame
     end
 
     -- Icon
-    local iconColor = Components.Colors.Gems
+    local iconColor = Components.Colors.Gold
     if item.resource then
         iconColor = getResourceColor(item.resource)
+    elseif item.expansion then
+        iconColor = Components.Colors.Food -- Green for farm plots
+    elseif item.permanent then
+        iconColor = Components.Colors.Secondary
+    elseif item.duration then
+        iconColor = Components.Colors.Primary
     end
 
     local iconBg = Components.CreateFrame({
@@ -156,13 +158,24 @@ local function createItemCard(item: any, parent: GuiObject): Frame
         Parent = card,
     })
 
-    local iconText = item.gems and formatNumber(item.gems) or (item.amount and formatNumber(item.amount) or "?")
+    -- Icon content (amount or symbol)
+    local iconText = "?"
+    if item.amount then
+        iconText = formatNumber(item.amount)
+    elseif item.expansion then
+        iconText = "#" .. (item.plotNumber or "?")
+    elseif item.permanent then
+        iconText = "+" .. (item.id:match("%d+") or "1")
+    elseif item.duration then
+        iconText = "🛡️"
+    end
+
     local iconLabel = Components.CreateLabel({
         Name = "IconText",
         Text = iconText,
         Size = UDim2.new(1, 0, 1, 0),
         TextColor = Components.Colors.TextPrimary,
-        TextSize = item.gems and item.gems > 1000 and 12 or 14,
+        TextSize = 14,
         Font = Enum.Font.GothamBold,
         TextXAlignment = Enum.TextXAlignment.Center,
         Parent = iconBg,
@@ -180,19 +193,10 @@ local function createItemCard(item: any, parent: GuiObject): Frame
         Parent = card,
     })
 
-    -- Description or contents
-    local descText = ""
-    if item.contents then
-        descText = item.contents
-    elseif item.duration then
-        descText = item.duration
-        if item.bonus then
-            descText = descText .. " • " .. item.bonus
-        end
-    elseif item.permanent then
-        descText = "Permanent unlock"
-    elseif item.resource then
-        descText = formatNumber(item.amount) .. " " .. item.resource:gsub("^%l", string.upper)
+    -- Description
+    local descText = item.description or ""
+    if item.duration then
+        descText = item.duration .. (item.description and " • " .. item.description or "")
     end
 
     if descText ~= "" then
@@ -207,17 +211,23 @@ local function createItemCard(item: any, parent: GuiObject): Frame
         })
     end
 
-    -- Price button
-    local priceText = item.price or (item.gems and formatNumber(item.gems) .. " Gems" or "Free")
-    local priceColor = item.price and Components.Colors.Secondary or Components.Colors.Gems
+    -- Price button - show gold + wood for expansions
+    local priceText = formatNumber(item.goldCost) .. " Gold"
+    local buttonWidth = 100
+
+    if item.woodCost then
+        priceText = formatNumber(item.goldCost) .. "G + " .. formatNumber(item.woodCost) .. "W"
+        buttonWidth = 130
+    end
 
     local buyButton = Components.CreateButton({
         Name = "BuyButton",
         Text = priceText,
-        Size = UDim2.new(0, 90, 0, 36),
+        Size = UDim2.new(0, buttonWidth, 0, 36),
         Position = UDim2.new(1, -16, 0.5, 0),
         AnchorPoint = Vector2.new(1, 0.5),
-        BackgroundColor = priceColor,
+        BackgroundColor = item.expansion and Components.Colors.Secondary or Components.Colors.Gold,
+        TextColor = Components.Colors.TextPrimary,
         TextSize = Components.Sizes.FontSizeSmall,
         OnClick = function()
             ShopUI.PurchaseRequested:Fire(item)
@@ -252,7 +262,7 @@ local function createCategoryTabs(parent: Frame): Frame
         local tabButton = Components.CreateButton({
             Name = category.id .. "Tab",
             Text = category.name,
-            Size = UDim2.new(0, 80, 0, 32),
+            Size = UDim2.new(0, 90, 0, 32),
             BackgroundColor = isActive and Components.Colors.Primary or Components.Colors.BackgroundLight,
             TextSize = Components.Sizes.FontSizeSmall,
             CornerRadius = Components.Sizes.CornerRadiusSmall,
@@ -399,11 +409,11 @@ function ShopUI:Init()
 
     local content = _panel:FindFirstChild("Content") :: Frame
 
-    -- Gems display at top
-    local gemsDisplay = Components.CreateResourceDisplay({
-        Name = "GemsDisplay",
-        ResourceType = "Gems",
-        Size = UDim2.new(0, 100, 0, 36),
+    -- Gold display at top (shows current gold)
+    local goldDisplay = Components.CreateResourceDisplay({
+        Name = "GoldDisplay",
+        ResourceType = "Gold",
+        Size = UDim2.new(0, 110, 0, 36),
         Position = UDim2.new(1, -8, 0, -44),
         AnchorPoint = Vector2.new(1, 0),
         Parent = _panel,

@@ -9,20 +9,21 @@
 2. [Core Gameplay Loop](#2-core-gameplay-loop)
 3. [World Architecture](#3-world-architecture)
 4. [Building System](#4-building-system)
-5. [Troop System](#5-troop-system)
-6. [Combat System](#6-combat-system)
-7. [Economy System](#7-economy-system)
-8. [Progression System](#8-progression-system)
-9. [Alliance System](#9-alliance-system)
-10. [Monetization](#10-monetization)
-11. [Engagement Systems](#11-engagement-systems)
-12. [UI/UX Design](#12-uiux-design)
-13. [Onboarding & Tutorial](#13-onboarding--tutorial)
-14. [Events & Live Operations](#14-events--live-operations)
-15. [Technical Architecture](#15-technical-architecture)
-16. [Audio Design](#16-audio-design)
-17. [Metrics & Analytics](#17-metrics--analytics)
-18. [Development Roadmap](#18-development-roadmap)
+5. [Building Mini-Games](#5-building-mini-games) *(NEW - Immersive Resource Generation)*
+6. [Troop System](#6-troop-system)
+7. [Combat System](#7-combat-system)
+8. [Economy System](#8-economy-system)
+9. [Progression System](#9-progression-system)
+10. [Alliance System](#10-alliance-system)
+11. [Monetization](#11-monetization)
+12. [Engagement Systems](#12-engagement-systems)
+13. [UI/UX Design](#13-uiux-design)
+14. [Onboarding & Tutorial](#14-onboarding--tutorial)
+15. [Events & Live Operations](#15-events--live-operations)
+16. [Technical Architecture](#16-technical-architecture)
+17. [Audio Design](#17-audio-design)
+18. [Metrics & Analytics](#18-metrics--analytics)
+19. [Development Roadmap](#19-development-roadmap)
 
 ---
 
@@ -30,7 +31,9 @@
 
 ## 1.1 Concept Statement
 
-**Battle Tycoon: Conquest** is a Roblox city-building conquest game where players build and upgrade their cities, train armies, and conquer other players' cities to expand their empire. Players can own multiple cities, harvest resources, trade in a player-driven economy, and compete in alliance wars for global domination.
+**Battle Tycoon: Conquest** is a Roblox city-building conquest game with **immersive walkthrough gameplay**. Unlike traditional top-down strategy games, players control a third-person character who physically walks through their medieval city, entering buildings to perform hands-on mini-games that generate resources.
+
+Players build and upgrade their cities, train armies, and conquer other players' cities to expand their empire. The unique **building mini-game system** lets players manually mine gold, chop wood, harvest crops, and train soldiers—then hire workers to automate these tasks as they progress. Players can own multiple cities, harvest resources, trade in a player-driven economy, and compete in alliance wars for global domination.
 
 ## 1.2 Genre
 
@@ -48,17 +51,22 @@
 
 ## 1.4 Unique Selling Points
 
-1. **Multi-City Empire Building** - Own up to 5 cities simultaneously
-2. **Tiered Conquest System** - Choose to raid, occupy, or permanently conquer
-3. **Real Economy** - Player-driven market for resources and troops
-4. **Alliance Territory Wars** - Clans fight for control of the World Map
-5. **Fantasy-Medieval Theme** - Knights, mages, dragons, AND tanks/mechs
+1. **Immersive Walkthrough Gameplay** - Walk through your city in third-person, enter buildings, and interact with everything
+2. **Building Mini-Games** - Each building has unique mini-games to generate resources (mine gold, chop wood, forge weapons)
+3. **Worker Progression Loop** - Start manual → hire workers → upgrade equipment → automate → expand
+4. **Multi-City Empire Building** - Own up to 5 cities simultaneously
+5. **Tiered Conquest System** - Choose to raid, occupy, or permanently conquer
+6. **Real Economy** - Player-driven market for resources and troops
+7. **Alliance Territory Wars** - Clans fight for control of the World Map
+8. **Fantasy-Medieval Theme** - Knights, mages, dragons, AND tanks/mechs
 
 ## 1.5 Core Pillars
 
 | Pillar | Description |
 |--------|-------------|
-| **Build** | Create and upgrade your city with 20+ building types |
+| **Explore** | Walk through your medieval city in third-person, discovering buildings and interacting with the world |
+| **Work** | Perform hands-on mini-games inside buildings to generate resources (mining, chopping, forging, training) |
+| **Build** | Create and upgrade your city with 20+ building types, hire workers, upgrade equipment |
 | **Train** | Raise armies of infantry, cavalry, mages, dragons, and war machines |
 | **Conquer** | Attack other players to steal resources and expand your empire |
 | **Dominate** | Join alliances, win wars, and climb the global leaderboards |
@@ -308,7 +316,6 @@ The game uses Roblox's multi-place architecture with TeleportService:
 | **Farm** | Food (feeds troops) | 10 | 1 |
 | **Lumber Mill** | Wood (buildings) | 10 | 2 |
 | **Gold Mine** | Gold (troops, upgrades) | 10 | 1 |
-| **Gem Mine** | Gems (premium currency) - slow | 5 | 4 |
 | **Market** | Trade resources with players | 10 | 5 |
 
 ### 4.1.3 Military Buildings
@@ -369,7 +376,7 @@ Example:
 | 1 → 2 | All buildings at L1 | Archery Range, Lumber Mill, Archer Tower, Treasury |
 | 2 → 3 | All buildings at L2 + 2,000 gold | Stable, Cannon, Castle, Embassy |
 | 3 → 4 | All buildings at L3 + 5,000 gold + 3,000 wood | Academy, Spell Forge, Wizard Tower |
-| 4 → 5 | All buildings at L4 + 10,000 gold + 8,000 wood | Mage Tower, Market, Gem Mine, **2nd City Slot** |
+| 4 → 5 | All buildings at L4 + 10,000 gold + 8,000 wood | Mage Tower, Market, **2nd City Slot** |
 | 5 → 6 | All buildings at L5 + 25,000 gold + 20,000 wood | Siege Workshop, Hospital, Air Defense |
 | 6 → 7 | All buildings at L6 + 50,000 gold + 40,000 wood | Watchtower, Tesla Tower |
 | 7 → 8 | All buildings at L7 + 100,000 gold + 80,000 wood | Dragon Roost, **3rd City Slot** |
@@ -384,7 +391,7 @@ Example:
 | 2 | 2 | 3 Farms, 2 Gold Mines, 1 Lumber Mill | 1 Archer Tower, 1 Cannon | 50 |
 | 3 | 2 | 4 Farms, 2 Gold Mines, 2 Lumber Mills | 2 of each | 75 |
 | 4 | 3 | 5 Farms, 3 Gold Mines, 3 Lumber Mills | 3 of each + Wizard Tower | 100 |
-| 5 | 3 | 6, 4, 4 + Gem Mine | 4 of each | 125 |
+| 5 | 3 | 6, 4, 4 | 4 of each | 125 |
 | 6 | 4 | 7, 5, 5, 1 | 5 of each + Air Defense | 150 |
 | 7 | 4 | 8, 6, 6, 1 | 6 of each + Tesla | 175 |
 | 8 | 5 | 9, 7, 7, 2 | 7 of each | 200 |
@@ -434,16 +441,909 @@ woodCost = baseWood * (level ^ 1.6)
 | Builder | Cost | Method |
 |---------|------|--------|
 | Builder 1 | Free | Starting |
-| Builder 2 | 250 Gems OR VIP Subscription | Purchase |
-| Builder 3 | 500 Gems | Purchase |
-| Builder 4 | 1,000 Gems | Purchase |
-| Builder 5 | 2,000 Gems | Purchase |
+| Builder 2 | 25,000 Gold | In-game shop purchase |
+| Builder 3 | 75,000 Gold | In-game shop purchase |
+| Builder 4 | 200,000 Gold | In-game shop purchase |
+| Builder 5 | 500,000 Gold | In-game shop purchase |
+
+> **Note:** All builders are purchasable with gold earned through gameplay. No premium currency required.
 
 ---
 
-# 5. Troop System
+# 5. Building Mini-Games
 
-## 5.1 Troop Categories
+The **Building Mini-Game System** is what makes Battle Tycoon unique. Instead of passively collecting resources from buildings, players physically walk into each building and perform interactive mini-games to generate resources. This creates an immersive, hands-on gameplay loop that evolves as players progress.
+
+## 5.1 Mini-Game Philosophy
+
+### 5.1.1 Core Design Principles
+
+| Principle | Description |
+|-----------|-------------|
+| **Manual First** | Every building starts with manual labor—players do the work themselves |
+| **Hire to Automate** | As buildings level up, players can hire workers to automate tasks |
+| **Upgrade to Multiply** | Equipment upgrades increase output per action |
+| **Prestige Loop** | High-level buildings unlock entirely new mini-games and mechanics |
+
+### 5.1.2 Progression Loop
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                   BUILDING PROGRESSION LOOP                      │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  LEVEL 1-2: MANUAL LABOR                                        │
+│  • Player performs all actions manually                         │
+│  • Basic tools, slow output                                     │
+│  • Learn the mini-game mechanics                                │
+│                                                                 │
+│  LEVEL 3-4: FIRST WORKER                                        │
+│  • Hire 1 worker (costs resources)                              │
+│  • Worker produces slowly while offline                         │
+│  • Player can still do manual work for bonus                    │
+│                                                                 │
+│  LEVEL 5-6: EQUIPMENT UPGRADES                                  │
+│  • Upgrade tools (pickaxe, axe, etc.) for faster work           │
+│  • Upgrade processing equipment (refiner, sawmill, etc.)        │
+│  • +50% output per equipment level                              │
+│                                                                 │
+│  LEVEL 7-8: WORKER EXPANSION                                    │
+│  • Hire up to 3 workers                                         │
+│  • Workers gain experience and efficiency                       │
+│  • Unlock secondary resources                                   │
+│                                                                 │
+│  LEVEL 9-10: AUTOMATION & PRESTIGE                              │
+│  • Full automation available                                    │
+│  • Prestige option: Reset for permanent bonuses                 │
+│  • Unlock rare resource generation                              │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+## 5.2 Gold Mine Mini-Game (Prototype)
+
+The Gold Mine is the primary gold-generating building and serves as the prototype for all building mini-games.
+
+### 5.2.1 Building Layout
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                      GOLD MINE INTERIOR                          │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│     ┌─────────────┐                                             │
+│     │   ENTRANCE  │ ← Player enters here                        │
+│     └──────┬──────┘                                             │
+│            │                                                    │
+│     ┌──────▼──────┐     ┌─────────────┐     ┌─────────────┐     │
+│     │   MINE      │     │   REFINER   │     │   OUTPUT    │     │
+│     │   SHAFT     │────▶│  STATION    │────▶│   CHEST     │     │
+│     │ (Mine Ore)  │     │(Smelt Gold) │     │(Collect $)  │     │
+│     └─────────────┘     └─────────────┘     └─────────────┘     │
+│                                                                 │
+│     ┌─────────────┐     ┌─────────────┐                         │
+│     │   WORKER    │     │  EQUIPMENT  │                         │
+│     │    HUT      │     │   BENCH     │                         │
+│     │(Hire Miners)│     │(Upgrades)   │                         │
+│     └─────────────┘     └─────────────┘                         │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 5.2.2 Mini-Game Flow
+
+**Step 1: Mine Ore**
+- Player approaches ore vein
+- ProximityPrompt: "Mine Gold Ore" (hold 1 second)
+- Animation: Pickaxe swing, particles fly
+- Result: +1 Gold Ore added to inventory (max 10)
+- XP: +5 Mining XP
+
+**Step 2: Carry to Refiner**
+- Player walks to Refiner Station (carrying ore)
+- ProximityPrompt: "Load Refiner" (instant)
+- Result: Ore transferred to refiner queue
+
+**Step 3: Smelt Gold**
+- ProximityPrompt: "Smelt Gold" (hold 2 seconds)
+- Animation: Furnace glows, molten gold pours
+- Result: 1 Ore → 10 Gold (base rate)
+- XP: +10 Refining XP
+
+**Step 4: Collect Gold**
+- ProximityPrompt: "Collect Gold" at Output Chest
+- Gold added to player's resources
+- Building XP gained based on gold collected
+
+### 5.2.3 Unlimited Equipment Upgrade System
+
+All Gold Mine equipment uses an unlimited level-based system with NO maximum level. Upgrade costs scale using the formula: `baseCost * (level ^ 1.8)`
+
+**Equipment Levels and Benefits:**
+
+| Equipment | Output Formula | Speed | Notes |
+|-----------|---------------|-------|-------|
+| Pickaxe | ore per swing = level | - | Linear scaling with level |
+| Smelter | gold per ore = level | Milestone bonuses | Speed only improves at milestones |
+| Miner (NPC) | capacity = 5 + (level * 5) | walkSpeed = 4 + level | Automated mining worker |
+| Collector (NPC) | capacity = 2 + level | walkSpeed = 4 + level | Automated gold collector |
+
+**Smelter Speed Milestones:**
+
+| Level | Speed Bonus | Description |
+|-------|-------------|-------------|
+| 10 | +10% | First efficiency upgrade |
+| 20 | +20% | Improved mechanisms |
+| 50 | +35% | Industrial grade |
+| 100 | +50% | Master smelter |
+| 200 | +65% | Expert smelter |
+| 500 | +80% | Legendary smelter |
+| 1000 | +100% | Ultimate smelter |
+
+### 5.2.4 NPC Worker System (Gold Mine)
+
+Workers are NPC characters with status billboards displayed above their heads showing current action and progress.
+
+**Miners:**
+- Walk to ore vein and mine with visible progress display
+- Walk to smelter when inventory full
+- Deposit ore into smelter queue
+- Repeat cycle automatically
+- Max 3 Miners per Gold Mine
+- Hire cost: 500 gold each
+
+**Collectors:**
+- Wait at smelter for processed gold
+- Walk to output chest when gold is ready
+- Deposit gold into chest for player collection
+- Repeat cycle automatically
+- Max 3 Collectors per Gold Mine
+- Hire cost: 500 gold each
+
+**Status Billboard Display:**
+- Shows worker name and level
+- Current action (Mining, Walking, Depositing, Waiting)
+- Progress bar for current action
+- Inventory count (ore/gold carried)
+
+### 5.2.5 Independent Processing System
+
+The Smelter operates independently from miners and runs continuously when ore is available.
+
+**Smelter Mechanics:**
+- Processes ore from queue one at a time
+- Progress bar fills from 0% to 100% per ore processed
+- Gold output = smelter level per ore
+- Processing speed affected by milestone bonuses
+
+**Smelter UI Display:**
+- Current queue size (ore waiting)
+- Smelter level
+- Gold per ore output
+- Progress bar for current ore
+- Processing speed multiplier
+
+### 5.2.6 Unified Upgrade Shop
+
+All equipment upgrades are purchased from a single location with 4 upgrade pedestals.
+
+**Upgrade Pedestals:**
+| Pedestal | Equipment | Cost Formula |
+|----------|-----------|--------------|
+| 1 | Pickaxe | 100 * (level ^ 1.8) gold |
+| 2 | Smelter | 150 * (level ^ 1.8) gold |
+| 3 | Miner | 200 * (level ^ 1.8) gold |
+| 4 | Collector | 200 * (level ^ 1.8) gold |
+
+**Example Costs (Pickaxe):**
+| Level | Cost |
+|-------|------|
+| 1 → 2 | 348 gold |
+| 5 → 6 | 2,089 gold |
+| 10 → 11 | 6,310 gold |
+| 50 → 51 | 102,400 gold |
+| 100 → 101 | 398,107 gold |
+
+## 5.3 Lumber Mill Mini-Game
+
+The Lumber Mill is the primary wood-generating building with a full progression loop similar to the Gold Mine.
+
+### 5.3.1 Building Layout
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     LUMBER MILL INTERIOR                         │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  ┌─────────────┐                                                │
+│  │ TREE GROVE  │ ← Choppable trees (4 trees, regrow)            │
+│  │   🌲🌲🌲🌲   │                                                │
+│  └──────┬──────┘                                                │
+│         │                                                       │
+│  ┌──────▼──────┐     ┌─────────────┐     ┌─────────────┐        │
+│  │  LOG PILE   │────▶│   SAWMILL   │────▶│  OUTPUT     │        │
+│  │ (Load Logs) │     │  (Process)  │     │  (Collect)  │        │
+│  └─────────────┘     └─────────────┘     └─────────────┘        │
+│                                                                 │
+│  ┌─────────────┐     ┌─────────────┐                            │
+│  │   WORKER    │     │    TOOL     │                            │
+│  │   CABIN     │     │    SHED     │                            │
+│  │(Hire Workers│     │ (Upgrades)  │                            │
+│  └─────────────┘     └─────────────┘                            │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 5.3.2 Mini-Game Flow
+
+**Step 1: Chop Trees**
+- Player approaches tree in tree grove
+- ProximityPrompt: "Chop Tree" (hold 1.2 seconds)
+- Trees require 3 hits to fell (health system)
+- Animation: Axe swing, wood chips fly
+- Result: +1-2 Logs per chop (based on axe), bonus logs on fell
+- Carry capacity: Max 8 logs
+
+**Step 2: Carry Logs**
+- Player walks with logs to log pile
+- Visual indicator shows logs being carried
+
+**Step 3: Load Log Pile**
+- ProximityPrompt: "Load Logs" (instant)
+- Result: All carried logs transferred to processing queue
+
+**Step 4: Process at Sawmill**
+- ProximityPrompt: "Process Logs" (hold 2 seconds)
+- Animation: Saw blade spins, sawdust flies, planks emerge
+- Result: 1 Log → 8-16 Wood (based on sawmill level)
+
+**Step 5: Collect Wood**
+- ProximityPrompt: "Collect Wood" at Output Pile
+- Wood added to player's resources
+- Building XP gained
+
+### 5.3.3 Unlimited Equipment Upgrade System
+
+All Lumber Mill equipment uses an unlimited level-based system with NO maximum level. Upgrade costs scale using the formula: `baseCost * (level ^ 1.8)`
+
+**Equipment Levels and Benefits:**
+
+| Equipment | Output Formula | Speed | Notes |
+|-----------|---------------|-------|-------|
+| Axe | logs per chop = level | - | Linear scaling with level |
+| Sawmill | planks per log = level | Milestone bonuses | Speed only improves at milestones |
+| Logger (NPC) | capacity = 5 + (level * 5) | walkSpeed = 4 + level | Automated logging worker |
+| Hauler (NPC) | capacity = 2 + level | walkSpeed = 4 + level | Automated plank hauler |
+
+**Sawmill Speed Milestones:**
+
+| Level | Speed Bonus | Description |
+|-------|-------------|-------------|
+| 10 | +10% | First efficiency upgrade |
+| 20 | +20% | Improved mechanisms |
+| 50 | +35% | Industrial grade |
+| 100 | +50% | Master sawmill |
+| 200 | +65% | Expert sawmill |
+| 500 | +80% | Legendary sawmill |
+| 1000 | +100% | Ultimate sawmill |
+
+### 5.3.4 NPC Worker System (Lumber Mill)
+
+Workers are NPC characters with status billboards displayed above their heads showing current action and progress.
+
+**Loggers:**
+- Walk to tree and chop with visible progress display
+- Walk to sawmill when inventory full
+- Deposit logs into sawmill queue
+- Repeat cycle automatically
+- Max 3 Loggers per Lumber Mill
+- Hire cost: 500 gold each
+
+**Haulers:**
+- Wait at sawmill for processed planks
+- Walk to output pile when planks are ready
+- Deposit planks into pile for player collection
+- Repeat cycle automatically
+- Max 3 Haulers per Lumber Mill
+- Hire cost: 500 gold each
+
+**Status Billboard Display:**
+- Shows worker name and level
+- Current action (Chopping, Walking, Depositing, Waiting)
+- Progress bar for current action
+- Inventory count (logs/planks carried)
+
+### 5.3.5 Independent Processing System
+
+The Sawmill operates independently from loggers and runs continuously when logs are available.
+
+**Sawmill Mechanics:**
+- Processes logs from queue one at a time
+- Progress bar fills from 0% to 100% per log processed
+- Plank output = sawmill level per log
+- Processing speed affected by milestone bonuses
+
+**Sawmill UI Display:**
+- Current queue size (logs waiting)
+- Sawmill level
+- Planks per log output
+- Progress bar for current log
+- Processing speed multiplier
+
+### 5.3.6 Unified Upgrade Shop
+
+All equipment upgrades are purchased from a single location with 4 upgrade pedestals.
+
+**Upgrade Pedestals:**
+| Pedestal | Equipment | Cost Formula |
+|----------|-----------|--------------|
+| 1 | Axe | 100 * (level ^ 1.8) gold |
+| 2 | Sawmill | 150 * (level ^ 1.8) gold |
+| 3 | Logger | 200 * (level ^ 1.8) gold |
+| 4 | Hauler | 200 * (level ^ 1.8) gold |
+
+**Example Costs (Axe):**
+| Level | Cost |
+|-------|------|
+| 1 → 2 | 348 gold |
+| 5 → 6 | 2,089 gold |
+| 10 → 11 | 6,310 gold |
+| 50 → 51 | 102,400 gold |
+| 100 → 101 | 398,107 gold |
+
+### 5.3.7 Unique Mechanics
+
+- **Tree Regrowth:** Trees respawn after 15-30 seconds
+- **Tree Health:** Trees require 3 hits to fell; bonus logs awarded on fell
+- **Rare Trees:** Oak (common), Pine (uncommon), Ironwood (rare = 2x wood)
+
+## 5.4 Farm Mini-Game
+
+The Farm is the primary food-generating building with a full crop growth and processing loop.
+
+### 5.4.1 Building Layout
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        FARM LAYOUT                               │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  ┌───────────┐  ┌─────────────────────────────────┐             │
+│  │SEED SHED  │  │      CROP FIELD (4x6 plots)     │  🌾🌾🌾     │
+│  │(Get Seeds)│  │  [Plot][Plot][Plot][Plot][Plot] │  SCARECROW  │
+│  └───────────┘  │  [Plot][Plot][Plot][Plot][Plot] │             │
+│                 │  [Plot][Plot][Plot][Plot][Plot] │             │
+│  ┌───────────┐  │  [Plot][Plot][Plot][Plot][Plot] │             │
+│  │   WELL    │  └─────────────────────────────────┘             │
+│  │(Water)    │                                                  │
+│  └───────────┘                                                  │
+│                                                                 │
+│  ┌───────────┐     ┌───────────┐     ┌───────────┐              │
+│  │ HARVEST   │────▶│ WINDMILL  │────▶│   SILO    │              │
+│  │  BASKET   │     │ (Process) │     │ (Collect) │              │
+│  └───────────┘     └───────────┘     └───────────┘              │
+│                                                                 │
+│  ┌───────────┐     ┌───────────┐                                │
+│  │   BARN    │     │ TOOL SHED │                                │
+│  │ (Workers) │     │ (Upgrades)│                                │
+│  └───────────┘     └───────────┘                                │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 5.4.2 Mini-Game Flow
+
+**Step 1: Get Seeds**
+- Player approaches Seed Shed
+- ProximityPrompt: "Get Seeds" (instant)
+- Seeds added to inventory (unlimited for prototype)
+
+**Step 2: Plant Seeds**
+- Player approaches empty plot (4x6 grid = 24 plots)
+- ProximityPrompt: "Plant Seeds" (hold 0.8 seconds)
+- Crop appears at stage 1 (small, transparent)
+- Crops unlock by level: Wheat (L1), Corn (L3), Carrots (L5), Pumpkins (L7)
+
+**Step 3: Water Crops**
+- Player draws water from Well
+- ProximityPrompt: "Draw Water" (hold 1 second)
+- Waters multiple plots based on watering can level
+- Watered crops advance growth stage immediately
+- Result: Crops grow faster (stage 1 → 2 → 3)
+
+**Step 4: Harvest**
+- When crops reach stage 3 (full size, opaque)
+- ProximityPrompt changes to "Harvest" on the plot
+- Result: 1-3 crops based on hoe level
+- Carry capacity: Max 20 crops
+
+**Step 5: Load Basket**
+- Player walks to Harvest Basket
+- ProximityPrompt: "Load Crops" (instant)
+- All carried crops transferred to processing queue
+
+**Step 6: Process at Windmill**
+- ProximityPrompt: "Process Crops" (hold 2 seconds)
+- Animation: Windmill grinds, grain particles
+- Result: Crops → Food (5-15 per crop based on windmill level)
+
+**Step 7: Collect Food**
+- ProximityPrompt: "Collect Food" at Silo
+- Food added to player's resources
+- Building XP gained
+
+### 5.4.3 Unlimited Equipment Upgrade System
+
+All Farm equipment uses an unlimited level-based system with NO maximum level. Upgrade costs scale using the formula: `baseCost * (level ^ 1.8)`
+
+**Equipment Levels and Benefits:**
+
+| Equipment | Output Formula | Speed | Notes |
+|-----------|---------------|-------|-------|
+| Hoe | crops per harvest = level | - | Linear scaling with level |
+| Watering Can | plots per water = level | - | Area coverage scales with level |
+| Windmill | grain per crop = level | Milestone bonuses | Speed only improves at milestones |
+| Farmer (NPC) | capacity = 5 + (level * 5) | walkSpeed = 4 + level | Automated farming worker |
+| Carrier (NPC) | capacity = 2 + level | walkSpeed = 4 + level | Automated grain carrier |
+
+**Windmill Speed Milestones:**
+
+| Level | Speed Bonus | Description |
+|-------|-------------|-------------|
+| 10 | +10% | First efficiency upgrade |
+| 20 | +20% | Improved mechanisms |
+| 50 | +35% | Industrial grade |
+| 100 | +50% | Master windmill |
+| 200 | +65% | Expert windmill |
+| 500 | +80% | Legendary windmill |
+| 1000 | +100% | Ultimate windmill |
+
+### 5.4.4 Crop Types
+
+| Crop | Grow Time | Food Value | Unlock Level | Color |
+|------|-----------|------------|--------------|-------|
+| Wheat | 10 sec | 5 food | Level 1 | Golden yellow |
+| Corn | 15 sec | 8 food | Level 3 | Bright yellow |
+| Carrots | 8 sec | 4 food | Level 5 | Orange |
+| Pumpkins | 20 sec | 12 food | Level 7 | Deep orange |
+| Golden Wheat | 25 sec | 20 food | Level 10 | Shimmering gold |
+
+### 5.4.5 NPC Worker System (Farm)
+
+Workers are NPC characters with status billboards displayed above their heads showing current action and progress.
+
+**Farmers:**
+- Walk to crop field and harvest with visible progress display
+- Walk to windmill when inventory full
+- Deposit crops into windmill queue
+- Repeat cycle automatically
+- Max 3 Farmers per Farm
+- Hire cost: 500 gold each
+
+**Carriers:**
+- Wait at windmill for processed grain
+- Walk to silo when grain is ready
+- Deposit grain into silo for player collection
+- Repeat cycle automatically
+- Max 3 Carriers per Farm
+- Hire cost: 500 gold each
+
+### 5.4.6 Multi-Farm System
+
+Players can purchase up to 6 farms total, each with its own separate interior and independent production:
+
+**Farm Expansion:**
+
+| Farm | Cost | Requirements | Position |
+|------|------|--------------|----------|
+| Farm 1 | Free | Default | X=25, Z=100 |
+| Farm 2 | 1,000 Gold + 500 Wood | Town Hall Lvl 2 | X=25, Z=130 |
+| Farm 3 | 3,000 Gold + 1,500 Wood | Town Hall Lvl 3 | X=95, Z=130 |
+| Farm 4 | 10,000 Gold + 5,000 Wood | Town Hall Lvl 4 | X=10, Z=115 |
+| Farm 5 | 30,000 Gold + 15,000 Wood | Town Hall Lvl 5 | X=110, Z=115 |
+| Farm 6 | 75,000 Gold + 35,000 Wood | Town Hall Lvl 6 | X=60, Z=140 |
+
+**Farm Independence:**
+- Each farm has a separate interior at a different Y level (700, 720, 740, etc.)
+- Each farm has its own crop plots, windmill, and storage
+- Each farm has its own equipment upgrades (hoe, watering can, windmill level)
+- Each farm can hire its own farmers and carriers (3 each max)
+- Workers from one farm cannot access another farm
+
+**Exterior Stats Display:**
+- Each farm displays a billboard showing production stats
+- Shows: Food in storage, Crops in queue, Farm level
+- Updates in real-time as production changes
+- Visible from village without entering the farm
+
+**Status Billboard Display:**
+- Shows worker name and level
+- Current action (Harvesting, Walking, Depositing, Waiting)
+- Progress bar for current action
+- Inventory count (crops/grain carried)
+
+### 5.4.6 Independent Processing System
+
+The Windmill operates independently from farmers and runs continuously when crops are available.
+
+**Windmill Mechanics:**
+- Processes crops from queue one at a time
+- Progress bar fills from 0% to 100% per crop processed
+- Grain output = windmill level per crop
+- Processing speed affected by milestone bonuses
+
+**Windmill UI Display:**
+- Current queue size (crops waiting)
+- Windmill level
+- Grain per crop output
+- Progress bar for current crop
+- Processing speed multiplier
+
+### 5.4.7 Unified Upgrade Shop
+
+All equipment upgrades are purchased from a single location with 5 upgrade pedestals.
+
+**Upgrade Pedestals:**
+| Pedestal | Equipment | Cost Formula |
+|----------|-----------|--------------|
+| 1 | Hoe | 100 * (level ^ 1.8) gold |
+| 2 | Watering Can | 80 * (level ^ 1.8) gold |
+| 3 | Windmill | 150 * (level ^ 1.8) gold |
+| 4 | Farmer | 200 * (level ^ 1.8) gold |
+| 5 | Carrier | 200 * (level ^ 1.8) gold |
+
+**Example Costs (Hoe):**
+| Level | Cost |
+|-------|------|
+| 1 → 2 | 348 gold |
+| 5 → 6 | 2,089 gold |
+| 10 → 11 | 6,310 gold |
+| 50 → 51 | 102,400 gold |
+| 100 → 101 | 398,107 gold |
+
+### 5.4.8 Unique Mechanics
+
+- **Growth Stages:** Crops progress through 3 visual stages (sprout → growing → ready)
+- **Watering Bonus:** Watered crops skip one growth stage instantly
+- **Scarecrow:** Protects crops from random "crow attack" events (-10% yield)
+- **Fertilizer:** Use sawdust from Lumber Mill for +25% yield
+
+## 5.5 Barracks Mini-Game
+
+The Barracks is the military training facility where players recruit peasants, train them into soldiers, equip them with weapons and armor, and deploy them to their army.
+
+### 5.5.1 Building Layout
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                      BARRACKS LAYOUT                             │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  ┌───────────────┐                    ┌───────────────┐         │
+│  │  RECRUITMENT  │                    │    ARMORY     │         │
+│  │    BOARD      │                    │ (Equip Gear)  │         │
+│  │ (Get Trainees)│                    │ 🗡️ Weapons    │         │
+│  │   📜 📜 📜    │                    │ 🛡️ Armor      │         │
+│  └───────────────┘                    └───────────────┘         │
+│        👤 👤                                                     │
+│   (Waiting peasants)                                            │
+│                                                                 │
+│  ┌─────────────────────────────────────────────────────┐        │
+│  │              TRAINING YARD (Dirt Ground)             │        │
+│  │                                                      │        │
+│  │   [DUMMY 1]      [DUMMY 2]      [DUMMY 3]           │        │
+│  │      💪            💪             💪                │        │
+│  │                                                      │        │
+│  └─────────────────────────────────────────────────────┘        │
+│                                                                 │
+│  ┌───────────────┐     ┌───────────────┐     ┌───────────────┐  │
+│  │ SERGEANT HUT  │     │  ARMY CAMP    │     │    FORGE      │  │
+│  │(Hire Workers) │     │ (Deploy Army) │     │  (Upgrades)   │  │
+│  │  Level 3+     │     │ ⛺ ⛺ 🔥       │     │  🔥 ⚒️        │  │
+│  └───────────────┘     └───────────────┘     └───────────────┘  │
+│                                                                 │
+│              ═══════ MAIN BARRACKS BUILDING ═══════             │
+│              │  🏰 Stone walls, battlements  │                  │
+│              │       Military Banner 🚩      │                  │
+│              ═══════════════════════════════                    │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 5.5.2 Mini-Game Flow
+
+**Step 1: Recruit Trainee**
+- Player approaches Recruitment Board
+- ProximityPrompt: "Recruit Trainee (10 Food)" (hold 1.5 seconds)
+- Costs 10 food per trainee
+- Trainee added to player's inventory
+- Visual: Peasants waiting by the board
+
+**Step 2: Train at Dummy**
+- Player takes trainee to Training Yard
+- ProximityPrompt: "Train Recruit" (hold 2 seconds)
+- Animation: Dummy wobbles, combat sparks fly
+- Result: Trainee → Trained Recruit
+- XP gained based on training dummy quality
+
+**Step 3: Equip at Armory**
+- Player takes trained recruit to Armory
+- ProximityPrompt: "Equip Soldier" (hold 2 seconds)
+- Animation: Metal clanking particles
+- Result: Recruit equipped with current weapon + armor tier
+- Soldier stats based on equipment quality
+
+**Step 4: Deploy to Army**
+- Player takes equipped soldier to Army Camp
+- ProximityPrompt: "Deploy Soldier" (hold 1.5 seconds)
+- Animation: Glory particles, trumpet visual
+- Result: Soldier joins player's army roster
+- +30 gold reward, +25 XP to barracks
+
+### 5.5.3 Barracks Progression
+
+| Level | Train Speed | Soldiers/Deploy | Deploy Reward | Workers | Unlocks |
+|-------|-------------|-----------------|---------------|---------|---------|
+| 1 | 1.0x | 1 soldier | 30 gold | 0 | Basic Training |
+| 2 | 1.0x | 1 soldier | 35 gold | 0 | Basic Weapons |
+| 3 | 1.2x | 1 soldier | 40 gold | 1 | Sergeant Hut |
+| 4 | 1.4x | 1-2 soldiers | 50 gold | 1 | Iron Equipment |
+| 5 | 1.6x | 1-2 soldiers | 60 gold | 2 | Steel Equipment |
+| 6 | 1.8x | 2 soldiers | 75 gold | 2 | Advanced Dummies |
+| 7 | 2.0x | 2 soldiers | 90 gold | 3 | Mithril Equipment |
+| 8 | 2.3x | 2-3 soldiers | 110 gold | 3 | Specialization |
+| 9 | 2.6x | 2-3 soldiers | 130 gold | 4 | Enchanted Dummies |
+| 10 | 3.0x | 3 soldiers | 150 gold | 5 | Elite Troops |
+
+### 5.5.4 Equipment Upgrades
+
+**Training Dummies:**
+| Dummy Type | Train Speed | XP Bonus | Cost | Unlock |
+|------------|-------------|----------|------|--------|
+| Basic Dummy | 1.0x | 1x | Free | Level 1 |
+| Reinforced Dummy | 1.5x | 2x | 500 gold, 300 wood | Level 4 |
+| Steel Dummy | 2.0x | 3x | 2,500 gold, 1,500 wood | Level 6 |
+| Enchanted Dummy | 3.0x | 5x | 12,000 gold, 6,000 wood | Level 9 |
+
+**Weapons:**
+| Weapon Tier | Damage | Cost | Unlock |
+|-------------|--------|------|--------|
+| Basic Sword | 10 | Free | Level 1 |
+| Iron Sword | 18 | 800 gold, 400 wood | Level 4 |
+| Steel Sword | 28 | 4,000 gold, 2,000 wood | Level 5 |
+| Mithril Sword | 45 | 20,000 gold, 10,000 wood | Level 7 |
+
+**Armor:**
+| Armor Tier | Defense | Cost | Unlock |
+|------------|---------|------|--------|
+| Basic Leather | 5 | Free | Level 1 |
+| Iron Plate | 12 | 600 gold, 300 wood | Level 4 |
+| Steel Plate | 22 | 3,000 gold, 1,500 wood | Level 5 |
+| Mithril Plate | 40 | 15,000 gold, 7,500 wood | Level 7 |
+
+### 5.5.5 Worker System (Drill Sergeants)
+
+| Sergeant Level | Train Speed | Capacity | Auto-Equip | Hire Cost |
+|----------------|-------------|----------|------------|-----------|
+| Recruit Sergeant | 50% of player | 1 at a time | No | 300 gold, 150 food |
+| Veteran Sergeant | 75% of player | 2 at a time | Basic only | 800 gold, 400 food |
+| Elite Sergeant | 100% of player | 3 at a time | Iron tier | 2,000 gold, 1,000 food |
+| Master Sergeant | 120% of player | 4 at a time | Steel tier | 5,000 gold, 2,500 food |
+
+### 5.5.6 Unique Mechanics
+
+- **Food Cost:** Each recruit costs food (peasants need to eat!)
+- **Equipment Inheritance:** Soldiers retain equipment quality; higher = stronger troops
+- **Batch Training:** Multiple dummies allow training multiple recruits simultaneously
+- **Drill Sergeants:** Auto-train recruits while offline (Level 3+)
+- **Army Roster:** Deployed soldiers visible in Army Camp tents
+- **Specialization (Level 8+):** Train specialized troops:
+  - **Knight:** +50% defense, slower training
+  - **Berserker:** +50% damage, -25% defense
+  - **Ranger:** Ranged attacks, lower HP
+- **Forge Upgrades:** Permanently improve all future soldiers
+- **Combat XP:** Soldiers gain XP in battles, improving stats
+- **Morale System:** Well-fed army fights better (+10% damage if food surplus)
+
+## 5.6 Town Hall Mini-Game
+
+The Town Hall is the central administrative building where players manage their growing settlement through taxation, population registration, research, and treasury management.
+
+### 5.6.1 Building Layout
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                      TOWN HALL LAYOUT                            │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  ┌───────────────┐                    ┌───────────────┐         │
+│  │  TAX OFFICE   │                    │   RESEARCH    │         │
+│  │(Collect Taxes)│                    │   LIBRARY     │         │
+│  │  💰 Citizens  │                    │  📚 Scrolls   │         │
+│  └───────────────┘                    └───────────────┘         │
+│                                                                 │
+│  ┌───────────────┐     ═══════════     ┌───────────────┐        │
+│  │ CENSUS DESK   │     ║ MAIN   ║     │   TREASURY    │        │
+│  │(Register Pop) │     ║ HALL   ║     │    VAULT      │        │
+│  │  📜 Quill     │     ║ 🏛️    ║     │  🔒 Gold      │        │
+│  └───────────────┘     ═══════════     └───────────────┘        │
+│                           🚩 🚩                                  │
+│                        Red Carpet                                │
+│                                                                 │
+│  ┌───────────────┐                    ┌───────────────┐         │
+│  │   ADVISOR     │                    │    ROYAL      │         │
+│  │  QUARTERS     │                    │   ARCHIVES    │         │
+│  │(Hire Workers) │                    │  (Upgrades)   │         │
+│  │  Level 3+     │                    │   🔮 Runes    │         │
+│  └───────────────┘                    └───────────────┘         │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 5.6.2 Mini-Game Flow
+
+**Step 1: Collect Taxes**
+- Player approaches Tax Office
+- ProximityPrompt: "Collect Taxes" (hold 2 seconds)
+- Gold earned = Population × 2 × Tax Rate multiplier
+- Animation: Gold coin sparkle effect
+- Taxes stored in player's inventory for later deposit
+
+**Step 2: Register Citizens**
+- Player approaches Census Desk
+- ProximityPrompt: "Register Citizen" (hold 1.5 seconds)
+- Animation: Ink writing particles from quill
+- Every 5 registrations → +1 population
+- Higher population = more tax income
+
+**Step 3: Study Scrolls**
+- Player approaches Research Library
+- ProximityPrompt: "Study Scrolls" (hold 2.5 seconds)
+- Animation: Magical blue particles rise from scroll
+- Earn research points based on scroll tier
+- Research points unlock building upgrades
+
+**Step 4: Deposit Gold**
+- Player approaches Treasury Vault with collected taxes
+- ProximityPrompt: "Deposit Gold" (hold 1.5 seconds)
+- Animation: Gold particles flow into vault
+- Gold added to player's total resources
+- Building XP gained
+
+### 5.6.3 Town Hall Progression
+
+| Level | Tax Rate | Research/Study | Population Bonus | Workers | Unlocks |
+|-------|----------|----------------|------------------|---------|---------|
+| 1 | 1.0x | 1 point | +0 | 0 | Basic Administration |
+| 2 | 1.1x | 1 point | +2 | 0 | Copper Ledgers |
+| 3 | 1.2x | 2 points | +4 | 1 | Advisor Quarters |
+| 4 | 1.3x | 2 points | +6 | 1 | Ancient Scrolls |
+| 5 | 1.4x | 2 points | +8 | 2 | Reinforced Vault |
+| 6 | 1.5x | 3 points | +10 | 2 | Silver Ledgers |
+| 7 | 1.6x | 3 points | +12 | 3 | Enchanted Scrolls |
+| 8 | 1.8x | 4 points | +15 | 3 | Iron Vault |
+| 9 | 1.9x | 4 points | +18 | 4 | Gold Ledgers |
+| 10 | 2.0x | 5 points | +20 | 5 | Royal Vault, Legendary Scrolls |
+
+### 5.6.4 Equipment Upgrades
+
+**Ledgers (Tax Collection):**
+| Ledger Tier | Tax Rate | Efficiency | Cost | Unlock |
+|-------------|----------|------------|------|--------|
+| Basic Ledger | 1.0x | 1x | Free | Level 1 |
+| Copper Ledger | 1.3x | 2x | 800 gold, 400 wood | Level 2 |
+| Silver Ledger | 1.6x | 3x | 4,000 gold, 2,000 wood | Level 6 |
+| Gold Ledger | 2.0x | 5x | 20,000 gold, 10,000 wood | Level 9 |
+
+**Scrolls (Research):**
+| Scroll Tier | Research Speed | Points/Study | Cost | Unlock |
+|-------------|----------------|--------------|------|--------|
+| Basic Scrolls | 1.0x | 1 | Free | Level 1 |
+| Ancient Scrolls | 1.5x | 2 | 1,000 gold, 500 wood | Level 4 |
+| Enchanted Scrolls | 2.0x | 3 | 5,000 gold, 2,500 wood | Level 7 |
+| Legendary Scrolls | 3.0x | 5 | 25,000 gold, 12,500 wood | Level 10 |
+
+**Treasury Vault:**
+| Vault Tier | Capacity | Security | Cost | Unlock |
+|------------|----------|----------|------|--------|
+| Basic Vault | 1,000 gold | 1.0x | Free | Level 1 |
+| Reinforced Vault | 5,000 gold | 1.5x | 1,500 gold, 750 wood | Level 5 |
+| Iron Vault | 20,000 gold | 2.0x | 7,500 gold, 3,750 wood | Level 8 |
+| Royal Vault | 100,000 gold | 3.0x | 40,000 gold, 20,000 wood | Level 10 |
+
+### 5.6.5 Worker System (Advisors)
+
+| Advisor Level | Specialty | Efficiency | Auto-Task | Hire Cost |
+|---------------|-----------|------------|-----------|-----------|
+| Apprentice Advisor | Tax | 50% of player | Tax collection only | 500 gold, 200 food |
+| Senior Advisor | Census | 75% of player | Tax + Census | 1,500 gold, 600 food |
+| Royal Advisor | Research | 100% of player | Tax + Census + Research | 4,000 gold, 1,500 food |
+| Grand Vizier | Treasury | 120% of player | All tasks | 10,000 gold, 4,000 food |
+
+### 5.6.6 Unique Mechanics
+
+- **Population Growth:** Registering citizens increases town population, which increases tax income
+- **Tax Accumulation:** Taxes must be deposited to vault to claim gold (prevents auto-farming)
+- **Research Points:** Accumulate to unlock global building upgrades (affects ALL buildings)
+- **Advisor Specialties:** Each advisor specializes in one task but can assist with others
+- **Security Multiplier:** Higher vault security reduces gold loss from enemy raids
+- **Diplomacy (Level 8+):** Unlock alliance bonuses and trade agreements
+- **Royal Decrees:** Spend research points on temporary buffs:
+  - **Tax Holiday:** +50% gold for 10 minutes
+  - **Census Drive:** +2 population per registration for 10 minutes
+  - **Scholar's Focus:** +100% research points for 10 minutes
+- **Town Festivals:** At Level 10, host festivals that boost all production by 25%
+
+## 5.7 Building XP and Leveling
+
+### 5.6.1 XP Sources
+
+| Action | XP Gained | Notes |
+|--------|-----------|-------|
+| Manual work (per action) | 5-15 XP | Based on action difficulty |
+| Worker production (per unit) | 1 XP | Passive accumulation |
+| Equipment upgrade | 50-500 XP | One-time bonus |
+| Prestige reset | 1,000+ XP | Milestone bonus |
+
+### 5.6.2 Level Requirements
+
+| Level | Total XP Required | New Unlocks |
+|-------|-------------------|-------------|
+| 1 | 0 | Basic tools, manual work |
+| 2 | 100 | Faster action speed |
+| 3 | 300 | First worker slot |
+| 4 | 600 | Tool upgrade tier 2 |
+| 5 | 1,000 | Processing upgrade tier 2 |
+| 6 | 1,500 | Second worker slot |
+| 7 | 2,200 | Tool upgrade tier 3 |
+| 8 | 3,000 | Processing upgrade tier 3 |
+| 9 | 4,000 | Third worker slot, rare resources |
+| 10 | 5,500 | Master equipment, prestige option |
+
+### 5.6.3 Prestige System (Level 10+)
+
+At max level, players can **prestige** a building:
+- Building resets to Level 1
+- Lose all workers (must rehire)
+- Keep equipment unlocks
+- Gain **Prestige Star** (+10% permanent output bonus)
+- Max 5 Prestige Stars per building (+50% total)
+
+## 5.8 Mini-Game UI Elements
+
+### 5.7.1 Building Interior HUD
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │  GOLD MINE (Level 4)          ⭐⭐ (2 Prestige)           │   │
+│  │  XP: 580/600 [████████░░] 97%                            │   │
+│  └──────────────────────────────────────────────────────────┘   │
+│                                                                 │
+│  ┌────────────┐  ┌────────────┐  ┌────────────┐                 │
+│  │ ORE: 5/10  │  │ REFINER    │  │ OUTPUT     │                 │
+│  │ [█████░░░░]│  │ Queue: 3   │  │ 250 Gold   │                 │
+│  └────────────┘  └────────────┘  └────────────┘                 │
+│                                                                 │
+│  WORKERS: [👷 Working] [👷 Carrying] [💤 Idle]                  │
+│                                                                 │
+│  [EXIT BUILDING]                              [UPGRADE MENU]    │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 5.7.2 Interaction Prompts
+
+- **ProximityPrompt Style:** Medieval wooden sign aesthetic
+- **Progress Bar:** Shows during hold actions
+- **Reward Popup:** "+10 Gold" floats above collection point
+- **Level Up Celebration:** Fanfare, confetti, stats comparison
+
+---
+
+# 6. Troop System
+
+## 6.1 Troop Categories
 
 ### 5.1.1 Infantry (Barracks)
 
@@ -501,7 +1401,7 @@ woodCost = baseWood * (level ^ 1.6)
 | **War Mech** | 25 | 3000s | 400 | 2000 | Ground + Air | Walking fortress |
 | **Artillery** | 15 | 1800s | 350 | 400 | Buildings | Extreme range |
 
-## 5.2 Troop Training
+## 6.2 Troop Training
 
 ### 5.2.1 Training Queue
 
@@ -526,7 +1426,7 @@ woodCost = baseWood * (level ^ 1.6)
 
 **Total Army Size = Sum of all Army Camp capacities**
 
-## 5.3 Troop Upgrades
+## 6.3 Troop Upgrades
 
 Troop levels are upgraded at the **Academy**, not at individual buildings.
 
@@ -545,7 +1445,7 @@ Troop levels are upgraded at the **Academy**, not at individual buildings.
 
 ---
 
-# 6. Combat System
+# 7. Combat System
 
 ## 6.1 Combat Overview
 
@@ -662,7 +1562,7 @@ OCCUPATION MECHANICS:
 │  • PERMANENT TAKEOVER option if:                                │
 │    - Player inactive 14+ days                                  │
 │    - You have available city slot                              │
-│    - You pay 50,000 gems                                       │
+│    - You pay 500,000 gold                                      │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -717,11 +1617,11 @@ When permanently taking over a city:
 
 ### 6.6.2 Purchased Shields
 
-| Duration | Gem Cost | Robux Cost |
-|----------|----------|------------|
-| 1 day | 100 gems | 50 Robux |
-| 2 days | 180 gems | 80 Robux |
-| 7 days | 500 gems | 200 Robux |
+| Duration | Gold Cost | Notes |
+|----------|-----------|-------|
+| 1 day | 10,000 gold | Basic protection |
+| 2 days | 18,000 gold | Extended protection |
+| 7 days | 50,000 gold | Maximum protection |
 
 ### 6.6.3 Shield Breaking
 
@@ -744,7 +1644,7 @@ When permanently taking over a city:
 
 ---
 
-# 7. Economy System
+# 8. Economy System
 
 ## 7.1 Resource Types
 
@@ -752,10 +1652,9 @@ When permanently taking over a city:
 
 | Resource | Source | Used For | Storage |
 |----------|--------|----------|---------|
-| **Gold** | Gold Mine, raids, trading | Troops, upgrades | Treasury |
+| **Gold** | Gold Mine, raids, trading, quests, daily rewards | Troops, upgrades, builders, shields | Treasury |
 | **Wood** | Lumber Mill, raids, trading | Buildings, walls | Warehouse |
 | **Food** | Farm, raids | Troop upkeep, training | Warehouse |
-| **Gems** | Gem Mine, achievements, purchase | Premium actions | No storage (account-wide) |
 
 ### 7.1.2 Special Resources
 
@@ -781,16 +1680,6 @@ When permanently taking over a city:
 | 8 | 1,725 | 1,375 | 2,060 |
 | 9 | 2,590 | 2,060 | 3,090 |
 | 10 | 3,885 | 3,090 | 4,635 |
-
-### 7.2.2 Gem Mine (Slow Premium Currency)
-
-| Level | Gems/Day |
-|-------|----------|
-| 1 | 2 |
-| 2 | 3 |
-| 3 | 4 |
-| 4 | 5 |
-| 5 | 7 |
 
 ## 7.3 Offline Resource Accumulation
 
@@ -851,7 +1740,7 @@ TRADING MECHANICS:
 │  • Select resource to sell (Gold, Wood, Food)                  │
 │  • Select resource to receive                                  │
 │  • Set exchange rate                                           │
-│  • Pay 5% listing fee (in gems)                                │
+│  • Pay 5% listing fee (in gold)                                │
 │  • Offer visible to all players for 24 hours                  │
 │                                                                 │
 │  ACCEPT OFFER:                                                  │
@@ -902,7 +1791,7 @@ If food reaches 0:
 
 ---
 
-# 8. Progression System
+# 9. Progression System
 
 ## 8.1 Player Level
 
@@ -920,14 +1809,14 @@ If food reaches 0:
 
 | Player Level | Reward |
 |--------------|--------|
-| 5 | 100 Gems, Title: "Settler" |
-| 10 | 200 Gems, Profile Frame |
-| 15 | 500 Gems, Title: "Builder" |
-| 20 | 1,000 Gems, Exclusive Decoration |
-| 25 | 2,000 Gems, Title: "Commander" |
-| 30 | 5,000 Gems, Title: "Conqueror" |
-| 40 | 10,000 Gems, Title: "Emperor" |
-| 50 | 25,000 Gems, Title: "Legend", Golden Castle Skin |
+| 5 | 1,000 Gold, Title: "Settler" |
+| 10 | 2,500 Gold, Profile Frame |
+| 15 | 5,000 Gold, Title: "Builder" |
+| 20 | 10,000 Gold, Exclusive Decoration |
+| 25 | 25,000 Gold, Title: "Commander" |
+| 30 | 50,000 Gold, Title: "Conqueror" |
+| 40 | 100,000 Gold, Title: "Emperor" |
+| 50 | 250,000 Gold, Title: "Legend", Golden Castle Skin |
 
 ## 8.2 Trophy Leagues
 
@@ -967,26 +1856,26 @@ If food reaches 0:
 **Combat Achievements:**
 | Achievement | Requirement | Reward |
 |-------------|-------------|--------|
-| First Blood | Win 1 battle | 10 Gems |
-| Warrior | Win 50 battles | 50 Gems |
-| Conqueror | Win 500 battles | 500 Gems |
-| Warlord | Win 5,000 battles | 5,000 Gems |
-| Perfect Strike | Win with 100% destruction | 25 Gems |
-| Untouchable | Win without losing any troops | 100 Gems |
+| First Blood | Win 1 battle | 500 Gold |
+| Warrior | Win 50 battles | 5,000 Gold |
+| Conqueror | Win 500 battles | 25,000 Gold |
+| Warlord | Win 5,000 battles | 100,000 Gold |
+| Perfect Strike | Win with 100% destruction | 2,500 Gold |
+| Untouchable | Win without losing any troops | 10,000 Gold |
 
 **Building Achievements:**
 | Achievement | Requirement | Reward |
 |-------------|-------------|--------|
-| Architect | Build 10 buildings | 20 Gems |
-| City Planner | Build 50 buildings | 100 Gems |
-| Urban Legend | Max all buildings | 10,000 Gems |
+| Architect | Build 10 buildings | 2,000 Gold |
+| City Planner | Build 50 buildings | 10,000 Gold |
+| Urban Legend | Max all buildings | 250,000 Gold |
 
 **Social Achievements:**
 | Achievement | Requirement | Reward |
 |-------------|-------------|--------|
-| Team Player | Join an alliance | 25 Gems |
-| Generous | Donate 100 troops | 100 Gems |
-| War Hero | Win 10 alliance wars | 500 Gems |
+| Team Player | Join an alliance | 2,500 Gold |
+| Generous | Donate 100 troops | 5,000 Gold |
+| War Hero | Win 10 alliance wars | 50,000 Gold |
 
 ## 8.4 Multi-City Progression
 
@@ -1026,7 +1915,7 @@ If food reaches 0:
 
 ---
 
-# 9. Alliance System
+# 10. Alliance System
 
 ## 9.1 Alliance Overview
 
@@ -1128,7 +2017,7 @@ WAR STRUCTURE:
 │  • Tie-breaker: Total destruction %                            │
 │                                                                 │
 │  REWARDS:                                                       │
-│  • Winning Alliance: War Chest (gems, resources)               │
+│  • Winning Alliance: War Chest (gold, resources)               │
 │  • Individual: Based on stars earned                           │
 │  • Participation: Bonus for using both attacks                 │
 │                                                                 │
@@ -1139,9 +2028,9 @@ WAR STRUCTURE:
 
 | Performance | Winner | Loser |
 |-------------|--------|-------|
-| Alliance | 500 gems (split) + resources | 100 gems (split) |
-| Per star earned | 10 gems | 5 gems |
-| Both attacks used | +50 gems | +25 gems |
+| Alliance | 50,000 gold (split) + resources | 10,000 gold (split) |
+| Per star earned | 1,000 gold | 500 gold |
+| Both attacks used | +5,000 gold | +2,500 gold |
 
 ## 9.5 Alliance Shop
 
@@ -1168,56 +2057,59 @@ Future expansion will include:
 
 ---
 
-# 10. Monetization
+# 11. Monetization
 
 ## 10.1 Monetization Philosophy
 
 **Core Principle: Pay for TIME, not POWER**
 
-- Everything purchasable can also be earned through gameplay
-- Paying players progress FASTER, not STRONGER
+- Everything purchasable can also be earned through gameplay (gold only)
+- Paying players get cosmetics and convenience items
 - No exclusive troops or stat advantages
-- Cosmetics and convenience only
+- Single currency economy (Gold) - no premium gems currency
 
-## 10.2 Premium Currency
+## 10.2 In-Game Economy (Gold Only)
 
-### 10.2.1 Gems
+### 10.2.1 Gold Sources
 
-**Earning Gems (Free):**
-| Source | Amount |
-|--------|--------|
-| Gem Mine (daily) | 2-7 gems |
-| Achievements | 10-10,000 gems |
-| Daily rewards | 5-50 gems |
-| Battle Pass (free track) | 100 gems/season |
-| Removing obstacles | 1-5 gems |
-| Alliance wars | 5-50 gems |
+| Source | Amount | Notes |
+|--------|--------|-------|
+| Gold Mine (manual) | 10-50/collection | Based on equipment level |
+| Gold Mine (workers) | Passive income | Based on worker count |
+| Daily Rewards | 500-5,000 gold | 7-day cycle |
+| Quests | 1,000-5,000 gold | Daily quests |
+| Achievements | 5,000-50,000 gold | One-time rewards |
+| Battle loot | Variable | Based on opponent |
+| Streak Milestones | 2,500-250,000 gold | 1 week to 1 year streaks |
 
-**Buying Gems (Robux):**
-| Package | Gems | Robux | Bonus |
-|---------|------|-------|-------|
-| Handful | 80 | 99 | - |
-| Pouch | 500 | 449 | +11% |
-| Bag | 1,200 | 899 | +25% |
-| Box | 2,500 | 1,599 | +35% |
-| Chest | 6,500 | 3,399 | +50% |
-| Vault | 14,000 | 5,999 | +75% |
+### 10.2.2 Gold Uses (In-Game Shop)
 
-### 10.2.2 Gem Uses
-
-| Use | Cost |
-|-----|------|
-| Speed up 1 hour | 20 gems |
-| Speed up 1 day | 260 gems |
-| Buy 10,000 gold | 50 gems |
-| Buy 10,000 wood | 50 gems |
-| Buy 10,000 food | 40 gems |
-| 2nd Builder | 250 gems |
-| 3rd Builder | 500 gems |
-| 4th Builder | 1,000 gems |
-| 5th Builder | 2,000 gems |
-| Shield (1 day) | 100 gems |
-| Shield (7 days) | 500 gems |
+| Use | Gold Cost | Additional Cost | Notes |
+|-----|-----------|-----------------|-------|
+| **Builders** |
+| 2nd Builder | 25,000 | - | Permanent |
+| 3rd Builder | 75,000 | - | Permanent |
+| 4th Builder | 200,000 | - | Permanent |
+| 5th Builder | 500,000 | - | Permanent |
+| **Farm Plots** |
+| 2nd Farm Plot | 1,000 | 500 Wood | Unlocks Farm 2 |
+| 3rd Farm Plot | 3,000 | 1,500 Wood | Unlocks Farm 3 |
+| 4th Farm Plot | 10,000 | 5,000 Wood | Unlocks Farm 4 |
+| 5th Farm Plot | 30,000 | 15,000 Wood | Unlocks Farm 5 |
+| 6th Farm Plot | 75,000 | 35,000 Wood | Unlocks Farm 6 |
+| **Shields** |
+| 1-Day Shield | 10,000 | - | Protection from attacks |
+| 2-Day Shield | 18,000 | - | Protection from attacks |
+| 7-Day Shield | 50,000 | - | Protection from attacks |
+| **Resources** |
+| Wood Pack (5K) | 7,500 | - | Resource conversion |
+| Wood Crate (20K) | 25,000 | - | Resource conversion |
+| Wood Warehouse (50K) | 55,000 | - | Resource conversion |
+| Food Pack (2K) | 5,000 | - | Resource conversion |
+| Food Crate (10K) | 20,000 | - | Resource conversion |
+| Food Warehouse (25K) | 45,000 | - | Resource conversion |
+| **Other** |
+| Speed up (per minute) | 100 | - | Skip build time |
 
 ## 10.3 Battle Pass
 
@@ -1233,15 +2125,15 @@ Future expansion will include:
 | Tier | Free Track | Premium Track |
 |------|------------|---------------|
 | 1 | 500 Gold | 2,000 Gold + Warrior Skin |
-| 5 | 10 Gems | 50 Gems + 1hr Speedup |
+| 5 | 1,000 Gold | 5,000 Gold + 1hr Speedup |
 | 10 | 1,000 Wood | 5,000 Wood + Building Decoration |
 | 15 | Common Troop Skin | Rare Troop Skin + Emote |
-| 20 | 20 Gems | 100 Gems + Resource Boost |
+| 20 | 2,000 Gold | 10,000 Gold + Resource Boost |
 | 25 | 2,000 Food | 10,000 Food + Title |
 | 30 | Training Speedup | Training Speedup + Castle Skin |
-| 35 | 30 Gems | 150 Gems + Profile Frame |
+| 35 | 3,000 Gold | 15,000 Gold + Profile Frame |
 | 40 | 5,000 Gold | 25,000 Gold + Exclusive Banner |
-| 45 | 50 Gems | 250 Gems + War Paint (troops) |
+| 45 | 5,000 Gold | 25,000 Gold + War Paint (troops) |
 | 50 | Bronze Frame | **LEGENDARY COMMANDER** + Gold Frame |
 
 ### 10.3.3 Battle Token Sources
@@ -1267,8 +2159,8 @@ Future expansion will include:
 
 | Benefit | Value |
 |---------|-------|
-| 50 Gems daily | 1,500 gems/month |
-| 2nd Builder permanent | 250 gems value |
+| 5,000 Gold daily | 150,000 gold/month |
+| 2nd Builder permanent | Included while subscribed |
 | +20% resource production | Significant boost |
 | +10% battle loot | Extra resources |
 | -20% upgrade times | Faster progression |
@@ -1282,21 +2174,21 @@ Future expansion will include:
 | Tier | Months Subscribed | Extra Perk |
 |------|-------------------|------------|
 | VIP Bronze | 1-2 | Base benefits |
-| VIP Silver | 3-5 | +5% more gems daily |
-| VIP Gold | 6-11 | +10% more gems + exclusive skin |
-| VIP Platinum | 12+ | +15% more gems + exclusive troop |
+| VIP Silver | 3-5 | +10% more gold daily |
+| VIP Gold | 6-11 | +20% more gold + exclusive skin |
+| VIP Platinum | 12+ | +30% more gold + exclusive troop |
 
 ## 10.5 Starter Packs
 
-One-time purchases with exceptional value:
+One-time purchases with exceptional value (cosmetics and resources):
 
 | Pack | Robux | Contents | Unlock Condition |
 |------|-------|----------|------------------|
-| Beginner's Pack | 99 | 500 gems, 10,000 each resource, 1 Rare Troop | TH1-2 |
-| Builder's Pack | 249 | 2nd Builder, 1,000 gems, 3x 1hr speedups | TH3+ |
-| Commander's Pack | 499 | Rare Commander, 2,500 gems, 50,000 resources | TH5+ |
-| Conqueror's Pack | 999 | Epic Commander, 6,000 gems, 5x speedups | TH7+ |
-| Legend Pack | 1,999 | Legendary Commander, 15,000 gems, Exclusive Skin | TH9+ |
+| Beginner's Pack | 99 | 25,000 gold, 10,000 each resource, 1 Rare Troop Skin | TH1-2 |
+| Builder's Pack | 249 | 50,000 gold, 3x 1hr speedups, Exclusive Banner | TH3+ |
+| Commander's Pack | 499 | Rare Commander Skin, 100,000 gold, 50,000 resources | TH5+ |
+| Conqueror's Pack | 999 | Epic Commander Skin, 250,000 gold, 5x speedups | TH7+ |
+| Legend Pack | 1,999 | Legendary Commander Skin, 500,000 gold, Exclusive Skin Set | TH9+ |
 
 ## 10.6 Special Offers
 
@@ -1306,7 +2198,7 @@ One-time purchases with exceptional value:
 |---------|-------|
 | First defeat | "Revenge Pack" - Troops + Shield |
 | TH upgrade complete | Growth bundle for new TH level |
-| Return after 7+ days | "Welcome Back" - Resources + Gems |
+| Return after 7+ days | "Welcome Back" - Resources + Gold Bonus |
 | Low resources | "Resource Rescue" - Discounted pack |
 
 ### 10.6.2 Limited Time Offers
@@ -1317,20 +2209,20 @@ One-time purchases with exceptional value:
 
 ## 10.7 Cosmetics Shop
 
-All cosmetics are visual only with zero gameplay impact:
+All cosmetics are visual only with zero gameplay impact (purchased with Robux):
 
-| Category | Examples | Price Range |
+| Category | Examples | Robux Price |
 |----------|----------|-------------|
-| Troop Skins | Golden Knight, Fire Archer | 100-500 gems |
-| Building Skins | Crystal Farm, Dark Castle | 200-1,000 gems |
-| Castle Themes | Winter, Volcanic, Enchanted | 500-2,000 gems |
-| Emotes | Victory dance, Taunt, Wave | 50-200 gems |
+| Troop Skins | Golden Knight, Fire Archer | 50-150 Robux |
+| Building Skins | Crystal Farm, Dark Castle | 75-200 Robux |
+| Castle Themes | Winter, Volcanic, Enchanted | 150-400 Robux |
+| Emotes | Victory dance, Taunt, Wave | 25-75 Robux |
 | Profile Frames | League frames, Event frames | Achievement/Purchase |
-| Banners | Alliance banners, Player flags | 100-500 gems |
+| Banners | Alliance banners, Player flags | 50-150 Robux |
 
 ---
 
-# 11. Engagement Systems
+# 12. Engagement Systems
 
 ## 11.1 Daily Login Rewards
 
@@ -1338,23 +2230,25 @@ All cosmetics are visual only with zero gameplay impact:
 
 | Day | Reward |
 |-----|--------|
-| 1 | 1,000 Gold |
-| 2 | 1,000 Wood |
-| 3 | 10 Gems |
-| 4 | 1,000 Food |
-| 5 | Training Speedup (30 min) |
-| 6 | 25 Gems |
-| 7 | **Rare Chest** (random rare item) |
+| 1 | 500 Gold |
+| 2 | 750 Gold |
+| 3 | 1,000 Gold |
+| 4 | 1,500 Gold |
+| 5 | 2,000 Gold + 500 Wood |
+| 6 | 2,500 Gold + 500 Food |
+| 7 | **5,000 Gold + 1,000 Wood + 500 Food** |
 
-**Streak Bonus:** Complete all 7 days → 50 bonus gems
+**Streak Bonus:** Complete all 7 days → 5,000 bonus gold
 
 ### 11.1.2 Monthly Calendar
 
-Additional monthly rewards on specific days:
-- Day 7: 100 Gems
-- Day 14: Rare Troop
-- Day 21: Epic Decoration
-- Day 28: Legendary Chest OR 500 Gems
+Streak milestones with bonus gold:
+- 1 Week Streak: 2,500 Gold
+- 2 Week Streak: 5,000 Gold
+- 1 Month Streak: 10,000 Gold
+- 3 Month Streak: 50,000 Gold
+- 6 Month Streak: 100,000 Gold
+- 1 Year Streak: 250,000 Gold
 
 ## 11.2 Daily Missions
 
@@ -1364,10 +2258,10 @@ Additional monthly rewards on specific days:
 |---------|-------------|--------|
 | Train troops | Train 50 housing worth | 15 tokens, 500 gold |
 | Win battles | Win 3 battles | 20 tokens, 750 gold |
-| Collect resources | Collect 10,000 total | 10 tokens, 5 gems |
+| Collect resources | Collect 10,000 total | 10 tokens, 500 gold |
 | Upgrade building | Complete 1 upgrade | 15 tokens, 1,000 gold |
 | Donate troops | Donate 10 housing | 10 tokens, 500 gold |
-| Use spells | Use 5 spells in battle | 15 tokens, 10 gems |
+| Use spells | Use 5 spells in battle | 15 tokens, 1,000 gold |
 
 ### 11.2.2 Daily Mission Slots
 
@@ -1379,10 +2273,10 @@ Additional monthly rewards on specific days:
 
 | Challenge | Requirement | Reward |
 |-----------|-------------|--------|
-| War Veteran | Win 10 attacks | 50 tokens, 100 gems |
-| Architect | Complete 5 upgrades | 40 tokens, 50 gems |
-| Generous | Donate 100 troop housing | 30 tokens, 75 gems |
-| Collector | Collect 100,000 resources | 25 tokens, 50 gems |
+| War Veteran | Win 10 attacks | 50 tokens, 10,000 gold |
+| Architect | Complete 5 upgrades | 40 tokens, 5,000 gold |
+| Generous | Donate 100 troop housing | 30 tokens, 7,500 gold |
+| Collector | Collect 100,000 resources | 25 tokens, 5,000 gold |
 
 ## 11.4 Achievements (Long-term)
 
@@ -1419,10 +2313,10 @@ If player is away 3+ days:
 
 | Days Away | Bonus |
 |-----------|-------|
-| 3-6 days | 24hr Shield + 500 gems |
-| 7-13 days | 48hr Shield + 1,000 gems + Resources |
-| 14-29 days | 72hr Shield + 2,000 gems + Rare Troop |
-| 30+ days | 7-day Shield + 5,000 gems + Care Package |
+| 3-6 days | 24hr Shield + 5,000 gold |
+| 7-13 days | 48hr Shield + 10,000 gold + Resources |
+| 14-29 days | 72hr Shield + 25,000 gold + Resource Boost |
+| 30+ days | 7-day Shield + 50,000 gold + Care Package |
 
 ### 11.6.2 Catch-Up Mechanics
 
@@ -1432,7 +2326,7 @@ If player is away 3+ days:
 
 ---
 
-# 12. UI/UX Design
+# 13. UI/UX Design
 
 ## 12.1 Design Principles
 
@@ -1584,7 +2478,7 @@ MAIN MENU
 
 ---
 
-# 13. Onboarding & Tutorial
+# 14. Onboarding & Tutorial
 
 ## 13.1 Tutorial Philosophy
 
@@ -1691,7 +2585,7 @@ STEP 6: Summary & Next Steps
 │  ✓ Upgrading buildings                                          │
 │                                                                 │
 │  STARTER REWARDS:                                               │
-│  • 500 Gems                                                     │
+│  • 5,000 Gold                                                   │
 │  • 72-hour Shield                                               │
 │  • 5,000 of each resource                                       │
 │                                                                 │
@@ -1729,7 +2623,7 @@ Additional tutorials unlock as player progresses:
 
 ---
 
-# 14. Events & Live Operations
+# 15. Events & Live Operations
 
 ## 14.1 Event Calendar
 
@@ -1810,7 +2704,7 @@ CLAN GAMES:
 │                                                                 │
 │  REWARDS AT THRESHOLDS:                                         │
 │  ├── 10,000: Resource Pack                                     │
-│  ├── 25,000: Gem Pack (100)                                    │
+│  ├── 25,000: Gold Pack (25,000)                                │
 │  ├── 40,000: Builder Potion                                    │
 │  └── 50,000: Legendary Chest                                   │
 │                                                                 │
@@ -1837,7 +2731,7 @@ CLAN GAMES:
 
 ---
 
-# 15. Technical Architecture
+# 16. Technical Architecture
 
 ## 15.1 Roblox Services Used
 
@@ -1867,7 +2761,6 @@ PlayerData = {
     level = 32,
     experience = 45000,
     trophies = 1856,
-    gems = 1234,
 
     -- Cities (array, supports multiple)
     cities = {
@@ -2130,7 +3023,7 @@ end
 
 ---
 
-# 16. Audio Design
+# 17. Audio Design
 
 ## 16.1 Music
 
@@ -2193,7 +3086,7 @@ end
 
 ---
 
-# 17. Metrics & Analytics
+# 18. Metrics & Analytics
 
 ## 17.1 Key Performance Indicators (KPIs)
 
@@ -2295,7 +3188,7 @@ trackEvent("starter_pack_shown", {
 
 ---
 
-# 18. Development Roadmap
+# 19. Development Roadmap
 
 ## 18.1 Development Phases
 
@@ -2357,9 +3250,9 @@ trackEvent("starter_pack_shown", {
 
 | Week | Deliverables |
 |------|--------------|
-| 17 | Gem system, shop, speed-ups |
+| 17 | Gold economy, shop, speed-ups |
 | 18 | Battle Pass system |
-| 19 | VIP subscription, starter packs |
+| 19 | VIP subscription, cosmetics shop |
 
 **Milestone:** Full monetization system live
 
@@ -2459,7 +3352,7 @@ trackEvent("starter_pack_shown", {
 | **Conquest** | 80%+ destruction victory, enables occupation |
 | **Domination** | 100% destruction victory |
 | **Embassy** | Stores alliance reinforcement troops |
-| **Gems** | Premium currency |
+| **Gold** | Primary currency for all in-game purchases |
 | **Housing** | Space a troop takes in Army Camp |
 | **Occupation** | Temporary control of enemy city |
 | **Outpost** | Small installation on enemy territory |
