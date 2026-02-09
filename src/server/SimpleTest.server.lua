@@ -617,44 +617,38 @@ local function createBarnExterior(name, position, size, buildingName, facingDire
     topTrim.Parent = exterior
 
     -- GAMBREL ROOF (classic 4-panel barn roof)
-    -- Gambrel has steep lower panels (~60°) and shallow upper panels (~25°)
+    -- Lower panels are steep (~60°), upper panels are shallow (~30°)
     local roofOverhang = 1.5
     local roofPeakHeight = 6 -- Total height from wall top to ridge
     local roofLength = size.Z + roofOverhang * 2
-
-    -- Gambrel geometry:
-    -- Lower panels: 60° from horizontal, cover outer ~40% of width
-    -- Upper panels: 25° from horizontal, cover inner ~60% of width
-    local lowerAngle = 60 -- degrees from horizontal
-    local upperAngle = 25 -- degrees from horizontal
-
-    -- Calculate panel dimensions based on angles
     local halfWidth = size.X / 2
-    local kneeX = halfWidth * 0.4 -- Where lower meets upper (40% from center)
-    local kneeHeight = (halfWidth - kneeX) * math.tan(math.rad(lowerAngle)) -- Height at knee
 
-    -- Lower panel length (along the slope)
-    local lowerRun = halfWidth - kneeX -- Horizontal distance
-    local lowerRise = kneeHeight -- Vertical distance
-    local lowerLength = math.sqrt(lowerRun^2 + lowerRise^2)
+    -- Define the knee point (where lower meets upper) - 65% up the roof height
+    local kneeHeight = roofPeakHeight * 0.65 -- About 3.9 studs up
+    local lowerAngle = 60 -- Steep lower panels
 
-    -- Upper panel - from knee to peak
-    local upperRun = kneeX
-    local upperRise = roofPeakHeight - kneeHeight
+    -- Calculate lower panel horizontal run based on angle and height
+    local lowerRun = kneeHeight / math.tan(math.rad(lowerAngle))
+    -- Knee X position (from center)
+    local kneeX = halfWidth - lowerRun
+
+    -- Lower panel length along slope
+    local lowerLength = math.sqrt(lowerRun^2 + kneeHeight^2)
+
+    -- Upper panel geometry - from knee to peak
+    local upperRun = kneeX -- Horizontal distance from knee to center
+    local upperRise = roofPeakHeight - kneeHeight -- Vertical distance to peak
     local upperLength = math.sqrt(upperRun^2 + upperRise^2)
-
-    -- Recalculate actual upper angle based on geometry
-    local actualUpperAngle = math.deg(math.atan2(upperRise, upperRun))
+    local upperAngle = math.deg(math.atan2(upperRise, upperRun))
 
     -- LOWER LEFT PANEL (steep, outer)
     local lowerLeft = Instance.new("Part")
     lowerLeft.Name = "RoofLowerLeft"
-    lowerLeft.Size = Vector3.new(lowerLength + 0.5, 0.4, roofLength)
-    -- Position: center of the panel along its slope
-    local lowerLeftX = -(halfWidth - lowerRun/2) -- Centered on lower section
-    local lowerLeftY = wallHeight + lowerRise/2
+    lowerLeft.Size = Vector3.new(lowerLength + 0.3, 0.4, roofLength)
+    -- Position at center of panel
+    local lowerLeftX = -(halfWidth - lowerRun/2)
+    local lowerLeftY = wallHeight + kneeHeight/2
     lowerLeft.Position = position + rotateOffset(Vector3.new(lowerLeftX, lowerLeftY, 0))
-    -- Rotate: negative angle for left side (slopes up toward center)
     lowerLeft.Orientation = Vector3.new(0, rotation, -lowerAngle)
     lowerLeft.Anchored = true
     lowerLeft.Material = Enum.Material.Metal
@@ -664,7 +658,7 @@ local function createBarnExterior(name, position, size, buildingName, facingDire
     -- LOWER RIGHT PANEL (steep, outer) - mirror of left
     local lowerRight = Instance.new("Part")
     lowerRight.Name = "RoofLowerRight"
-    lowerRight.Size = Vector3.new(lowerLength + 0.5, 0.4, roofLength)
+    lowerRight.Size = Vector3.new(lowerLength + 0.3, 0.4, roofLength)
     local lowerRightX = halfWidth - lowerRun/2
     lowerRight.Position = position + rotateOffset(Vector3.new(lowerRightX, lowerLeftY, 0))
     lowerRight.Orientation = Vector3.new(0, rotation, lowerAngle)
@@ -673,14 +667,16 @@ local function createBarnExterior(name, position, size, buildingName, facingDire
     lowerRight.Color = roofGray
     lowerRight.Parent = exterior
 
-    -- UPPER LEFT PANEL (shallow, inner)
+    -- UPPER LEFT PANEL (shallow, inner) - from knee up to ridge
     local upperLeft = Instance.new("Part")
     upperLeft.Name = "RoofUpperLeft"
-    upperLeft.Size = Vector3.new(upperLength + 0.5, 0.4, roofLength)
-    local upperLeftX = -(kneeX - upperRun/2) -- Centered on upper section
+    upperLeft.Size = Vector3.new(upperLength + 0.3, 0.4, roofLength)
+    -- Position at center of upper panel
+    local upperLeftX = -(kneeX/2) -- Halfway between knee and center
     local upperLeftY = wallHeight + kneeHeight + upperRise/2
     upperLeft.Position = position + rotateOffset(Vector3.new(upperLeftX, upperLeftY, 0))
-    upperLeft.Orientation = Vector3.new(0, rotation, -actualUpperAngle)
+    -- Negative angle = slopes UP toward center (right)
+    upperLeft.Orientation = Vector3.new(0, rotation, -upperAngle)
     upperLeft.Anchored = true
     upperLeft.Material = Enum.Material.Metal
     upperLeft.Color = roofGray
@@ -689,10 +685,11 @@ local function createBarnExterior(name, position, size, buildingName, facingDire
     -- UPPER RIGHT PANEL (shallow, inner) - mirror of left
     local upperRight = Instance.new("Part")
     upperRight.Name = "RoofUpperRight"
-    upperRight.Size = Vector3.new(upperLength + 0.5, 0.4, roofLength)
-    local upperRightX = kneeX - upperRun/2
+    upperRight.Size = Vector3.new(upperLength + 0.3, 0.4, roofLength)
+    local upperRightX = kneeX/2 -- Halfway between knee and center
     upperRight.Position = position + rotateOffset(Vector3.new(upperRightX, upperLeftY, 0))
-    upperRight.Orientation = Vector3.new(0, rotation, actualUpperAngle)
+    -- Positive angle = slopes UP toward center (left)
+    upperRight.Orientation = Vector3.new(0, rotation, upperAngle)
     upperRight.Anchored = true
     upperRight.Material = Enum.Material.Metal
     upperRight.Color = roofGray
