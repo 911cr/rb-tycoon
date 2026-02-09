@@ -616,72 +616,161 @@ local function createBarnExterior(name, position, size, buildingName, facingDire
     topTrim.Color = whiteTrim
     topTrim.Parent = exterior
 
-    -- Gambrel roof (classic barn roof - 4 panels)
-    -- Using simple angled triangular roof instead of complex gambrel for reliability
+    -- GAMBREL ROOF (classic 4-panel barn roof)
+    -- Gambrel has steep lower panels (~60°) and shallow upper panels (~25°)
     local roofOverhang = 1.5
-    local roofPeakHeight = 5 -- Height of roof peak above walls
+    local roofPeakHeight = 6 -- Total height from wall top to ridge
+    local roofLength = size.Z + roofOverhang * 2
 
-    -- Left roof slope (from wall top to center peak)
-    local roofLeft = Instance.new("Part")
-    roofLeft.Name = "RoofLeft"
-    -- Width needs to span from left edge to center, accounting for slope
-    local roofSlopeWidth = math.sqrt((size.X/2)^2 + roofPeakHeight^2) + 0.5
-    roofLeft.Size = Vector3.new(roofSlopeWidth, 0.5, size.Z + roofOverhang * 2)
-    -- Position at midpoint between wall top-left and peak
-    local roofLeftPos = position + rotateOffset(Vector3.new(-size.X/4, wallHeight + roofPeakHeight/2, 0))
-    -- Calculate slope angle
-    local slopeAngle = math.deg(math.atan2(roofPeakHeight, size.X/2))
-    roofLeft.Position = roofLeftPos
-    roofLeft.Orientation = Vector3.new(0, rotation, slopeAngle)
-    roofLeft.Anchored = true
-    roofLeft.Material = Enum.Material.Metal
-    roofLeft.Color = roofGray
-    roofLeft.Parent = exterior
+    -- Gambrel geometry:
+    -- Lower panels: 60° from horizontal, cover outer ~40% of width
+    -- Upper panels: 25° from horizontal, cover inner ~60% of width
+    local lowerAngle = 60 -- degrees from horizontal
+    local upperAngle = 25 -- degrees from horizontal
 
-    -- Right roof slope (from wall top to center peak)
-    local roofRight = Instance.new("Part")
-    roofRight.Name = "RoofRight"
-    roofRight.Size = Vector3.new(roofSlopeWidth, 0.5, size.Z + roofOverhang * 2)
-    local roofRightPos = position + rotateOffset(Vector3.new(size.X/4, wallHeight + roofPeakHeight/2, 0))
-    roofRight.Position = roofRightPos
-    roofRight.Orientation = Vector3.new(0, rotation, -slopeAngle)
-    roofRight.Anchored = true
-    roofRight.Material = Enum.Material.Metal
-    roofRight.Color = roofGray
-    roofRight.Parent = exterior
+    -- Calculate panel dimensions based on angles
+    local halfWidth = size.X / 2
+    local kneeX = halfWidth * 0.4 -- Where lower meets upper (40% from center)
+    local kneeHeight = (halfWidth - kneeX) * math.tan(math.rad(lowerAngle)) -- Height at knee
 
-    -- Roof ridge cap (peak)
+    -- Lower panel length (along the slope)
+    local lowerRun = halfWidth - kneeX -- Horizontal distance
+    local lowerRise = kneeHeight -- Vertical distance
+    local lowerLength = math.sqrt(lowerRun^2 + lowerRise^2)
+
+    -- Upper panel - from knee to peak
+    local upperRun = kneeX
+    local upperRise = roofPeakHeight - kneeHeight
+    local upperLength = math.sqrt(upperRun^2 + upperRise^2)
+
+    -- Recalculate actual upper angle based on geometry
+    local actualUpperAngle = math.deg(math.atan2(upperRise, upperRun))
+
+    -- LOWER LEFT PANEL (steep, outer)
+    local lowerLeft = Instance.new("Part")
+    lowerLeft.Name = "RoofLowerLeft"
+    lowerLeft.Size = Vector3.new(lowerLength + 0.5, 0.4, roofLength)
+    -- Position: center of the panel along its slope
+    local lowerLeftX = -(halfWidth - lowerRun/2) -- Centered on lower section
+    local lowerLeftY = wallHeight + lowerRise/2
+    lowerLeft.Position = position + rotateOffset(Vector3.new(lowerLeftX, lowerLeftY, 0))
+    -- Rotate: negative angle for left side (slopes up toward center)
+    lowerLeft.Orientation = Vector3.new(0, rotation, -lowerAngle)
+    lowerLeft.Anchored = true
+    lowerLeft.Material = Enum.Material.Metal
+    lowerLeft.Color = roofGray
+    lowerLeft.Parent = exterior
+
+    -- LOWER RIGHT PANEL (steep, outer) - mirror of left
+    local lowerRight = Instance.new("Part")
+    lowerRight.Name = "RoofLowerRight"
+    lowerRight.Size = Vector3.new(lowerLength + 0.5, 0.4, roofLength)
+    local lowerRightX = halfWidth - lowerRun/2
+    lowerRight.Position = position + rotateOffset(Vector3.new(lowerRightX, lowerLeftY, 0))
+    lowerRight.Orientation = Vector3.new(0, rotation, lowerAngle)
+    lowerRight.Anchored = true
+    lowerRight.Material = Enum.Material.Metal
+    lowerRight.Color = roofGray
+    lowerRight.Parent = exterior
+
+    -- UPPER LEFT PANEL (shallow, inner)
+    local upperLeft = Instance.new("Part")
+    upperLeft.Name = "RoofUpperLeft"
+    upperLeft.Size = Vector3.new(upperLength + 0.5, 0.4, roofLength)
+    local upperLeftX = -(kneeX - upperRun/2) -- Centered on upper section
+    local upperLeftY = wallHeight + kneeHeight + upperRise/2
+    upperLeft.Position = position + rotateOffset(Vector3.new(upperLeftX, upperLeftY, 0))
+    upperLeft.Orientation = Vector3.new(0, rotation, -actualUpperAngle)
+    upperLeft.Anchored = true
+    upperLeft.Material = Enum.Material.Metal
+    upperLeft.Color = roofGray
+    upperLeft.Parent = exterior
+
+    -- UPPER RIGHT PANEL (shallow, inner) - mirror of left
+    local upperRight = Instance.new("Part")
+    upperRight.Name = "RoofUpperRight"
+    upperRight.Size = Vector3.new(upperLength + 0.5, 0.4, roofLength)
+    local upperRightX = kneeX - upperRun/2
+    upperRight.Position = position + rotateOffset(Vector3.new(upperRightX, upperLeftY, 0))
+    upperRight.Orientation = Vector3.new(0, rotation, actualUpperAngle)
+    upperRight.Anchored = true
+    upperRight.Material = Enum.Material.Metal
+    upperRight.Color = roofGray
+    upperRight.Parent = exterior
+
+    -- ROOF RIDGE CAP (peak)
     local roofRidge = Instance.new("Part")
     roofRidge.Name = "RoofRidge"
-    roofRidge.Size = Vector3.new(1, 0.6, size.Z + roofOverhang * 2)
-    roofRidge.Position = position + Vector3.new(0, wallHeight + roofPeakHeight, 0)
+    roofRidge.Size = Vector3.new(1.5, 0.5, roofLength)
+    roofRidge.Position = position + Vector3.new(0, wallHeight + roofPeakHeight + 0.2, 0)
     roofRidge.Orientation = Vector3.new(0, rotation, 0)
     roofRidge.Anchored = true
     roofRidge.Material = Enum.Material.Metal
     roofRidge.Color = Color3.fromRGB(60, 60, 65)
     roofRidge.Parent = exterior
 
-    -- Front gable (triangular wall piece under roof at front)
-    local frontGable = Instance.new("WedgePart")
-    frontGable.Name = "FrontGable"
-    frontGable.Size = Vector3.new(roofPeakHeight, size.X, 0.5)
-    local gableFrontPos = position + rotateOffset(Vector3.new(0, wallHeight + roofPeakHeight/2, size.Z/2 + 0.25))
-    frontGable.CFrame = CFrame.new(gableFrontPos) * CFrame.Angles(0, math.rad(rotation), math.rad(-90))
-    frontGable.Anchored = true
-    frontGable.Material = Enum.Material.Wood
-    frontGable.Color = barnRed
-    frontGable.Parent = exterior
+    -- GABLE FILL (red barn wall under roof at front and back)
+    -- Front gable - fill the gambrel shape with barn red
+    local frontGableUpper = Instance.new("Part")
+    frontGableUpper.Name = "FrontGableUpper"
+    frontGableUpper.Size = Vector3.new(kneeX * 2, roofPeakHeight - kneeHeight, 0.4)
+    frontGableUpper.Position = position + rotateOffset(Vector3.new(0, wallHeight + kneeHeight + (roofPeakHeight - kneeHeight)/2, size.Z/2 + 0.2))
+    frontGableUpper.Orientation = Vector3.new(0, rotation, 0)
+    frontGableUpper.Anchored = true
+    frontGableUpper.Material = Enum.Material.Wood
+    frontGableUpper.Color = barnRed
+    frontGableUpper.Parent = exterior
 
-    -- Back gable (triangular wall piece under roof at back)
-    local backGable = Instance.new("WedgePart")
-    backGable.Name = "BackGable"
-    backGable.Size = Vector3.new(roofPeakHeight, size.X, 0.5)
-    local gableBackPos = position + rotateOffset(Vector3.new(0, wallHeight + roofPeakHeight/2, -size.Z/2 - 0.25))
-    backGable.CFrame = CFrame.new(gableBackPos) * CFrame.Angles(0, math.rad(rotation + 180), math.rad(-90))
-    backGable.Anchored = true
-    backGable.Material = Enum.Material.Wood
-    backGable.Color = barnRed
-    backGable.Parent = exterior
+    local frontGableLowerLeft = Instance.new("Part")
+    frontGableLowerLeft.Name = "FrontGableLowerLeft"
+    frontGableLowerLeft.Size = Vector3.new(lowerRun, kneeHeight, 0.4)
+    frontGableLowerLeft.Position = position + rotateOffset(Vector3.new(-(kneeX + lowerRun/2), wallHeight + kneeHeight/2, size.Z/2 + 0.2))
+    frontGableLowerLeft.Orientation = Vector3.new(0, rotation, 0)
+    frontGableLowerLeft.Anchored = true
+    frontGableLowerLeft.Material = Enum.Material.Wood
+    frontGableLowerLeft.Color = barnRed
+    frontGableLowerLeft.Parent = exterior
+
+    local frontGableLowerRight = Instance.new("Part")
+    frontGableLowerRight.Name = "FrontGableLowerRight"
+    frontGableLowerRight.Size = Vector3.new(lowerRun, kneeHeight, 0.4)
+    frontGableLowerRight.Position = position + rotateOffset(Vector3.new(kneeX + lowerRun/2, wallHeight + kneeHeight/2, size.Z/2 + 0.2))
+    frontGableLowerRight.Orientation = Vector3.new(0, rotation, 0)
+    frontGableLowerRight.Anchored = true
+    frontGableLowerRight.Material = Enum.Material.Wood
+    frontGableLowerRight.Color = barnRed
+    frontGableLowerRight.Parent = exterior
+
+    -- Back gable - same fill pattern
+    local backGableUpper = Instance.new("Part")
+    backGableUpper.Name = "BackGableUpper"
+    backGableUpper.Size = Vector3.new(kneeX * 2, roofPeakHeight - kneeHeight, 0.4)
+    backGableUpper.Position = position + rotateOffset(Vector3.new(0, wallHeight + kneeHeight + (roofPeakHeight - kneeHeight)/2, -size.Z/2 - 0.2))
+    backGableUpper.Orientation = Vector3.new(0, rotation, 0)
+    backGableUpper.Anchored = true
+    backGableUpper.Material = Enum.Material.Wood
+    backGableUpper.Color = barnRed
+    backGableUpper.Parent = exterior
+
+    local backGableLowerLeft = Instance.new("Part")
+    backGableLowerLeft.Name = "BackGableLowerLeft"
+    backGableLowerLeft.Size = Vector3.new(lowerRun, kneeHeight, 0.4)
+    backGableLowerLeft.Position = position + rotateOffset(Vector3.new(-(kneeX + lowerRun/2), wallHeight + kneeHeight/2, -size.Z/2 - 0.2))
+    backGableLowerLeft.Orientation = Vector3.new(0, rotation, 0)
+    backGableLowerLeft.Anchored = true
+    backGableLowerLeft.Material = Enum.Material.Wood
+    backGableLowerLeft.Color = barnRed
+    backGableLowerLeft.Parent = exterior
+
+    local backGableLowerRight = Instance.new("Part")
+    backGableLowerRight.Name = "BackGableLowerRight"
+    backGableLowerRight.Size = Vector3.new(lowerRun, kneeHeight, 0.4)
+    backGableLowerRight.Position = position + rotateOffset(Vector3.new(kneeX + lowerRun/2, wallHeight + kneeHeight/2, -size.Z/2 - 0.2))
+    backGableLowerRight.Orientation = Vector3.new(0, rotation, 0)
+    backGableLowerRight.Anchored = true
+    backGableLowerRight.Material = Enum.Material.Wood
+    backGableLowerRight.Color = barnRed
+    backGableLowerRight.Parent = exterior
 
     -- Hay bales outside barn (decorative)
     local hayColors = {
@@ -1124,8 +1213,8 @@ local function createGround()
     ground.Size = Vector3.new(130, 2, 170)
     ground.Position = Vector3.new(60, 1, 90)
     ground.Anchored = true
-    ground.Material = Enum.Material.Grass
-    ground.Color = Color3.fromRGB(80, 130, 60)
+    ground.Material = Enum.Material.Cobblestone
+    ground.Color = Color3.fromRGB(90, 85, 80)
     ground.Parent = villageFolder
 
     -- Main cobblestone path (runs from entrance to Town Hall at the end)
