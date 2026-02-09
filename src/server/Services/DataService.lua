@@ -316,6 +316,8 @@ function DataService:LoadPlayerData(player: Player): Types.PlayerDataResult
             _playerData[userId] = data
         end
         data.lastLoginAt = os.time()
+        -- Calculate initial food supply state
+        self:UpdateFoodSupplyState(player)
         DataService.PlayerDataLoaded:Fire(player, data)
         return {
             success = true,
@@ -361,6 +363,9 @@ function DataService:LoadPlayerData(player: Player): Types.PlayerDataResult
 
     -- Cache data
     _playerData[userId] = data
+
+    -- Calculate initial food supply state
+    self:UpdateFoodSupplyState(player)
 
     -- Fire event
     DataService.PlayerDataLoaded:Fire(player, data)

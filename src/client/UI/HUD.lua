@@ -618,6 +618,11 @@ function HUD:Init()
         end
     end)
 
+    -- Listen for food supply updates (sent after farm/troop changes)
+    Events.FoodSupplyUpdate.OnClientEvent:Connect(function(production, usage, isPaused)
+        self:UpdateFoodSupply(production or 0, usage or 0, isPaused or false)
+    end)
+
     -- Check if data already exists (in case we initialized after server sent data)
     task.defer(function()
         task.wait(0.5) -- Brief wait for ClientAPI to be ready

@@ -54,6 +54,7 @@ end
 -- Data sync events
 local SyncPlayerData = createRemoteEvent("SyncPlayerData")
 local ServerResponse = createRemoteEvent("ServerResponse")
+local FoodSupplyUpdate = createRemoteEvent("FoodSupplyUpdate")
 
 -- Building events
 local PlaceBuilding = createRemoteEvent("PlaceBuilding")
@@ -219,18 +220,39 @@ connectEvent(SyncPlayerData, function(player)
     end
 end)
 
+-- Helper to send food supply updates to client
+local function sendFoodSupplyUpdate(player)
+    if DataService and DataService.GetFoodSupplyStatus then
+        local status = DataService:GetFoodSupplyStatus(player)
+        FoodSupplyUpdate:FireClient(player, status.production, status.usage, status.paused)
+    end
+end
+
 -- Building events
 connectEvent(PlaceBuilding, function(player, buildingType, position)
     if BuildingService and BuildingService.PlaceBuilding then
         local result = BuildingService:PlaceBuilding(player, buildingType, position)
         ServerResponse:FireClient(player, "PlaceBuilding", result)
+        -- Send food supply update if farm was placed
+        if result.success and buildingType == "Farm" then
+            sendFoodSupplyUpdate(player)
+        end
     end
 end)
 
 connectEvent(UpgradeBuilding, function(player, buildingId)
     if BuildingService and BuildingService.UpgradeBuilding then
+        -- Check if it's a farm before upgrading
+        local building = BuildingService:GetBuilding(player, buildingId)
+        local isFarm = building and building.type == "Farm"
+
         local result = BuildingService:UpgradeBuilding(player, buildingId)
         ServerResponse:FireClient(player, "UpgradeBuilding", result)
+
+        -- Send food supply update if farm was upgraded (production changes when upgrade completes)
+        if result.success and isFarm then
+            sendFoodSupplyUpdate(player)
+        end
     end
 end)
 
@@ -253,6 +275,9 @@ connectEvent(TrainTroop, function(player, troopType, quantity)
     if TroopService and TroopService.TrainTroop then
         local result = TroopService:TrainTroop(player, troopType, quantity)
         ServerResponse:FireClient(player, "TrainTroop", result)
+        -- Food supply update is sent when training completes (in TroopService)
+        -- But also send current state so client knows the pending usage
+        sendFoodSupplyUpdate(player)
     end
 end)
 
