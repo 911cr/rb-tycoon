@@ -1324,6 +1324,79 @@ local function setNPCCarrying(npc, itemType, amount)
 end
 
 -- ============================================================================
+-- GEM SYSTEM - Prospecting and Trophy Case
+-- Gems provide city-wide production bonuses when displayed in Town Hall
+-- ============================================================================
+
+-- Gem type definitions with colors and boost types
+local GemTypes = {
+    Ruby = { color = Color3.fromRGB(220, 20, 60), boost = "production" },
+    Emerald = { color = Color3.fromRGB(0, 201, 87), boost = "speed" },
+    Sapphire = { color = Color3.fromRGB(15, 82, 186), boost = "defense" },
+    Diamond = { color = Color3.fromRGB(185, 242, 255), boost = "all" },
+}
+
+-- Gem size multipliers and rarity (probability of getting each size on success)
+local GemSizes = {
+    Chip = { multiplier = 1.05, rarity = 0.50 },   -- 50% of successful prospects
+    Stone = { multiplier = 1.10, rarity = 0.30 },  -- 30% of successful prospects
+    Gem = { multiplier = 1.20, rarity = 0.15 },    -- 15% of successful prospects
+    Jewel = { multiplier = 1.35, rarity = 0.05 },  -- 5% of successful prospects
+}
+
+-- Gem rarity by prospecting tier (chance to get each gem type)
+local GemRarityByTier = {
+    [1] = { Ruby = 0.50, Emerald = 0.35, Sapphire = 0.14, Diamond = 0.01 }, -- Basic
+    [2] = { Ruby = 0.35, Emerald = 0.35, Sapphire = 0.25, Diamond = 0.05 }, -- Advanced
+    [3] = { Ruby = 0.25, Emerald = 0.30, Sapphire = 0.30, Diamond = 0.15 }, -- Premium
+}
+
+-- Prospecting tier costs and duration
+local ProspectingTiers = {
+    [1] = { name = "Basic", cost = 500, duration = 300 },    -- 5 minutes, 500 gold
+    [2] = { name = "Advanced", cost = 2000, duration = 300 }, -- 5 minutes, 2000 gold
+    [3] = { name = "Premium", cost = 5000, duration = 300 },  -- 5 minutes, 5000 gold
+}
+
+-- Roll a gem based on prospecting tier (returns gem data or nil)
+local function rollGem(tier)
+    -- Determine gem type based on tier-specific rarity
+    local rarityTable = GemRarityByTier[tier] or GemRarityByTier[1]
+    local roll = math.random()
+    local cumulative = 0
+    local gemType = "Ruby" -- Default fallback
+
+    for gType, chance in pairs(rarityTable) do
+        cumulative = cumulative + chance
+        if roll <= cumulative then
+            gemType = gType
+            break
+        end
+    end
+
+    -- Determine gem size
+    roll = math.random()
+    cumulative = 0
+    local gemSize = "Chip" -- Default fallback
+
+    for sName, sData in pairs(GemSizes) do
+        cumulative = cumulative + sData.rarity
+        if roll <= cumulative then
+            gemSize = sName
+            break
+        end
+    end
+
+    return {
+        type = gemType,
+        size = gemSize,
+        color = GemTypes[gemType].color,
+        boost = GemTypes[gemType].boost,
+        multiplier = GemSizes[gemSize].multiplier,
+    }
+end
+
+-- ============================================================================
 -- GOLD MINE - Simplified flow with visible workers
 -- ORE VEIN → SMELTER → GOLD CHEST
 -- Miners carry ore to smelter, Collectors carry gold to chest
@@ -1351,6 +1424,23 @@ local GoldMineState = {
     -- Visual update functions (set during creation)
     updateGoldBarVisuals = nil,
     updateChestGoldVisuals = nil,
+    -- Waiting workers at hiring stands (workers that leave when hired)
+    waitingMiners = {},     -- Array of 3 worker models waiting to be hired
+    waitingCollectors = {}, -- Array of 3 worker models waiting to be hired
+    -- UI elements for hiring stands
+    minerSign = nil,        -- Reference to miner sign label for updating text
+    collectorSign = nil,    -- Reference to collector sign label for updating text
+    minerPrompt = nil,      -- Reference to miner hire prompt
+    collectorPrompt = nil,  -- Reference to collector hire prompt
+    -- Gem Prospecting Station state
+    prospecting = {
+        isActive = false,       -- Is a prospect currently running?
+        tier = nil,             -- 1=Basic, 2=Advanced, 3=Premium
+        startTime = 0,          -- When prospecting started
+        endTime = 0,            -- When prospecting completes
+    },
+    -- Player's held gem from prospecting (before placing in Town Hall)
+    playerHeldGem = {},         -- [playerId] = gem data or nil
 }
 
 -- Equipment stats - LEVEL BASED (scales infinitely)
@@ -1636,13 +1726,14 @@ local function createGoldMine()
         -- Back wall area (lower Z = back, higher Z = entrance)
         smelter = Vector3.new(baseX - 15, GROUND_Y, baseZ - 20),     -- Back-left: smelter
         goldChest = Vector3.new(baseX + 15, GROUND_Y, baseZ - 20),   -- Back-right: chest (near smelter)
-        -- Front-left area
-        oreVein = Vector3.new(baseX - 25, GROUND_Y, baseZ + 10),     -- Front-left: ore vein
+        -- Front-left area (walls at baseX +/- 40, so positions must be inside that range)
+        oreVein = Vector3.new(baseX - 32, GROUND_Y, baseZ + 10),     -- Left side: ore vein INSIDE room (walls at -40)
         -- Front-right area (upgrades)
-        upgradeKiosk = Vector3.new(baseX + 20, GROUND_Y, baseZ + 10), -- Front-right: single upgrade kiosk
-        -- Hire stations on SIDES of entrance (not blocking doorway)
-        hireMiner = Vector3.new(baseX - 25, GROUND_Y, baseZ + 25),   -- LEFT side of entrance
-        hireCollector = Vector3.new(baseX + 25, GROUND_Y, baseZ + 25), -- RIGHT side of entrance
+        upgradeKiosk = Vector3.new(baseX + 32, GROUND_Y, baseZ + 10), -- Right side: upgrade kiosk INSIDE room (walls at +40)
+        -- Hire stations on SIDES of entrance portal, AGAINST entrance wall
+        -- Portal frame edges are at baseX +/- 7, so position hiring stands beyond that
+        hireMiner = Vector3.new(baseX - 20, GROUND_Y, baseZ + 25),   -- LEFT of portal (toward -X)
+        hireCollector = Vector3.new(baseX + 20, GROUND_Y, baseZ + 25), -- RIGHT of portal (toward +X)
         -- Worker spawn in center area
         workerSpawn = Vector3.new(baseX, GROUND_Y, baseZ + 15),
     }
@@ -1944,7 +2035,7 @@ local function createGoldMine()
     -- Pickaxes on rack
     local pickaxeRack = Instance.new("Part")
     pickaxeRack.Size = Vector3.new(4, 3, 0.5)
-    pickaxeRack.Position = oreVeinPos + Vector3.new(-7, 2, 0)
+    pickaxeRack.Position = oreVeinPos + Vector3.new(7, 2, 0)
     pickaxeRack.Anchored = true
     pickaxeRack.Material = Enum.Material.Wood
     pickaxeRack.Color = Color3.fromRGB(80, 55, 35)
@@ -2544,34 +2635,28 @@ local function createGoldMine()
     end)
 
     -- ========== HIRE MINERS STATION (LEFT side of entrance portal) ==========
-    -- Station is on the left wall, faces toward room center
+    -- FLOOR LAYOUT: Sign against entrance wall (+Z), workers in front of sign, table at front
+    -- Player approaches from inside room (from -Z) and sees sign on the wall
     local hireMinerPos = GoldMineState.positions.hireMiner
 
-    local minerBoard = Instance.new("Part")
-    minerBoard.Name = "MinerHiringBoard"
-    minerBoard.Size = Vector3.new(5, 4, 0.5)
-    minerBoard.Anchored = true
-    minerBoard.Material = Enum.Material.Wood
-    minerBoard.Color = Color3.fromRGB(90, 65, 45)
-    -- Face toward center of room (toward baseX, which is to the right from left wall)
-    local minerBoardPos = hireMinerPos + Vector3.new(0, 2.5, 0)
-    minerBoard.CFrame = CFrame.lookAt(minerBoardPos, Vector3.new(baseX, minerBoardPos.Y, baseZ))
-    minerBoard.Parent = mineModel
+    -- Hiring stand is centered at hireMinerPos.X (left of portal)
+    -- Layout: Sign AGAINST entrance wall (high Z), workers in front of sign, table in front of workers
+    local minerStandX = hireMinerPos.X  -- X = -20 (left of portal center)
 
-    -- Sign above hiring board - faces toward center of room
-    local minerSignPos = hireMinerPos + Vector3.new(0, 5, 0)
-    local minerSign = Instance.new("Part")
-    minerSign.Name = "HireMinersSign"
-    minerSign.Size = Vector3.new(5, 1.2, 0.3)
-    minerSign.Anchored = true
-    minerSign.Material = Enum.Material.Wood
-    minerSign.Color = Color3.fromRGB(139, 90, 43)
-    minerSign.CFrame = CFrame.lookAt(minerSignPos, Vector3.new(baseX, minerSignPos.Y, baseZ))
-    minerSign.Parent = mineModel
+    -- Wall sign (AGAINST entrance wall at baseZ + 28, facing -Z into room)
+    local minerWallSign = Instance.new("Part")
+    minerWallSign.Name = "MinerWallSign"
+    minerWallSign.Size = Vector3.new(8, 3, 0.5)  -- 8 wide (X), 3 tall (Y), 0.5 thin (Z)
+    minerWallSign.Anchored = true
+    minerWallSign.Material = Enum.Material.Wood
+    minerWallSign.Color = Color3.fromRGB(139, 90, 43)
+    -- Position against entrance wall (baseZ + 28 minus half thickness)
+    minerWallSign.Position = Vector3.new(minerStandX, GROUND_Y + 6, baseZ + 27.75)
+    minerWallSign.Parent = mineModel
 
     local minerSignGui = Instance.new("SurfaceGui")
-    minerSignGui.Face = Enum.NormalId.Back -- Text on front face (facing center)
-    minerSignGui.Parent = minerSign
+    minerSignGui.Face = Enum.NormalId.Front  -- Front face points toward -Z (into room)
+    minerSignGui.Parent = minerWallSign
 
     local minerSignLabel = Instance.new("TextLabel")
     minerSignLabel.Size = UDim2.new(1, 0, 1, 0)
@@ -2582,19 +2667,58 @@ local function createGoldMine()
     minerSignLabel.Font = Enum.Font.GothamBold
     minerSignLabel.Parent = minerSignGui
 
-    -- Waiting miner NPCs (visual) - positioned in front of the board (toward room center)
-    for i = 1, 2 do
-        local waitingMinerPos = hireMinerPos + Vector3.new(3 + i * 2, 0, -2) -- Offset toward center and slightly forward
+    -- Store reference for updating later
+    GoldMineState.minerSign = minerSignLabel
+
+    -- Table/counter in front of workers (player approaches from -Z)
+    local minerTable = Instance.new("Part")
+    minerTable.Name = "MinerHiringTable"
+    minerTable.Size = Vector3.new(8, 1, 2)  -- 8 wide (X), 1 tall (Y), 2 deep (Z)
+    minerTable.Anchored = true
+    minerTable.Material = Enum.Material.Wood
+    minerTable.Color = Color3.fromRGB(90, 65, 45)
+    -- Table is in front of workers (lower Z = toward room interior)
+    minerTable.Position = Vector3.new(minerStandX, GROUND_Y + 1.5, baseZ + 21)
+    minerTable.Parent = mineModel
+
+    -- Table legs
+    for i = -1, 1, 2 do  -- Left/right of table (X direction)
+        for j = -1, 1, 2 do  -- Front/back of table (Z direction)
+            local leg = Instance.new("Part")
+            leg.Name = "TableLeg"
+            leg.Size = Vector3.new(0.3, 1, 0.3)
+            leg.Anchored = true
+            leg.Material = Enum.Material.Wood
+            leg.Color = Color3.fromRGB(70, 50, 35)
+            leg.Position = Vector3.new(minerStandX + i * 3.5, GROUND_Y + 0.5, baseZ + 21 + j * 0.7)
+            leg.Parent = mineModel
+        end
+    end
+
+    -- 3 Waiting workers standing between sign and table (spread along X axis)
+    GoldMineState.waitingMiners = {}
+    for i = 1, 3 do
+        -- Workers in front of sign, behind table (at baseZ + 24)
+        -- Spread workers along X axis: -3, 0, +3 from minerStandX
+        local waitingMinerPos = Vector3.new(minerStandX + (i - 2) * 3, GROUND_Y, baseZ + 24)
         local waitingMiner = createWorkerNPC(
-            "Miner " .. i,
+            "WaitingMiner" .. i,
             waitingMinerPos,
             Color3.fromRGB(100, 80, 60)
         )
+        setNPCStatus(waitingMiner, "For hire!")
         waitingMiner.Parent = mineModel
+        table.insert(GoldMineState.waitingMiners, waitingMiner)
     end
 
-    -- INTERACTION: Hire Miner
-    createInteraction(minerBoard, "Hire Miner", "Hiring Board", 1, function(player)
+    -- INTERACTION: Hire Miner (on the table)
+    local minerHirePrompt = createInteraction(minerTable, "Hire Miner (500 gold)", "Hiring Table", 1, function(player)
+        -- Check if any waiting workers left at the stand
+        if #GoldMineState.waitingMiners == 0 then
+            print(string.format("[GoldMine] %s: No workers available to hire!", player.Name))
+            return
+        end
+
         local minerCount = #GoldMineState.miners
         local maxMiners = 3
 
@@ -2605,6 +2729,29 @@ local function createGoldMine()
 
         local cost = MinerCosts[minerCount + 1]
         local minerId = minerCount + 1
+
+        -- Remove one waiting worker from the stand (they walk away to work)
+        local waitingWorker = table.remove(GoldMineState.waitingMiners, 1)
+        if waitingWorker then
+            -- Make the waiting worker walk away before destroying
+            local workerTorso = waitingWorker:FindFirstChild("Torso")
+            if workerTorso then
+                local walkAwayPos = GoldMineState.positions.workerSpawn + Vector3.new(minerCount * 3, 0, 0)
+                walkNPCTo(waitingWorker, walkAwayPos, 6, function()
+                    waitingWorker:Destroy()
+                end)
+            else
+                waitingWorker:Destroy()
+            end
+        end
+
+        -- Update sign if no more waiting workers
+        if #GoldMineState.waitingMiners == 0 then
+            if GoldMineState.minerSign then
+                GoldMineState.minerSign.Text = "FULLY STAFFED"
+                GoldMineState.minerSign.TextColor3 = Color3.fromRGB(150, 150, 150)
+            end
+        end
 
         -- Create visible miner NPC
         local spawnPos = GoldMineState.positions.workerSpawn + Vector3.new(minerCount * 3, 0, 0)
@@ -2739,35 +2886,32 @@ local function createGoldMine()
         print(string.format("[GoldMine] Miner #%d will mine ore → deliver to smelter → repeat!", minerId))
     end)
 
+    -- Store reference for prompt (needed for disabling when fully staffed)
+    GoldMineState.minerPrompt = minerHirePrompt
+
     -- ========== HIRE COLLECTORS STATION (RIGHT side of entrance portal) ==========
-    -- Station is on the right wall, faces toward room center
+    -- FLOOR LAYOUT: Sign against entrance wall (+Z), workers in front of sign, table at front
+    -- Player approaches from inside room (from -Z) and sees sign on the wall
     local hireCollectorPos = GoldMineState.positions.hireCollector
 
-    local collectorBoard = Instance.new("Part")
-    collectorBoard.Name = "CollectorHiringBoard"
-    collectorBoard.Size = Vector3.new(5, 4, 0.5)
-    collectorBoard.Anchored = true
-    collectorBoard.Material = Enum.Material.Wood
-    collectorBoard.Color = Color3.fromRGB(60, 90, 60) -- Green-ish to match collectors
-    -- Face toward center of room (toward baseX, which is to the left from right wall)
-    local collectorBoardPos = hireCollectorPos + Vector3.new(0, 2.5, 0)
-    collectorBoard.CFrame = CFrame.lookAt(collectorBoardPos, Vector3.new(baseX, collectorBoardPos.Y, baseZ))
-    collectorBoard.Parent = mineModel
+    -- Hiring stand is centered at hireCollectorPos.X (right of portal)
+    -- Layout: Sign AGAINST entrance wall (high Z), workers in front of sign, table in front of workers
+    local collectorStandX = hireCollectorPos.X  -- X = +20 (right of portal center)
 
-    -- Sign above hiring board - faces toward center of room
-    local collectorSignPos = hireCollectorPos + Vector3.new(0, 5, 0)
-    local collectorSign = Instance.new("Part")
-    collectorSign.Name = "HireCollectorsSign"
-    collectorSign.Size = Vector3.new(7, 1.5, 0.3)
-    collectorSign.Anchored = true
-    collectorSign.Material = Enum.Material.Wood
-    collectorSign.Color = Color3.fromRGB(139, 90, 43)
-    collectorSign.CFrame = CFrame.lookAt(collectorSignPos, Vector3.new(baseX, collectorSignPos.Y, baseZ))
-    collectorSign.Parent = mineModel
+    -- Wall sign (AGAINST entrance wall at baseZ + 28, facing -Z into room)
+    local collectorWallSign = Instance.new("Part")
+    collectorWallSign.Name = "CollectorWallSign"
+    collectorWallSign.Size = Vector3.new(8, 3, 0.5)  -- 8 wide (X), 3 tall (Y), 0.5 thin (Z)
+    collectorWallSign.Anchored = true
+    collectorWallSign.Material = Enum.Material.Wood
+    collectorWallSign.Color = Color3.fromRGB(60, 100, 60)
+    -- Position against entrance wall (baseZ + 28 minus half thickness)
+    collectorWallSign.Position = Vector3.new(collectorStandX, GROUND_Y + 6, baseZ + 27.75)
+    collectorWallSign.Parent = mineModel
 
     local collectorSignGui = Instance.new("SurfaceGui")
-    collectorSignGui.Face = Enum.NormalId.Back -- Text on front face (facing center)
-    collectorSignGui.Parent = collectorSign
+    collectorSignGui.Face = Enum.NormalId.Front  -- Front face points toward -Z (into room)
+    collectorSignGui.Parent = collectorWallSign
 
     local collectorSignLabel = Instance.new("TextLabel")
     collectorSignLabel.Size = UDim2.new(1, 0, 1, 0)
@@ -2778,30 +2922,91 @@ local function createGoldMine()
     collectorSignLabel.Font = Enum.Font.GothamBold
     collectorSignLabel.Parent = collectorSignGui
 
-    -- Waiting collector NPCs (visual indicator) - positioned in front of the board (toward room center)
-    for i = 1, 2 do
-        local waitingCollectorPos = hireCollectorPos + Vector3.new(-3 - i * 2, 0, -2) -- Offset toward center and slightly forward
+    -- Store reference for updating later
+    GoldMineState.collectorSign = collectorSignLabel
+
+    -- Table/counter in front of workers (player approaches from -Z)
+    local collectorTable = Instance.new("Part")
+    collectorTable.Name = "CollectorHiringTable"
+    collectorTable.Size = Vector3.new(8, 1, 2)  -- 8 wide (X), 1 tall (Y), 2 deep (Z)
+    collectorTable.Anchored = true
+    collectorTable.Material = Enum.Material.Wood
+    collectorTable.Color = Color3.fromRGB(60, 90, 60)
+    -- Table is in front of workers (lower Z = toward room interior)
+    collectorTable.Position = Vector3.new(collectorStandX, GROUND_Y + 1.5, baseZ + 21)
+    collectorTable.Parent = mineModel
+
+    -- Table legs
+    for i = -1, 1, 2 do  -- Left/right of table (X direction)
+        for j = -1, 1, 2 do  -- Front/back of table (Z direction)
+            local leg = Instance.new("Part")
+            leg.Name = "TableLeg"
+            leg.Size = Vector3.new(0.3, 1, 0.3)
+            leg.Anchored = true
+            leg.Material = Enum.Material.Wood
+            leg.Color = Color3.fromRGB(45, 65, 45)
+            leg.Position = Vector3.new(collectorStandX + i * 3.5, GROUND_Y + 0.5, baseZ + 21 + j * 0.7)
+            leg.Parent = mineModel
+        end
+    end
+
+    -- 3 Waiting workers standing between sign and table (spread along X axis)
+    GoldMineState.waitingCollectors = {}
+    for i = 1, 3 do
+        -- Workers in front of sign, behind table (at baseZ + 24)
+        -- Spread workers along X axis: -3, 0, +3 from collectorStandX
+        local waitingCollectorPos = Vector3.new(collectorStandX + (i - 2) * 3, GROUND_Y, baseZ + 24)
         local waitingCollector = createWorkerNPC(
-            "Collector " .. i,
+            "WaitingCollector" .. i,
             waitingCollectorPos,
             Color3.fromRGB(60, 100, 60) -- Green work clothes
         )
         setNPCStatus(waitingCollector, "For hire!")
         waitingCollector.Parent = mineModel
+        table.insert(GoldMineState.waitingCollectors, waitingCollector)
     end
 
-    -- INTERACTION: Hire Collector
-    createInteraction(collectorBoard, "Hire Collector", "Hiring Board", 1, function(player)
+    -- INTERACTION: Hire Collector (on the table)
+    local collectorHirePrompt = createInteraction(collectorTable, "Hire Collector (300 gold)", "Hiring Table", 1, function(player)
+        -- Check if any waiting workers left at the stand
+        if #GoldMineState.waitingCollectors == 0 then
+            print(string.format("[GoldMine] %s: No collectors available to hire!", player.Name))
+            return
+        end
+
         local collectorCount = #GoldMineState.collectors
-        local maxCollectors = 2
+        local maxCollectors = 3
 
         if collectorCount >= maxCollectors then
-            print(string.format("[GoldMine] %s: Max collectors (2) reached!", player.Name))
+            print(string.format("[GoldMine] %s: Max collectors (3) reached!", player.Name))
             return
         end
 
         local cost = CollectorCosts[collectorCount + 1]
         local collectorId = collectorCount + 1
+
+        -- Remove one waiting worker from the stand (they walk away to work)
+        local waitingWorker = table.remove(GoldMineState.waitingCollectors, 1)
+        if waitingWorker then
+            -- Make the waiting worker walk away before destroying
+            local workerTorso = waitingWorker:FindFirstChild("Torso")
+            if workerTorso then
+                local walkAwayPos = GoldMineState.positions.workerSpawn + Vector3.new(collectorCount * 3 + 10, 0, 0)
+                walkNPCTo(waitingWorker, walkAwayPos, 6, function()
+                    waitingWorker:Destroy()
+                end)
+            else
+                waitingWorker:Destroy()
+            end
+        end
+
+        -- Update sign if no more waiting workers
+        if #GoldMineState.waitingCollectors == 0 then
+            if GoldMineState.collectorSign then
+                GoldMineState.collectorSign.Text = "FULLY STAFFED"
+                GoldMineState.collectorSign.TextColor3 = Color3.fromRGB(150, 150, 150)
+            end
+        end
 
         -- Create visible collector NPC
         local spawnPos = GoldMineState.positions.workerSpawn + Vector3.new(collectorCount * 3 + 10, 0, 0)
@@ -2949,6 +3154,9 @@ local function createGoldMine()
             player.Name, collectorId, cost.gold, cost.food))
         print(string.format("[GoldMine] Collector #%d will take gold from smelter → deliver to YOUR chest!", collectorId))
     end)
+
+    -- Store reference for prompt (needed for disabling when fully staffed)
+    GoldMineState.collectorPrompt = collectorHirePrompt
 
     -- ========== SINGLE UPGRADE KIOSK (front-right area) ==========
     -- Replaces the 4 separate pedestals with ONE kiosk that opens a menu GUI
@@ -3216,6 +3424,213 @@ local function createGoldMine()
         print(string.format("[GoldMine] %s opened Upgrade Menu", player.Name))
     end)
 
+    -- ========== GEM PROSPECTING STATION (near upgrade kiosk) ==========
+    local prospectingPos = GoldMineState.positions.upgradeKiosk + Vector3.new(-8, 0, 0) -- Left of upgrade kiosk
+
+    -- Prospecting table
+    local prospectingTable = Instance.new("Part")
+    prospectingTable.Name = "ProspectingTable"
+    prospectingTable.Size = Vector3.new(4, 2.5, 3)
+    prospectingTable.Position = prospectingPos + Vector3.new(0, 1.25, 0)
+    prospectingTable.Anchored = true
+    prospectingTable.Material = Enum.Material.Wood
+    prospectingTable.Color = Color3.fromRGB(90, 60, 40)
+    prospectingTable.Parent = mineModel
+
+    -- Mining tools on table
+    local pickaxeTool = Instance.new("Part")
+    pickaxeTool.Name = "ProspectingPickaxe"
+    pickaxeTool.Size = Vector3.new(0.2, 1.5, 0.2)
+    pickaxeTool.Position = prospectingPos + Vector3.new(1, 2.8, 0.5)
+    pickaxeTool.Orientation = Vector3.new(0, 0, 45)
+    pickaxeTool.Anchored = true
+    pickaxeTool.Material = Enum.Material.Metal
+    pickaxeTool.Color = Color3.fromRGB(100, 100, 110)
+    pickaxeTool.Parent = mineModel
+
+    -- Magnifying glass
+    local magnifyGlass = Instance.new("Part")
+    magnifyGlass.Name = "MagnifyingGlass"
+    magnifyGlass.Shape = Enum.PartType.Cylinder
+    magnifyGlass.Size = Vector3.new(0.1, 1, 1)
+    magnifyGlass.Position = prospectingPos + Vector3.new(-1, 2.7, 0)
+    magnifyGlass.Orientation = Vector3.new(0, 0, 90)
+    magnifyGlass.Anchored = true
+    magnifyGlass.Material = Enum.Material.Glass
+    magnifyGlass.Color = Color3.fromRGB(200, 220, 255)
+    magnifyGlass.Transparency = 0.5
+    magnifyGlass.Parent = mineModel
+
+    -- Gem display case (shows result)
+    local gemCase = Instance.new("Part")
+    gemCase.Name = "GemDisplayCase"
+    gemCase.Size = Vector3.new(1.5, 1, 1.5)
+    gemCase.Position = prospectingPos + Vector3.new(0, 3, -0.5)
+    gemCase.Anchored = true
+    gemCase.Material = Enum.Material.Glass
+    gemCase.Color = Color3.fromRGB(200, 220, 255)
+    gemCase.Transparency = 0.7
+    gemCase.Parent = mineModel
+
+    -- Result gem (hidden by default)
+    local resultGem = Instance.new("Part")
+    resultGem.Name = "ResultGem"
+    resultGem.Shape = Enum.PartType.Ball
+    resultGem.Size = Vector3.new(0.8, 0.8, 0.8)
+    resultGem.Position = prospectingPos + Vector3.new(0, 3.2, -0.5)
+    resultGem.Anchored = true
+    resultGem.Material = Enum.Material.Neon
+    resultGem.Color = Color3.fromRGB(255, 255, 255)
+    resultGem.Transparency = 1 -- Hidden until gem found
+    resultGem.Parent = mineModel
+
+    -- Timer billboard
+    local timerBillboard = Instance.new("BillboardGui")
+    timerBillboard.Name = "ProspectingTimer"
+    timerBillboard.Size = UDim2.new(0, 150, 0, 50)
+    timerBillboard.StudsOffset = Vector3.new(0, 2.5, 0)
+    timerBillboard.AlwaysOnTop = false
+    timerBillboard.Parent = prospectingTable
+
+    local timerLabel = Instance.new("TextLabel")
+    timerLabel.Name = "TimerText"
+    timerLabel.Size = UDim2.new(1, 0, 1, 0)
+    timerLabel.BackgroundTransparency = 0.5
+    timerLabel.BackgroundColor3 = Color3.fromRGB(40, 30, 20)
+    timerLabel.Text = "GEM PROSPECTING"
+    timerLabel.TextScaled = true
+    timerLabel.Font = Enum.Font.GothamBold
+    timerLabel.TextColor3 = Color3.fromRGB(255, 215, 0)
+    timerLabel.Parent = timerBillboard
+
+    -- Sign
+    createSign(mineModel, "GEM PROSPECTING", prospectingPos + Vector3.new(0, 4.5, 0), Vector3.new(6, 0.8, 0.3))
+
+    -- Prospecting state display function
+    local function updateProspectingDisplay()
+        local state = GoldMineState.prospecting
+        if state.isActive then
+            local remaining = state.endTime - tick()
+            if remaining > 0 then
+                local minutes = math.floor(remaining / 60)
+                local seconds = math.floor(remaining % 60)
+                timerLabel.Text = string.format("Prospecting: %d:%02d", minutes, seconds)
+                timerLabel.TextColor3 = Color3.fromRGB(100, 200, 255)
+                resultGem.Transparency = 1 -- Hide while prospecting
+            else
+                timerLabel.Text = "READY TO COLLECT!"
+                timerLabel.TextColor3 = Color3.fromRGB(50, 255, 50)
+                resultGem.Transparency = 0 -- Show mystery gem
+                resultGem.Color = Color3.fromRGB(200, 180, 100) -- Mystery color
+            end
+        else
+            timerLabel.Text = "GEM PROSPECTING"
+            timerLabel.TextColor3 = Color3.fromRGB(255, 215, 0)
+            resultGem.Transparency = 1
+        end
+    end
+
+    -- Start prospecting interaction
+    local startProspectPrompt = Instance.new("ProximityPrompt")
+    startProspectPrompt.Name = "StartProspectPrompt"
+    startProspectPrompt.ObjectText = "Gem Prospecting"
+    startProspectPrompt.ActionText = "Invest Gold"
+    startProspectPrompt.HoldDuration = 0.5
+    startProspectPrompt.MaxActivationDistance = 8
+    startProspectPrompt.Parent = prospectingTable
+
+    startProspectPrompt.Triggered:Connect(function(player)
+        local state = GoldMineState.prospecting
+
+        -- Check if already prospecting
+        if state.isActive then
+            local remaining = state.endTime - tick()
+            if remaining > 0 then
+                local minutes = math.floor(remaining / 60)
+                local seconds = math.floor(remaining % 60)
+                print(string.format("[GoldMine] Prospecting in progress... %d:%02d remaining", minutes, seconds))
+                return
+            else
+                -- Ready to collect!
+                local success = math.random() < 0.5 -- 50% success rate
+
+                if success then
+                    local gem = rollGem(state.tier)
+                    GoldMineState.playerHeldGem[player.UserId] = gem
+
+                    -- Show gem visual
+                    resultGem.Color = gem.color
+                    resultGem.Transparency = 0
+
+                    -- Size based on gem size
+                    local sizeMap = { Chip = 0.5, Stone = 0.7, Gem = 0.9, Jewel = 1.2 }
+                    local visualSize = sizeMap[gem.size] or 0.8
+                    resultGem.Size = Vector3.new(visualSize, visualSize, visualSize)
+
+                    print(string.format("[GoldMine] %s found a %s %s!",
+                        player.Name, gem.size, gem.type))
+                    print(string.format("  Bonus: +%.0f%% %s", (gem.multiplier - 1) * 100, gem.boost))
+                    print("  Take it to the Town Hall Trophy Case to display!")
+
+                    -- Sparkle effect
+                    local sparkle = Instance.new("ParticleEmitter")
+                    sparkle.Color = ColorSequence.new(gem.color)
+                    sparkle.Size = NumberSequence.new(0.3, 0)
+                    sparkle.Lifetime = NumberRange.new(0.5, 1)
+                    sparkle.Rate = 50
+                    sparkle.Speed = NumberRange.new(2, 4)
+                    sparkle.SpreadAngle = Vector2.new(180, 180)
+                    sparkle.Parent = resultGem
+                    task.delay(2, function() sparkle:Destroy() end)
+                else
+                    print(string.format("[GoldMine] %s: No gems found this time. Better luck next prospect!", player.Name))
+                end
+
+                -- Reset state
+                state.isActive = false
+                state.tier = nil
+                task.delay(1, updateProspectingDisplay)
+                return
+            end
+        end
+
+        -- Show tier options
+        print("[GoldMine] === GEM PROSPECTING ===")
+        print("  Select investment tier (higher = better gems):")
+        for i, tier in ipairs(ProspectingTiers) do
+            local rarityTable = GemRarityByTier[i]
+            print(string.format("    %d. %s (%d gold) - Diamond chance: %.0f%%",
+                i, tier.name, tier.cost, (rarityTable.Diamond or 0) * 100))
+        end
+        print("")
+        print("  [Demo: Starting Basic prospecting]")
+
+        -- Start basic prospecting for demo
+        local tier = 1
+        local tierData = ProspectingTiers[tier]
+
+        -- TODO: Check and deduct gold
+        print(string.format("[GoldMine] %s started %s prospecting! (%d gold)",
+            player.Name, tierData.name, tierData.cost))
+
+        state.isActive = true
+        state.tier = tier
+        state.startTime = tick()
+        state.endTime = tick() + tierData.duration
+
+        updateProspectingDisplay()
+    end)
+
+    -- Update timer every second
+    task.spawn(function()
+        while true do
+            task.wait(1)
+            if GoldMineState.prospecting.isActive then
+                updateProspectingDisplay()
+            end
+        end
+    end)
+
     -- ========== EXIT PORTAL ==========
     createExitPortal(mineModel, Vector3.new(baseX, GROUND_Y + 4, baseZ + 28))
 
@@ -3225,10 +3640,12 @@ local function createGoldMine()
     print("  ✓ Gold Mine created (REDESIGNED SPACIOUS LAYOUT):")
     print("    BACK WALL: Smelter (left) + Gold Chest (right)")
     print("    FRONT LEFT: Ore Vein (mine here)")
-    print("    FRONT RIGHT: Upgrade Kiosk (single menu for all upgrades)")
+    print("    FRONT RIGHT: Upgrade Kiosk + Gem Prospecting Station")
     print("    ENTRANCE AREA: Hire Miners (LEFT of door) + Hire Collectors (RIGHT of door)")
+    print("    HIRING STANDS: Wall sign + table + 3 workers waiting to be hired")
+    print("    Workers visually leave stand when hired, sign shows 'FULLY STAFFED' when all hired")
     print("    FLOW: Ore Vein → Smelter → Gold Chest → Profit!")
-    print("    Open floor space - hire stations on sides, not blocking entrance!")
+    print("    NEW: Gem Prospecting - Invest gold to find gems for Town Hall bonuses!")
 end
 
 -- ============================================================================
@@ -6952,6 +7369,9 @@ local function createFarm(farmNumber)
                             print(string.format("[Carrier #%d] Delivered %d food -> +%d gold!",
                                 carrierId, foodDelivered, goldEarned))
 
+                            -- ACTUALLY REWARD THE PLAYER (this was missing!)
+                            rewardPlayer(hiringPlayer, "gold", goldEarned, "Carrier")
+
                             addFarmXP(15)
 
                             -- Return to silo
@@ -8877,15 +9297,13 @@ local function createBarracks()
 end
 
 -- ============================================================================
--- TOWN HALL - Central administrative building with full progression loop
+-- TOWN HALL - City Command Center
 -- ============================================================================
--- PROGRESSION LOOP:
---   1. TAX OFFICE: Collect taxes from citizens (generates gold)
---   2. CENSUS DESK: Register citizens (increases tax income)
---   3. RESEARCH LIBRARY: Study scrolls to unlock upgrades
---   4. TREASURY VAULT: Store and withdraw accumulated wealth
---   5. ADVISOR QUARTERS: Hire advisors for automation (Level 3+)
---   6. ROYAL ARCHIVES: Upgrade tax rates, research speed, vault capacity
+-- Four stations for city management:
+--   1. JEWEL TROPHY CASE: Display stolen/prospected gems for city-wide bonuses
+--   2. BUILDING UPGRADE CENTER: Centralized location for all building upgrades
+--   3. SHIELD CONTROL CENTER: Manage city defenses
+--   4. RESEARCH STATION: Unlock city improvements (future expansion)
 -- ============================================================================
 
 -- Town Hall state
@@ -8893,71 +9311,101 @@ local TownHallState = {
     level = 1,
     xp = 0,
     xpToNextLevel = 100,
-    advisors = {},         -- NPC advisors (automate tasks)
-    taxCollectors = {},    -- NPC tax collectors
-    equipment = {
-        ledgers = "Basic",      -- Tax collection efficiency
-        scrolls = "Basic",      -- Research speed
-        vault = "Basic",        -- Storage capacity
+
+    -- Jewel Trophy Case (3 shelves x 3 slots = 9 max)
+    jewelCase = {
+        slots = {},         -- [1-9] = nil or { type = "Ruby", size = "Gem", color = Color3, boost = "production", multiplier = 1.2 }
+        maxSlots = 3,       -- Start with 3, can buy up to 9
     },
-    playerInventory = {}, -- Per-player: { taxDocuments, registeredCitizens, researchPoints, storedGold }
-    -- Player carrying state (for walk-through system)
-    playerTaxDocs = {},      -- [playerId] = tax documents being carried
-    playerCensusRecords = {}, -- [playerId] = census records being carried
-    playerScrolls = {},      -- [playerId] = scrolls being carried
-    playerGoldBags = {},     -- [playerId] = gold bags being carried
+
+    -- Building Upgrades (centralized tracking)
+    buildingLevels = {
+        goldMine = 1,
+        lumberMill = 1,
+        barracks = 1,
+        farm1 = 1,
+        farm2 = 1,
+        farm3 = 1,
+        farm4 = 1,
+        farm5 = 1,
+        farm6 = 1,
+    },
+
+    -- Shield Control
+    shields = {
+        isActive = false,
+        duration = 0,       -- Total shield duration in seconds
+        endTime = 0,        -- When shield expires (tick value)
+    },
+
+    -- Research (future expansion)
+    research = {
+        completed = {},     -- Array of completed research IDs
+        inProgress = nil,   -- { id = "...", startTime = 0, endTime = 0 }
+    },
+
     -- Visual update functions (set during creation)
-    updateTaxQueueVisuals = nil,
-    updateCensusQueueVisuals = nil,
-    updateScrollQueueVisuals = nil,
-    updateGoldQueueVisuals = nil,
-    totalTaxesCollected = 0,
+    updateJewelCaseVisuals = nil,
+    updateShieldStatusVisuals = nil,
+
     population = 10, -- Base population
     positions = {},
 }
 
--- Equipment upgrade tiers for Town Hall
-local LedgerStats = {
-    Basic = { taxRate = 1.0, efficiency = 1, cost = 0 },
-    Copper = { taxRate = 1.3, efficiency = 2, cost = 800 },
-    Silver = { taxRate = 1.6, efficiency = 3, cost = 4000 },
-    Gold = { taxRate = 2.0, efficiency = 5, cost = 20000 },
+-- Gem slot purchase costs (to unlock more slots beyond initial 3)
+local GemSlotCosts = {
+    [4] = { gold = 5000, wood = 1000 },
+    [5] = { gold = 10000, wood = 2000 },
+    [6] = { gold = 20000, wood = 4000 },
+    [7] = { gold = 40000, wood = 8000 },
+    [8] = { gold = 75000, wood = 15000 },
+    [9] = { gold = 150000, wood = 30000 },
 }
 
-local ScrollStats = {
-    Basic = { researchSpeed = 1.0, pointsPerStudy = 1, cost = 0 },
-    Ancient = { researchSpeed = 1.5, pointsPerStudy = 2, cost = 1000 },
-    Enchanted = { researchSpeed = 2.0, pointsPerStudy = 3, cost = 5000 },
-    Legendary = { researchSpeed = 3.0, pointsPerStudy = 5, cost = 25000 },
+-- Shield durations and costs
+local ShieldOptions = {
+    { name = "Short Shield", duration = 3600, cost = { gold = 500 } },       -- 1 hour
+    { name = "Medium Shield", duration = 14400, cost = { gold = 1500 } },    -- 4 hours
+    { name = "Long Shield", duration = 43200, cost = { gold = 4000 } },      -- 12 hours
+    { name = "Extended Shield", duration = 86400, cost = { gold = 10000 } }, -- 24 hours
 }
 
-local VaultStats = {
-    Basic = { capacity = 1000, security = 1.0, cost = 0 },
-    Reinforced = { capacity = 5000, security = 1.5, cost = 1500 },
-    Iron = { capacity = 20000, security = 2.0, cost = 7500 },
-    Royal = { capacity = 100000, security = 3.0, cost = 40000 },
-}
+-- Calculate gem bonuses from Town Hall's trophy case
+-- Returns multipliers for production, speed, defense
+local function calculateGemBonuses()
+    local bonuses = {
+        production = 1.0,  -- Multiplier for resource production
+        speed = 1.0,       -- Multiplier for processing/training speed
+        defense = 1.0,     -- Multiplier for defense strength
+        all = 1.0,         -- Multiplier for everything (from Diamonds)
+    }
 
--- Worker (Advisor) costs
-local AdvisorCosts = {
-    { gold = 500, food = 200 },   -- First advisor
-    { gold = 1500, food = 600 },  -- Second
-    { gold = 4000, food = 1500 }, -- Third
-    { gold = 10000, food = 4000 },-- Fourth (max)
-}
+    local jewelCase = TownHallState.jewelCase
+    for i = 1, jewelCase.maxSlots do
+        local gem = jewelCase.slots[i]
+        if gem then
+            local boost = gem.boost
+            local multiplier = gem.multiplier
 
--- Get or initialize player town hall inventory
-local function getTownHallInventory(player: Player)
-    local id = tostring(player.UserId)
-    if not TownHallState.playerInventory[id] then
-        TownHallState.playerInventory[id] = {
-            taxDocuments = 0,
-            registeredCitizens = 0,
-            researchPoints = 0,
-            storedGold = 0,
-        }
+            if boost == "all" then
+                -- Diamond boosts everything
+                bonuses.all = bonuses.all * multiplier
+            elseif boost == "production" then
+                bonuses.production = bonuses.production * multiplier
+            elseif boost == "speed" then
+                bonuses.speed = bonuses.speed * multiplier
+            elseif boost == "defense" then
+                bonuses.defense = bonuses.defense * multiplier
+            end
+        end
     end
-    return TownHallState.playerInventory[id]
+
+    -- Apply the "all" bonus to everything
+    bonuses.production = bonuses.production * bonuses.all
+    bonuses.speed = bonuses.speed * bonuses.all
+    bonuses.defense = bonuses.defense * bonuses.all
+
+    return bonuses
 end
 
 -- Add XP to town hall and handle leveling
@@ -8969,346 +9417,6 @@ local function addTownHallXP(amount: number)
         TownHallState.xpToNextLevel = math.floor(TownHallState.xpToNextLevel * 1.5)
         TownHallState.population = TownHallState.population + 5 -- More citizens at higher levels
         print(string.format("[TownHall] LEVEL UP! Now level %d (Population: %d)", TownHallState.level, TownHallState.population))
-    end
-end
-
--- Player carrying helper functions for walk-through system
-local function getPlayerTaxDocs(player: Player): number
-    return TownHallState.playerTaxDocs[player.UserId] or 0
-end
-
-local function setPlayerTaxDocs(player: Player, amount: number)
-    TownHallState.playerTaxDocs[player.UserId] = math.max(0, math.min(amount, 20))
-end
-
-local function getPlayerCensusRecords(player: Player): number
-    return TownHallState.playerCensusRecords[player.UserId] or 0
-end
-
-local function setPlayerCensusRecords(player: Player, amount: number)
-    TownHallState.playerCensusRecords[player.UserId] = math.max(0, math.min(amount, 20))
-end
-
-local function getPlayerScrolls(player: Player): number
-    return TownHallState.playerScrolls[player.UserId] or 0
-end
-
-local function setPlayerScrolls(player: Player, amount: number)
-    TownHallState.playerScrolls[player.UserId] = math.max(0, math.min(amount, 20))
-end
-
-local function getPlayerGoldBags(player: Player): number
-    return TownHallState.playerGoldBags[player.UserId] or 0
-end
-
-local function setPlayerGoldBags(player: Player, amount: number)
-    TownHallState.playerGoldBags[player.UserId] = math.max(0, math.min(amount, 20))
-end
-
---[[
-    Updates the visual representation of tax documents on the player.
-    Shows paper scrolls/documents in hand.
-]]
-local function updatePlayerTaxDocsVisual(player: Player, count: number)
-    local character = player.Character
-    if not character then return end
-    local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
-    if not humanoidRootPart then return end
-
-    -- Remove old visuals
-    for _, child in character:GetChildren() do
-        if child.Name == "TaxDocsCarry" then
-            child:Destroy()
-        end
-    end
-
-    if count <= 0 then return end
-
-    -- Create stack of documents on player's back
-    local visibleCount = math.min(count, 5)
-    for i = 1, visibleCount do
-        local doc = Instance.new("Part")
-        doc.Name = "TaxDocsCarry"
-        doc.Size = Vector3.new(0.8, 0.05, 0.6)
-        doc.Position = humanoidRootPart.Position + Vector3.new(-0.5, 0.3 + (i-1)*0.08, -0.5)
-        doc.Anchored = false
-        doc.CanCollide = false
-        doc.Material = Enum.Material.SmoothPlastic
-        doc.Color = Color3.fromRGB(240, 230, 200)
-        doc.Parent = character
-
-        local weld = Instance.new("WeldConstraint")
-        weld.Part0 = humanoidRootPart
-        weld.Part1 = doc
-        weld.Parent = doc
-    end
-
-    -- Add count indicator if more than visible
-    if count > 5 then
-        local countPart = Instance.new("Part")
-        countPart.Name = "TaxDocsCarry"
-        countPart.Shape = Enum.PartType.Ball
-        countPart.Size = Vector3.new(0.4, 0.4, 0.4)
-        countPart.Position = humanoidRootPart.Position + Vector3.new(-0.5, 1.2, -0.5)
-        countPart.Anchored = false
-        countPart.CanCollide = false
-        countPart.Material = Enum.Material.Neon
-        countPart.Color = Color3.fromRGB(240, 230, 200)
-        countPart.Parent = character
-
-        local countWeld = Instance.new("WeldConstraint")
-        countWeld.Part0 = humanoidRootPart
-        countWeld.Part1 = countPart
-        countWeld.Parent = countPart
-
-        local billboard = Instance.new("BillboardGui")
-        billboard.Size = UDim2.new(0, 30, 0, 30)
-        billboard.StudsOffset = Vector3.new(0, 0.5, 0)
-        billboard.Parent = countPart
-
-        local label = Instance.new("TextLabel")
-        label.Size = UDim2.new(1, 0, 1, 0)
-        label.BackgroundTransparency = 1
-        label.Text = "x" .. tostring(count)
-        label.TextColor3 = Color3.new(0.3, 0.2, 0.1)
-        label.TextScaled = true
-        label.Font = Enum.Font.GothamBold
-        label.Parent = billboard
-    end
-end
-
---[[
-    Updates the visual representation of census records on the player.
-    Shows bound ledger books.
-]]
-local function updatePlayerCensusVisual(player: Player, count: number)
-    local character = player.Character
-    if not character then return end
-    local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
-    if not humanoidRootPart then return end
-
-    -- Remove old visuals
-    for _, child in character:GetChildren() do
-        if child.Name == "CensusCarry" then
-            child:Destroy()
-        end
-    end
-
-    if count <= 0 then return end
-
-    -- Create stack of ledger books on player's back
-    local visibleCount = math.min(count, 4)
-    for i = 1, visibleCount do
-        local book = Instance.new("Part")
-        book.Name = "CensusCarry"
-        book.Size = Vector3.new(0.6, 0.15, 0.4)
-        book.Position = humanoidRootPart.Position + Vector3.new(-0.5, 0.2 + (i-1)*0.18, -0.5)
-        book.Anchored = false
-        book.CanCollide = false
-        book.Material = Enum.Material.Fabric
-        book.Color = Color3.fromRGB(80, 40, 30)
-        book.Parent = character
-
-        local weld = Instance.new("WeldConstraint")
-        weld.Part0 = humanoidRootPart
-        weld.Part1 = book
-        weld.Parent = book
-    end
-
-    -- Add count indicator if more than visible
-    if count > 4 then
-        local countPart = Instance.new("Part")
-        countPart.Name = "CensusCarry"
-        countPart.Shape = Enum.PartType.Ball
-        countPart.Size = Vector3.new(0.4, 0.4, 0.4)
-        countPart.Position = humanoidRootPart.Position + Vector3.new(-0.5, 1.2, -0.5)
-        countPart.Anchored = false
-        countPart.CanCollide = false
-        countPart.Material = Enum.Material.Neon
-        countPart.Color = Color3.fromRGB(80, 40, 30)
-        countPart.Parent = character
-
-        local countWeld = Instance.new("WeldConstraint")
-        countWeld.Part0 = humanoidRootPart
-        countWeld.Part1 = countPart
-        countWeld.Parent = countPart
-
-        local billboard = Instance.new("BillboardGui")
-        billboard.Size = UDim2.new(0, 30, 0, 30)
-        billboard.StudsOffset = Vector3.new(0, 0.5, 0)
-        billboard.Parent = countPart
-
-        local label = Instance.new("TextLabel")
-        label.Size = UDim2.new(1, 0, 1, 0)
-        label.BackgroundTransparency = 1
-        label.Text = "x" .. tostring(count)
-        label.TextColor3 = Color3.new(1, 1, 1)
-        label.TextScaled = true
-        label.Font = Enum.Font.GothamBold
-        label.Parent = billboard
-    end
-end
-
---[[
-    Updates the visual representation of research scrolls on the player.
-    Shows glowing scroll tubes.
-]]
-local function updatePlayerScrollsVisual(player: Player, count: number)
-    local character = player.Character
-    if not character then return end
-    local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
-    if not humanoidRootPart then return end
-
-    -- Remove old visuals
-    for _, child in character:GetChildren() do
-        if child.Name == "ScrollsCarry" then
-            child:Destroy()
-        end
-    end
-
-    if count <= 0 then return end
-
-    -- Create scroll tubes on player's back
-    local visibleCount = math.min(count, 4)
-    for i = 1, visibleCount do
-        local scroll = Instance.new("Part")
-        scroll.Name = "ScrollsCarry"
-        scroll.Shape = Enum.PartType.Cylinder
-        scroll.Size = Vector3.new(0.6, 0.2, 0.2)
-        scroll.Position = humanoidRootPart.Position + Vector3.new(-0.4 - (i-1)*0.25, 0.5, -0.5)
-        scroll.Orientation = Vector3.new(0, 0, 90)
-        scroll.Anchored = false
-        scroll.CanCollide = false
-        scroll.Material = Enum.Material.SmoothPlastic
-        scroll.Color = Color3.fromRGB(100, 150, 255)
-        scroll.Parent = character
-
-        local weld = Instance.new("WeldConstraint")
-        weld.Part0 = humanoidRootPart
-        weld.Part1 = scroll
-        weld.Parent = scroll
-    end
-
-    -- Add count indicator if more than visible
-    if count > 4 then
-        local countPart = Instance.new("Part")
-        countPart.Name = "ScrollsCarry"
-        countPart.Shape = Enum.PartType.Ball
-        countPart.Size = Vector3.new(0.4, 0.4, 0.4)
-        countPart.Position = humanoidRootPart.Position + Vector3.new(-1.5, 0.8, -0.5)
-        countPart.Anchored = false
-        countPart.CanCollide = false
-        countPart.Material = Enum.Material.Neon
-        countPart.Color = Color3.fromRGB(100, 150, 255)
-        countPart.Parent = character
-
-        local countWeld = Instance.new("WeldConstraint")
-        countWeld.Part0 = humanoidRootPart
-        countWeld.Part1 = countPart
-        countWeld.Parent = countPart
-
-        local billboard = Instance.new("BillboardGui")
-        billboard.Size = UDim2.new(0, 30, 0, 30)
-        billboard.StudsOffset = Vector3.new(0, 0.5, 0)
-        billboard.Parent = countPart
-
-        local label = Instance.new("TextLabel")
-        label.Size = UDim2.new(1, 0, 1, 0)
-        label.BackgroundTransparency = 1
-        label.Text = "x" .. tostring(count)
-        label.TextColor3 = Color3.new(1, 1, 1)
-        label.TextScaled = true
-        label.Font = Enum.Font.GothamBold
-        label.Parent = billboard
-    end
-end
-
---[[
-    Updates the visual representation of gold bags on the player.
-    Shows coin pouches/bags.
-]]
-local function updatePlayerGoldBagsVisual(player: Player, count: number)
-    local character = player.Character
-    if not character then return end
-    local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
-    if not humanoidRootPart then return end
-
-    -- Remove old visuals
-    for _, child in character:GetChildren() do
-        if child.Name == "GoldBagsCarry" then
-            child:Destroy()
-        end
-    end
-
-    if count <= 0 then return end
-
-    -- Create gold pouches on player's back
-    local visibleCount = math.min(count, 4)
-    for i = 1, visibleCount do
-        local bag = Instance.new("Part")
-        bag.Name = "GoldBagsCarry"
-        bag.Size = Vector3.new(0.5, 0.4, 0.4)
-        bag.Position = humanoidRootPart.Position + Vector3.new(-0.3 - (i-1)*0.3, 0.2 + ((i-1)%2)*0.3, -0.5)
-        bag.Anchored = false
-        bag.CanCollide = false
-        bag.Material = Enum.Material.Fabric
-        bag.Color = Color3.fromRGB(150, 120, 80)
-        bag.Parent = character
-
-        local weld = Instance.new("WeldConstraint")
-        weld.Part0 = humanoidRootPart
-        weld.Part1 = bag
-        weld.Parent = bag
-
-        -- Gold coins spilling out
-        local coin = Instance.new("Part")
-        coin.Name = "GoldBagsCarry"
-        coin.Shape = Enum.PartType.Cylinder
-        coin.Size = Vector3.new(0.05, 0.15, 0.15)
-        coin.Position = bag.Position + Vector3.new(0, 0.25, 0)
-        coin.Anchored = false
-        coin.CanCollide = false
-        coin.Material = Enum.Material.Metal
-        coin.Color = Color3.fromRGB(255, 200, 50)
-        coin.Parent = character
-
-        local coinWeld = Instance.new("WeldConstraint")
-        coinWeld.Part0 = bag
-        coinWeld.Part1 = coin
-        coinWeld.Parent = coin
-    end
-
-    -- Add count indicator if more than visible
-    if count > 4 then
-        local countPart = Instance.new("Part")
-        countPart.Name = "GoldBagsCarry"
-        countPart.Shape = Enum.PartType.Ball
-        countPart.Size = Vector3.new(0.4, 0.4, 0.4)
-        countPart.Position = humanoidRootPart.Position + Vector3.new(-1.5, 0.8, -0.5)
-        countPart.Anchored = false
-        countPart.CanCollide = false
-        countPart.Material = Enum.Material.Neon
-        countPart.Color = Color3.fromRGB(255, 200, 50)
-        countPart.Parent = character
-
-        local countWeld = Instance.new("WeldConstraint")
-        countWeld.Part0 = humanoidRootPart
-        countWeld.Part1 = countPart
-        countWeld.Parent = countPart
-
-        local billboard = Instance.new("BillboardGui")
-        billboard.Size = UDim2.new(0, 30, 0, 30)
-        billboard.StudsOffset = Vector3.new(0, 0.5, 0)
-        billboard.Parent = countPart
-
-        local label = Instance.new("TextLabel")
-        label.Size = UDim2.new(1, 0, 1, 0)
-        label.BackgroundTransparency = 1
-        label.Text = "x" .. tostring(count)
-        label.TextColor3 = Color3.new(1, 1, 1)
-        label.TextScaled = true
-        label.Font = Enum.Font.GothamBold
-        label.Parent = billboard
     end
 end
 
@@ -9505,941 +9613,439 @@ local function createTownHall()
     throne.Parent = townHallModel
 
     -- ========================================================================
-    -- STATION 1: TAX COLLECTION OFFICE (Collect taxes from citizens)
+    -- NEW STATION 1: JEWEL TROPHY CASE (Display gems for city-wide bonuses)
     -- ========================================================================
-    local taxOffice = Instance.new("Part")
-    taxOffice.Name = "TaxOffice"
-    taxOffice.Size = Vector3.new(6, 5, 5)
-    taxOffice.Position = Vector3.new(baseX - 15, GROUND_Y + 2.5, baseZ + 5)
-    taxOffice.Anchored = true
-    taxOffice.Material = Enum.Material.Wood
-    taxOffice.Color = Color3.fromRGB(100, 80, 60)
-    taxOffice.Parent = townHallModel
 
-    -- Tax office roof
-    local taxRoof = Instance.new("Part")
-    taxRoof.Name = "TaxRoof"
-    taxRoof.Size = Vector3.new(7, 1, 6)
-    taxRoof.Position = Vector3.new(baseX - 15, GROUND_Y + 5.5, baseZ + 5)
-    taxRoof.Anchored = true
-    taxRoof.Material = Enum.Material.Slate
-    taxRoof.Color = Color3.fromRGB(70, 60, 55)
-    taxRoof.Parent = townHallModel
+    -- Trophy case back panel (against back wall)
+    local trophyCaseBack = Instance.new("Part")
+    trophyCaseBack.Name = "TrophyCaseBack"
+    trophyCaseBack.Size = Vector3.new(18, 12, 1)
+    trophyCaseBack.Position = Vector3.new(baseX, GROUND_Y + 6, baseZ - 48)
+    trophyCaseBack.Anchored = true
+    trophyCaseBack.Material = Enum.Material.Wood
+    trophyCaseBack.Color = Color3.fromRGB(80, 55, 35)
+    trophyCaseBack.Parent = townHallModel
 
-    -- Tax collection desk
-    local taxDesk = Instance.new("Part")
-    taxDesk.Name = "TaxDesk"
-    taxDesk.Size = Vector3.new(3, 2, 1.5)
-    taxDesk.Position = Vector3.new(baseX - 15, GROUND_Y + 1, baseZ + 7)
-    taxDesk.Anchored = true
-    taxDesk.Material = Enum.Material.Wood
-    taxDesk.Color = Color3.fromRGB(80, 55, 35)
-    taxDesk.Parent = townHallModel
+    -- Trophy case glass front
+    local trophyCaseGlass = Instance.new("Part")
+    trophyCaseGlass.Name = "TrophyCaseGlass"
+    trophyCaseGlass.Size = Vector3.new(18, 12, 0.3)
+    trophyCaseGlass.Position = Vector3.new(baseX, GROUND_Y + 6, baseZ - 46)
+    trophyCaseGlass.Anchored = true
+    trophyCaseGlass.Material = Enum.Material.Glass
+    trophyCaseGlass.Color = Color3.fromRGB(200, 220, 255)
+    trophyCaseGlass.Transparency = 0.7
+    trophyCaseGlass.Parent = townHallModel
 
-    -- Gold coin pile on desk
-    local coinPile = Instance.new("Part")
-    coinPile.Name = "CoinPile"
-    coinPile.Shape = Enum.PartType.Cylinder
-    coinPile.Size = Vector3.new(0.5, 1.5, 1.5)
-    coinPile.Position = Vector3.new(baseX - 14, GROUND_Y + 2.5, baseZ + 7)
-    coinPile.Orientation = Vector3.new(0, 0, 90)
-    coinPile.Anchored = true
-    coinPile.Material = Enum.Material.Metal
-    coinPile.Color = Color3.fromRGB(255, 200, 50)
-    coinPile.Parent = townHallModel
+    -- Create 3 shelves with 3 gem pedestals each (9 total slots)
+    local gemPedestals = {}
+    local gemVisuals = {}
 
-    -- Waiting citizens visual (queue with tax documents)
-    local taxCitizenParts = {}
-    for i = 1, 5 do
-        local citizen = Instance.new("Part")
-        citizen.Name = "TaxCitizen" .. i
-        citizen.Size = Vector3.new(1, 3, 1)
-        citizen.Position = Vector3.new(baseX - 18, GROUND_Y + 1.5, baseZ + 2 + i * 1.5)
-        citizen.Anchored = true
-        citizen.Material = Enum.Material.Fabric
-        citizen.Color = Color3.fromRGB(139 + i * 8, 119 + i * 8, 101 + i * 8)
-        citizen.Transparency = i > 3 and 1 or 0
-        citizen.Parent = townHallModel
+    for shelf = 1, 3 do
+        -- Shelf surface
+        local shelfPart = Instance.new("Part")
+        shelfPart.Name = "Shelf" .. shelf
+        shelfPart.Size = Vector3.new(16, 0.3, 2)
+        shelfPart.Position = Vector3.new(baseX, GROUND_Y + 2 + (shelf * 3), baseZ - 47)
+        shelfPart.Anchored = true
+        shelfPart.Material = Enum.Material.Wood
+        shelfPart.Color = Color3.fromRGB(100, 70, 45)
+        shelfPart.Parent = townHallModel
 
-        local citizenHead = Instance.new("Part")
-        citizenHead.Name = "TaxCitizenHead" .. i
-        citizenHead.Shape = Enum.PartType.Ball
-        citizenHead.Size = Vector3.new(1, 1, 1)
-        citizenHead.Position = Vector3.new(baseX - 18, GROUND_Y + 3.5, baseZ + 2 + i * 1.5)
-        citizenHead.Anchored = true
-        citizenHead.Material = Enum.Material.SmoothPlastic
-        citizenHead.Color = Color3.fromRGB(227, 183, 151)
-        citizenHead.Transparency = i > 3 and 1 or 0
-        citizenHead.Parent = townHallModel
+        -- Create 3 pedestals per shelf
+        for slot = 1, 3 do
+            local slotNum = (shelf - 1) * 3 + slot
+            local xOffset = -5 + (slot - 1) * 5
 
-        table.insert(taxCitizenParts, { body = citizen, head = citizenHead })
-    end
+            -- Pedestal base
+            local pedestal = Instance.new("Part")
+            pedestal.Name = "Pedestal_" .. slotNum
+            pedestal.Size = Vector3.new(2, 0.8, 1.5)
+            pedestal.Position = Vector3.new(baseX + xOffset, shelfPart.Position.Y + 0.55, baseZ - 47)
+            pedestal.Anchored = true
+            pedestal.Material = Enum.Material.Marble
+            pedestal.Color = Color3.fromRGB(220, 215, 210)
+            pedestal.Parent = townHallModel
+            gemPedestals[slotNum] = pedestal
 
-    -- Tax queue state
-    local taxDocsAvailable = 3
+            -- Gem visual placeholder (starts invisible)
+            local gemVisual = Instance.new("Part")
+            gemVisual.Name = "GemVisual_" .. slotNum
+            gemVisual.Shape = Enum.PartType.Ball
+            gemVisual.Size = Vector3.new(1, 1, 1)
+            gemVisual.Position = pedestal.Position + Vector3.new(0, 0.8, 0)
+            gemVisual.Anchored = true
+            gemVisual.Material = Enum.Material.Neon
+            gemVisual.Color = Color3.fromRGB(255, 255, 255)
+            gemVisual.Transparency = 1 -- Hidden by default
+            gemVisual.Parent = townHallModel
+            gemVisuals[slotNum] = gemVisual
 
-    local function updateTaxQueueVisuals()
-        for i, parts in ipairs(taxCitizenParts) do
-            local visible = i <= taxDocsAvailable
-            parts.body.Transparency = visible and 0 or 1
-            parts.head.Transparency = visible and 0 or 1
-        end
-    end
-    TownHallState.updateTaxQueueVisuals = updateTaxQueueVisuals
+            -- Check if slot is active or locked
+            if slotNum <= TownHallState.jewelCase.maxSlots then
+                -- Active slot - interaction prompt
+                local prompt = Instance.new("ProximityPrompt")
+                prompt.Name = "GemSlotPrompt_" .. slotNum
+                prompt.ObjectText = "Gem Slot " .. slotNum
+                prompt.ActionText = "Place Gem"
+                prompt.HoldDuration = 0.5
+                prompt.MaxActivationDistance = 8
+                prompt.Parent = pedestal
 
-    -- Sign
-    createSign(townHallModel, "COLLECT TAX DOCS", Vector3.new(baseX - 15, GROUND_Y + 6.5, baseZ + 8), Vector3.new(6, 0.8, 0.3))
+                prompt.Triggered:Connect(function(player)
+                    -- Check if player has a held gem
+                    local heldGem = GoldMineState.playerHeldGem[player.UserId]
+                    if heldGem then
+                        -- Check if slot is empty
+                        if not TownHallState.jewelCase.slots[slotNum] then
+                            -- Place gem
+                            TownHallState.jewelCase.slots[slotNum] = heldGem
+                            GoldMineState.playerHeldGem[player.UserId] = nil
 
-    -- WALK-THROUGH TRIGGER: Collect tax documents
-    local taxTrigger = Instance.new("Part")
-    taxTrigger.Name = "TaxTrigger"
-    taxTrigger.Size = Vector3.new(10, 5, 8)
-    taxTrigger.Position = Vector3.new(baseX - 16, GROUND_Y + 2.5, baseZ + 5)
-    taxTrigger.Anchored = true
-    taxTrigger.Transparency = 1
-    taxTrigger.CanCollide = false
-    taxTrigger.Parent = townHallModel
+                            -- Update visual
+                            gemVisual.Color = heldGem.color
+                            gemVisual.Transparency = 0
 
-    local taxDebounce = {}
-    taxTrigger.Touched:Connect(function(hit)
-        local character = hit.Parent
-        local humanoid = character and character:FindFirstChild("Humanoid")
-        if not humanoid then return end
-        local player = Players:GetPlayerFromCharacter(character)
-        if not player then return end
-        if taxDebounce[player.UserId] then return end
-        taxDebounce[player.UserId] = true
+                            -- Size based on gem size
+                            local sizeMap = { Chip = 0.6, Stone = 0.8, Gem = 1.0, Jewel = 1.4 }
+                            local visualSize = sizeMap[heldGem.size] or 1.0
+                            gemVisual.Size = Vector3.new(visualSize, visualSize, visualSize)
 
-        local currentDocs = getPlayerTaxDocs(player)
-        if taxDocsAvailable > 0 and currentDocs < 20 then
-            local toCollect = math.min(taxDocsAvailable, 20 - currentDocs, 3)
-            taxDocsAvailable = taxDocsAvailable - toCollect
-            setPlayerTaxDocs(player, currentDocs + toCollect)
-            updatePlayerTaxDocsVisual(player, currentDocs + toCollect)
-            updateTaxQueueVisuals()
+                            print(string.format("[TownHall] %s placed a %s %s in slot %d!",
+                                player.Name, heldGem.size, heldGem.type, slotNum))
+                            print(string.format("  Bonus: +%.0f%% %s", (heldGem.multiplier - 1) * 100, heldGem.boost))
 
-            local ledgerStats = LedgerStats[TownHallState.equipment.ledgers]
-            addTownHallXP(10 * toCollect)
-
-            -- Gold sparkle effect
-            local sparkle = Instance.new("ParticleEmitter")
-            sparkle.Color = ColorSequence.new(Color3.fromRGB(255, 215, 0))
-            sparkle.Size = NumberSequence.new(0.3, 0)
-            sparkle.Lifetime = NumberRange.new(0.5, 1)
-            sparkle.Rate = 30
-            sparkle.Speed = NumberRange.new(2, 4)
-            sparkle.Parent = coinPile
-            task.delay(0.8, function() sparkle:Destroy() end)
-
-            print(string.format("[TownHall] %s collected %d tax document(s)!", player.Name, toCollect))
-            print(string.format("  Carrying %d docs. Take to CENSUS DESK!", currentDocs + toCollect))
-        elseif taxDocsAvailable == 0 then
-            print(string.format("[TownHall] %s: No citizens waiting to pay taxes!", player.Name))
-        else
-            print(string.format("[TownHall] %s: Already carrying maximum documents!", player.Name))
-        end
-
-        task.delay(1, function() taxDebounce[player.UserId] = nil end)
-    end)
-
-    -- Regenerate tax citizens over time
-    task.spawn(function()
-        while true do
-            task.wait(8)
-            if taxDocsAvailable < 5 then
-                taxDocsAvailable = taxDocsAvailable + 1
-                updateTaxQueueVisuals()
-                print("[TownHall] A citizen arrived to pay taxes!")
-            end
-        end
-    end)
-
-    -- ========================================================================
-    -- STATION 2: CENSUS DESK (Register citizens to increase population)
-    -- ========================================================================
-    local censusDesk = Instance.new("Part")
-    censusDesk.Name = "CensusDesk"
-    censusDesk.Size = Vector3.new(4, 3, 2)
-    censusDesk.Position = Vector3.new(baseX - 15, GROUND_Y + 1.5, baseZ - 5)
-    censusDesk.Anchored = true
-    censusDesk.Material = Enum.Material.Wood
-    censusDesk.Color = Color3.fromRGB(90, 65, 45)
-    censusDesk.Parent = townHallModel
-
-    -- Census ledger book
-    local censusBook = Instance.new("Part")
-    censusBook.Name = "CensusBook"
-    censusBook.Size = Vector3.new(1.5, 0.3, 1)
-    censusBook.Position = Vector3.new(baseX - 15, GROUND_Y + 3.2, baseZ - 5)
-    censusBook.Anchored = true
-    censusBook.Material = Enum.Material.Fabric
-    censusBook.Color = Color3.fromRGB(80, 40, 30)
-    censusBook.Parent = townHallModel
-
-    -- Quill pen
-    local quill = Instance.new("Part")
-    quill.Name = "Quill"
-    quill.Size = Vector3.new(0.1, 0.8, 0.1)
-    quill.Position = Vector3.new(baseX - 14, GROUND_Y + 3.5, baseZ - 4.5)
-    quill.Orientation = Vector3.new(0, 0, 30)
-    quill.Anchored = true
-    quill.Material = Enum.Material.Fabric
-    quill.Color = Color3.fromRGB(255, 255, 255)
-    quill.Parent = townHallModel
-
-    -- Census sign
-    local censusSign = Instance.new("Part")
-    censusSign.Name = "CensusSign"
-    censusSign.Size = Vector3.new(2.5, 1, 0.2)
-    censusSign.Position = Vector3.new(baseX - 15, GROUND_Y + 4, baseZ - 3)
-    censusSign.Anchored = true
-    censusSign.Material = Enum.Material.Wood
-    censusSign.Color = Color3.fromRGB(100, 70, 45)
-    censusSign.Parent = townHallModel
-
-    -- Census queue visuals (documents being processed)
-    local censusQueueParts = {}
-    for i = 1, 4 do
-        local docStack = Instance.new("Part")
-        docStack.Name = "CensusQueue" .. i
-        docStack.Size = Vector3.new(0.6, 0.1 * i, 0.5)
-        docStack.Position = Vector3.new(baseX - 13, GROUND_Y + 3.1 + (i-1)*0.08, baseZ - 6 + i * 0.8)
-        docStack.Anchored = true
-        docStack.Material = Enum.Material.SmoothPlastic
-        docStack.Color = Color3.fromRGB(240, 230, 200)
-        docStack.Transparency = 1
-        docStack.Parent = townHallModel
-        table.insert(censusQueueParts, docStack)
-    end
-
-    -- Census records ready for pickup
-    local censusReadyParts = {}
-    for i = 1, 4 do
-        local record = Instance.new("Part")
-        record.Name = "CensusRecord" .. i
-        record.Size = Vector3.new(0.5, 0.12, 0.4)
-        record.Position = Vector3.new(baseX - 17, GROUND_Y + 3.1 + (i-1)*0.15, baseZ - 5)
-        record.Anchored = true
-        record.Material = Enum.Material.Fabric
-        record.Color = Color3.fromRGB(80, 40, 30)
-        record.Transparency = 1
-        record.Parent = townHallModel
-        table.insert(censusReadyParts, record)
-    end
-
-    -- Census state
-    local docsProcessing = 0
-    local recordsReady = 0
-
-    local function updateCensusVisuals()
-        for i, part in ipairs(censusQueueParts) do
-            part.Transparency = i <= docsProcessing and 0 or 1
-        end
-        for i, part in ipairs(censusReadyParts) do
-            part.Transparency = i <= recordsReady and 0 or 1
-        end
-    end
-    TownHallState.updateCensusQueueVisuals = updateCensusVisuals
-
-    -- Signs
-    createSign(townHallModel, "DROP TAX DOCS", Vector3.new(baseX - 13, GROUND_Y + 5, baseZ - 5), Vector3.new(5, 0.8, 0.3))
-    createSign(townHallModel, "PICK UP RECORDS", Vector3.new(baseX - 17, GROUND_Y + 5, baseZ - 5), Vector3.new(6, 0.8, 0.3))
-
-    -- WALK-THROUGH TRIGGER: Drop tax documents for processing
-    local censusInputTrigger = Instance.new("Part")
-    censusInputTrigger.Name = "CensusInputTrigger"
-    censusInputTrigger.Size = Vector3.new(6, 5, 6)
-    censusInputTrigger.Position = Vector3.new(baseX - 13, GROUND_Y + 2.5, baseZ - 5)
-    censusInputTrigger.Anchored = true
-    censusInputTrigger.Transparency = 1
-    censusInputTrigger.CanCollide = false
-    censusInputTrigger.Parent = townHallModel
-
-    local censusInputDebounce = {}
-    censusInputTrigger.Touched:Connect(function(hit)
-        local character = hit.Parent
-        local humanoid = character and character:FindFirstChild("Humanoid")
-        if not humanoid then return end
-        local player = Players:GetPlayerFromCharacter(character)
-        if not player then return end
-        if censusInputDebounce[player.UserId] then return end
-        censusInputDebounce[player.UserId] = true
-
-        local playerDocs = getPlayerTaxDocs(player)
-        if playerDocs > 0 and docsProcessing < 4 then
-            local toDeposit = math.min(playerDocs, 4 - docsProcessing)
-            setPlayerTaxDocs(player, playerDocs - toDeposit)
-            updatePlayerTaxDocsVisual(player, playerDocs - toDeposit)
-            docsProcessing = docsProcessing + toDeposit
-            updateCensusVisuals()
-            print(string.format("[TownHall] %s submitted %d tax document(s) for registration!", player.Name, toDeposit))
-        elseif playerDocs == 0 then
-            print(string.format("[TownHall] %s: Not carrying any tax documents! Collect from Tax Office.", player.Name))
-        else
-            print(string.format("[TownHall] %s: Census desk is full! Wait for processing.", player.Name))
-        end
-
-        task.delay(1.5, function() censusInputDebounce[player.UserId] = nil end)
-    end)
-
-    -- WALK-THROUGH TRIGGER: Pick up census records
-    local censusOutputTrigger = Instance.new("Part")
-    censusOutputTrigger.Name = "CensusOutputTrigger"
-    censusOutputTrigger.Size = Vector3.new(6, 5, 6)
-    censusOutputTrigger.Position = Vector3.new(baseX - 17, GROUND_Y + 2.5, baseZ - 5)
-    censusOutputTrigger.Anchored = true
-    censusOutputTrigger.Transparency = 1
-    censusOutputTrigger.CanCollide = false
-    censusOutputTrigger.Parent = townHallModel
-
-    local censusOutputDebounce = {}
-    censusOutputTrigger.Touched:Connect(function(hit)
-        local character = hit.Parent
-        local humanoid = character and character:FindFirstChild("Humanoid")
-        if not humanoid then return end
-        local player = Players:GetPlayerFromCharacter(character)
-        if not player then return end
-        if censusOutputDebounce[player.UserId] then return end
-        censusOutputDebounce[player.UserId] = true
-
-        local playerRecords = getPlayerCensusRecords(player)
-        if recordsReady > 0 and playerRecords < 20 then
-            local toPickup = math.min(recordsReady, 20 - playerRecords)
-            recordsReady = recordsReady - toPickup
-            setPlayerCensusRecords(player, playerRecords + toPickup)
-            updatePlayerCensusVisual(player, playerRecords + toPickup)
-            updateCensusVisuals()
-            print(string.format("[TownHall] %s picked up %d census record(s)!", player.Name, toPickup))
-            print(string.format("  Carrying %d records. Take to LIBRARY for research!", playerRecords + toPickup))
-        elseif recordsReady == 0 then
-            print(string.format("[TownHall] %s: No records ready. Processing in progress...", player.Name))
-        else
-            print(string.format("[TownHall] %s: Already carrying maximum records!", player.Name))
-        end
-
-        task.delay(1, function() censusOutputDebounce[player.UserId] = nil end)
-    end)
-
-    -- Census processing loop (docs → records)
-    task.spawn(function()
-        while true do
-            task.wait(4)
-            if docsProcessing > 0 and recordsReady < 4 then
-                docsProcessing = docsProcessing - 1
-                recordsReady = recordsReady + 1
-                updateCensusVisuals()
-
-                -- Increment population every few records
-                local inv = getTownHallInventory(Players:GetPlayers()[1] or {UserId = 0})
-                if inv then
-                    inv.registeredCitizens = (inv.registeredCitizens or 0) + 1
-                    if inv.registeredCitizens % 5 == 0 then
-                        TownHallState.population = TownHallState.population + 1
-                        print(string.format("[TownHall] Population increased to %d!", TownHallState.population))
+                            -- Update bonuses display
+                            local bonuses = calculateGemBonuses()
+                            print(string.format("[TownHall] Current bonuses: Production %.2fx, Speed %.2fx, Defense %.2fx",
+                                bonuses.production, bonuses.speed, bonuses.defense))
+                        else
+                            print(string.format("[TownHall] Slot %d already has a gem!", slotNum))
+                        end
+                    else
+                        print(string.format("[TownHall] %s: No gem to place! Prospect gems at the Gold Mine.", player.Name))
                     end
+                end)
+            else
+                -- Locked slot - show padlock
+                local lockBillboard = Instance.new("BillboardGui")
+                lockBillboard.Name = "LockIndicator"
+                lockBillboard.Size = UDim2.new(0, 50, 0, 50)
+                lockBillboard.StudsOffset = Vector3.new(0, 1, 0)
+                lockBillboard.Parent = pedestal
+
+                local lockLabel = Instance.new("TextLabel")
+                lockLabel.Name = "LockIcon"
+                lockLabel.Size = UDim2.new(1, 0, 1, 0)
+                lockLabel.BackgroundTransparency = 1
+                lockLabel.Text = "🔒"
+                lockLabel.TextScaled = true
+                lockLabel.Font = Enum.Font.GothamBold
+                lockLabel.TextColor3 = Color3.fromRGB(100, 100, 100)
+                lockLabel.Parent = lockBillboard
+
+                -- Locked slot purchase prompt
+                local cost = GemSlotCosts[slotNum]
+                if cost then
+                    local unlockPrompt = Instance.new("ProximityPrompt")
+                    unlockPrompt.Name = "UnlockSlotPrompt_" .. slotNum
+                    unlockPrompt.ObjectText = "Locked Slot"
+                    unlockPrompt.ActionText = string.format("Unlock (%d Gold)", cost.gold)
+                    unlockPrompt.HoldDuration = 1.0
+                    unlockPrompt.MaxActivationDistance = 6
+                    unlockPrompt.Parent = pedestal
+
+                    unlockPrompt.Triggered:Connect(function(player)
+                        -- Check if previous slots are unlocked
+                        if TownHallState.jewelCase.maxSlots < slotNum - 1 then
+                            print(string.format("[TownHall] Must unlock slot %d first!", slotNum - 1))
+                            return
+                        end
+
+                        -- TODO: Check and deduct resources
+                        print(string.format("[TownHall] %s unlocked gem slot %d for %d gold!",
+                            player.Name, slotNum, cost.gold))
+                        TownHallState.jewelCase.maxSlots = slotNum
+
+                        -- Update visuals - remove lock, add interaction
+                        lockBillboard:Destroy()
+                        unlockPrompt:Destroy()
+
+                        -- Add new interaction prompt
+                        local newPrompt = Instance.new("ProximityPrompt")
+                        newPrompt.Name = "GemSlotPrompt_" .. slotNum
+                        newPrompt.ObjectText = "Gem Slot " .. slotNum
+                        newPrompt.ActionText = "Place Gem"
+                        newPrompt.HoldDuration = 0.5
+                        newPrompt.Parent = pedestal
+                    end)
                 end
-
-                -- Ink animation
-                local ink = Instance.new("ParticleEmitter")
-                ink.Color = ColorSequence.new(Color3.fromRGB(30, 30, 60))
-                ink.Size = NumberSequence.new(0.1, 0)
-                ink.Lifetime = NumberRange.new(0.3, 0.5)
-                ink.Rate = 20
-                ink.Speed = NumberRange.new(1, 2)
-                ink.Parent = quill
-                task.delay(0.5, function() ink:Destroy() end)
-
-                addTownHallXP(8)
-                print(string.format("[TownHall] Census record created! Records ready: %d", recordsReady))
             end
         end
-    end)
+    end
+
+    -- Trophy case label
+    local trophyLabel = Instance.new("Part")
+    trophyLabel.Name = "TrophyCaseLabel"
+    trophyLabel.Size = Vector3.new(10, 1.5, 0.2)
+    trophyLabel.Position = Vector3.new(baseX, GROUND_Y + 13, baseZ - 48)
+    trophyLabel.Anchored = true
+    trophyLabel.Material = Enum.Material.SmoothPlastic
+    trophyLabel.Color = Color3.fromRGB(180, 160, 50)
+    trophyLabel.Parent = townHallModel
+
+    local trophyLabelGui = Instance.new("SurfaceGui")
+    trophyLabelGui.Face = Enum.NormalId.Front
+    trophyLabelGui.Parent = trophyLabel
+
+    local trophyLabelText = Instance.new("TextLabel")
+    trophyLabelText.Size = UDim2.new(1, 0, 1, 0)
+    trophyLabelText.BackgroundTransparency = 1
+    trophyLabelText.Text = "JEWEL TROPHY CASE"
+    trophyLabelText.TextScaled = true
+    trophyLabelText.Font = Enum.Font.GothamBold
+    trophyLabelText.TextColor3 = Color3.fromRGB(255, 255, 255)
+    trophyLabelText.Parent = trophyLabelGui
 
     -- ========================================================================
-    -- STATION 3: RESEARCH LIBRARY (Study scrolls to earn research points)
+    -- NEW STATION 2: BUILDING UPGRADE CENTER
     -- ========================================================================
-    local library = Instance.new("Part")
-    library.Name = "Library"
-    library.Size = Vector3.new(8, 6, 6)
-    library.Position = Vector3.new(baseX + 15, GROUND_Y + 3, baseZ + 5)
-    library.Anchored = true
-    library.Material = Enum.Material.Wood
-    library.Color = Color3.fromRGB(90, 70, 50)
-    library.Parent = townHallModel
 
-    -- Library roof
-    local libraryRoof = Instance.new("Part")
-    libraryRoof.Name = "LibraryRoof"
-    libraryRoof.Size = Vector3.new(9, 1, 7)
-    libraryRoof.Position = Vector3.new(baseX + 15, GROUND_Y + 6.5, baseZ + 5)
-    libraryRoof.Anchored = true
-    libraryRoof.Material = Enum.Material.Slate
-    libraryRoof.Color = Color3.fromRGB(60, 50, 45)
-    libraryRoof.Parent = townHallModel
+    -- Upgrade center desk (left side of hall)
+    local upgradeDesk = Instance.new("Part")
+    upgradeDesk.Name = "UpgradeDesk"
+    upgradeDesk.Size = Vector3.new(8, 3, 5)
+    upgradeDesk.Position = Vector3.new(baseX - 25, GROUND_Y + 1.5, baseZ + 10)
+    upgradeDesk.Anchored = true
+    upgradeDesk.Material = Enum.Material.Wood
+    upgradeDesk.Color = Color3.fromRGB(90, 65, 45)
+    upgradeDesk.Parent = townHallModel
 
-    -- Bookshelves
-    for i = 1, 2 do
-        local bookshelf = Instance.new("Part")
-        bookshelf.Name = "Bookshelf" .. i
-        bookshelf.Size = Vector3.new(0.5, 4, 4)
-        bookshelf.Position = Vector3.new(baseX + 11 + i * 4, GROUND_Y + 2, baseZ + 3)
-        bookshelf.Anchored = true
-        bookshelf.Material = Enum.Material.Wood
-        bookshelf.Color = Color3.fromRGB(70, 50, 35)
-        bookshelf.Parent = townHallModel
-
-        -- Books on shelf
-        for j = 1, 3 do
-            local book = Instance.new("Part")
-            book.Name = "Book" .. i .. "_" .. j
-            book.Size = Vector3.new(0.3, 0.8, 0.5)
-            book.Position = Vector3.new(baseX + 11.3 + i * 4, GROUND_Y + 0.5 + j * 1.2, baseZ + 2 + j * 0.5)
-            book.Anchored = true
-            book.Material = Enum.Material.Fabric
-            book.Color = Color3.fromRGB(math.random(60, 150), math.random(40, 100), math.random(30, 80))
-            book.Parent = townHallModel
-        end
+    -- Blueprint rolls on desk
+    for i = 1, 3 do
+        local blueprint = Instance.new("Part")
+        blueprint.Name = "Blueprint" .. i
+        blueprint.Shape = Enum.PartType.Cylinder
+        blueprint.Size = Vector3.new(0.4, 2 + i * 0.3, 0.4)
+        blueprint.Position = Vector3.new(baseX - 27 + i * 1.5, GROUND_Y + 3.2, baseZ + 10)
+        blueprint.Orientation = Vector3.new(0, 0, 90)
+        blueprint.Anchored = true
+        blueprint.Material = Enum.Material.SmoothPlastic
+        blueprint.Color = Color3.fromRGB(240, 230, 200)
+        blueprint.Parent = townHallModel
     end
-
-    -- Study desk
-    local studyDesk = Instance.new("Part")
-    studyDesk.Name = "StudyDesk"
-    studyDesk.Size = Vector3.new(3, 2, 2)
-    studyDesk.Position = Vector3.new(baseX + 15, GROUND_Y + 1, baseZ + 7)
-    studyDesk.Anchored = true
-    studyDesk.Material = Enum.Material.Wood
-    studyDesk.Color = Color3.fromRGB(80, 55, 35)
-    studyDesk.Parent = townHallModel
-
-    -- Scroll on desk
-    local scroll = Instance.new("Part")
-    scroll.Name = "Scroll"
-    scroll.Shape = Enum.PartType.Cylinder
-    scroll.Size = Vector3.new(0.3, 2, 0.3)
-    scroll.Position = Vector3.new(baseX + 15, GROUND_Y + 2.2, baseZ + 7)
-    scroll.Orientation = Vector3.new(0, 0, 90)
-    scroll.Anchored = true
-    scroll.Material = Enum.Material.SmoothPlastic
-    scroll.Color = Color3.fromRGB(240, 230, 200)
-    scroll.Parent = townHallModel
-
-    -- Candle for light
-    local candle = Instance.new("Part")
-    candle.Name = "Candle"
-    candle.Size = Vector3.new(0.3, 0.8, 0.3)
-    candle.Position = Vector3.new(baseX + 16, GROUND_Y + 2.4, baseZ + 6.5)
-    candle.Anchored = true
-    candle.Material = Enum.Material.SmoothPlastic
-    candle.Color = Color3.fromRGB(255, 250, 220)
-    candle.Parent = townHallModel
-
-    local candleFlame = Instance.new("PointLight")
-    candleFlame.Color = Color3.fromRGB(255, 200, 100)
-    candleFlame.Brightness = 1
-    candleFlame.Range = 8
-    candleFlame.Parent = candle
-
-    -- Library queue visuals (census records being studied)
-    local libraryQueueParts = {}
-    for i = 1, 4 do
-        local record = Instance.new("Part")
-        record.Name = "LibraryQueue" .. i
-        record.Size = Vector3.new(0.5, 0.12, 0.4)
-        record.Position = Vector3.new(baseX + 13, GROUND_Y + 2.15 + (i-1)*0.15, baseZ + 7)
-        record.Anchored = true
-        record.Material = Enum.Material.Fabric
-        record.Color = Color3.fromRGB(80, 40, 30)
-        record.Transparency = 1
-        record.Parent = townHallModel
-        table.insert(libraryQueueParts, record)
-    end
-
-    -- Gold bags ready for pickup (research yields wealth)
-    local goldBagReadyParts = {}
-    for i = 1, 4 do
-        local bag = Instance.new("Part")
-        bag.Name = "GoldBagReady" .. i
-        bag.Size = Vector3.new(0.4, 0.35, 0.35)
-        bag.Position = Vector3.new(baseX + 17, GROUND_Y + 2.2 + (i-1)*0.25, baseZ + 7)
-        bag.Anchored = true
-        bag.Material = Enum.Material.Fabric
-        bag.Color = Color3.fromRGB(150, 120, 80)
-        bag.Transparency = 1
-        bag.Parent = townHallModel
-        table.insert(goldBagReadyParts, bag)
-    end
-
-    -- Library state
-    local recordsStudying = 0
-    local goldBagsReady = 0
-
-    local function updateLibraryVisuals()
-        for i, part in ipairs(libraryQueueParts) do
-            part.Transparency = i <= recordsStudying and 0 or 1
-        end
-        for i, part in ipairs(goldBagReadyParts) do
-            part.Transparency = i <= goldBagsReady and 0 or 1
-        end
-    end
-    TownHallState.updateScrollQueueVisuals = updateLibraryVisuals
-
-    -- Signs
-    createSign(townHallModel, "DROP RECORDS", Vector3.new(baseX + 13, GROUND_Y + 7, baseZ + 7), Vector3.new(5, 0.8, 0.3))
-    createSign(townHallModel, "PICK UP GOLD", Vector3.new(baseX + 17, GROUND_Y + 7, baseZ + 7), Vector3.new(5, 0.8, 0.3))
-
-    -- WALK-THROUGH TRIGGER: Drop census records for study
-    local libraryInputTrigger = Instance.new("Part")
-    libraryInputTrigger.Name = "LibraryInputTrigger"
-    libraryInputTrigger.Size = Vector3.new(6, 5, 8)
-    libraryInputTrigger.Position = Vector3.new(baseX + 13, GROUND_Y + 2.5, baseZ + 5)
-    libraryInputTrigger.Anchored = true
-    libraryInputTrigger.Transparency = 1
-    libraryInputTrigger.CanCollide = false
-    libraryInputTrigger.Parent = townHallModel
-
-    local libraryInputDebounce = {}
-    libraryInputTrigger.Touched:Connect(function(hit)
-        local character = hit.Parent
-        local humanoid = character and character:FindFirstChild("Humanoid")
-        if not humanoid then return end
-        local player = Players:GetPlayerFromCharacter(character)
-        if not player then return end
-        if libraryInputDebounce[player.UserId] then return end
-        libraryInputDebounce[player.UserId] = true
-
-        local playerRecords = getPlayerCensusRecords(player)
-        if playerRecords > 0 and recordsStudying < 4 then
-            local toDeposit = math.min(playerRecords, 4 - recordsStudying)
-            setPlayerCensusRecords(player, playerRecords - toDeposit)
-            updatePlayerCensusVisual(player, playerRecords - toDeposit)
-            recordsStudying = recordsStudying + toDeposit
-            updateLibraryVisuals()
-            print(string.format("[TownHall] %s submitted %d census record(s) for research!", player.Name, toDeposit))
-        elseif playerRecords == 0 then
-            print(string.format("[TownHall] %s: Not carrying any census records! Get from Census Desk.", player.Name))
-        else
-            print(string.format("[TownHall] %s: Library is full! Wait for research.", player.Name))
-        end
-
-        task.delay(1.5, function() libraryInputDebounce[player.UserId] = nil end)
-    end)
-
-    -- WALK-THROUGH TRIGGER: Pick up gold bags
-    local libraryOutputTrigger = Instance.new("Part")
-    libraryOutputTrigger.Name = "LibraryOutputTrigger"
-    libraryOutputTrigger.Size = Vector3.new(6, 5, 8)
-    libraryOutputTrigger.Position = Vector3.new(baseX + 17, GROUND_Y + 2.5, baseZ + 5)
-    libraryOutputTrigger.Anchored = true
-    libraryOutputTrigger.Transparency = 1
-    libraryOutputTrigger.CanCollide = false
-    libraryOutputTrigger.Parent = townHallModel
-
-    local libraryOutputDebounce = {}
-    libraryOutputTrigger.Touched:Connect(function(hit)
-        local character = hit.Parent
-        local humanoid = character and character:FindFirstChild("Humanoid")
-        if not humanoid then return end
-        local player = Players:GetPlayerFromCharacter(character)
-        if not player then return end
-        if libraryOutputDebounce[player.UserId] then return end
-        libraryOutputDebounce[player.UserId] = true
-
-        local playerGold = getPlayerGoldBags(player)
-        if goldBagsReady > 0 and playerGold < 20 then
-            local toPickup = math.min(goldBagsReady, 20 - playerGold)
-            goldBagsReady = goldBagsReady - toPickup
-            setPlayerGoldBags(player, playerGold + toPickup)
-            updatePlayerGoldBagsVisual(player, playerGold + toPickup)
-            updateLibraryVisuals()
-            print(string.format("[TownHall] %s picked up %d gold bag(s)!", player.Name, toPickup))
-            print(string.format("  Carrying %d gold bags. Deposit at TREASURY!", playerGold + toPickup))
-        elseif goldBagsReady == 0 then
-            print(string.format("[TownHall] %s: No gold bags ready. Research in progress...", player.Name))
-        else
-            print(string.format("[TownHall] %s: Already carrying maximum gold bags!", player.Name))
-        end
-
-        task.delay(1, function() libraryOutputDebounce[player.UserId] = nil end)
-    end)
-
-    -- Library processing loop (records → gold bags)
-    task.spawn(function()
-        while true do
-            task.wait(5)
-            if recordsStudying > 0 and goldBagsReady < 4 then
-                local scrollStats = ScrollStats[TownHallState.equipment.scrolls]
-                recordsStudying = recordsStudying - 1
-                goldBagsReady = goldBagsReady + 1
-                updateLibraryVisuals()
-
-                -- Magical particles
-                local magic = Instance.new("ParticleEmitter")
-                magic.Color = ColorSequence.new(Color3.fromRGB(100, 150, 255))
-                magic.Size = NumberSequence.new(0.4, 0)
-                magic.Lifetime = NumberRange.new(0.8, 1.5)
-                magic.Rate = 25
-                magic.Speed = NumberRange.new(2, 4)
-                magic.SpreadAngle = Vector2.new(45, 45)
-                magic.Parent = scroll
-                task.delay(1, function() magic:Destroy() end)
-
-                addTownHallXP(15)
-                print(string.format("[TownHall] Research complete! (+%d points) Gold bags ready: %d",
-                    scrollStats.pointsPerStudy, goldBagsReady))
-            end
-        end
-    end)
-
-    -- ========================================================================
-    -- STATION 4: TREASURY VAULT (Deposit and withdraw gold)
-    -- ========================================================================
-    local vault = Instance.new("Part")
-    vault.Name = "TreasuryVault"
-    vault.Size = Vector3.new(6, 5, 5)
-    vault.Position = Vector3.new(baseX + 15, GROUND_Y + 2.5, baseZ - 8)
-    vault.Anchored = true
-    vault.Material = Enum.Material.Metal
-    vault.Color = Color3.fromRGB(80, 80, 90)
-    vault.Parent = townHallModel
-
-    -- Vault door (big and imposing)
-    local vaultDoor = Instance.new("Part")
-    vaultDoor.Name = "VaultDoor"
-    vaultDoor.Size = Vector3.new(0.5, 4, 3)
-    vaultDoor.Position = Vector3.new(baseX + 18, GROUND_Y + 2, baseZ - 8)
-    vaultDoor.Anchored = true
-    vaultDoor.Material = Enum.Material.Metal
-    vaultDoor.Color = Color3.fromRGB(60, 60, 70)
-    vaultDoor.Parent = townHallModel
-
-    -- Vault wheel/lock
-    local vaultWheel = Instance.new("Part")
-    vaultWheel.Name = "VaultWheel"
-    vaultWheel.Shape = Enum.PartType.Cylinder
-    vaultWheel.Size = Vector3.new(0.3, 1.5, 1.5)
-    vaultWheel.Position = Vector3.new(baseX + 18.3, GROUND_Y + 2.5, baseZ - 8)
-    vaultWheel.Orientation = Vector3.new(0, 0, 90)
-    vaultWheel.Anchored = true
-    vaultWheel.Material = Enum.Material.Metal
-    vaultWheel.Color = Color3.fromRGB(180, 170, 50)
-    vaultWheel.Parent = townHallModel
-
-    -- Gold pile inside (visible sparkle)
-    local goldPile = Instance.new("Part")
-    goldPile.Name = "GoldPile"
-    goldPile.Size = Vector3.new(3, 1.5, 3)
-    goldPile.Position = Vector3.new(baseX + 14, GROUND_Y + 0.75, baseZ - 8)
-    goldPile.Anchored = true
-    goldPile.Material = Enum.Material.Metal
-    goldPile.Color = Color3.fromRGB(255, 200, 50)
-    goldPile.Parent = townHallModel
-
-    -- Constant gold sparkle
-    local vaultSparkle = Instance.new("ParticleEmitter")
-    vaultSparkle.Color = ColorSequence.new(Color3.fromRGB(255, 215, 0))
-    vaultSparkle.Size = NumberSequence.new(0.2, 0)
-    vaultSparkle.Lifetime = NumberRange.new(1, 2)
-    vaultSparkle.Rate = 5
-    vaultSparkle.Speed = NumberRange.new(0.5, 1)
-    vaultSparkle.Parent = goldPile
-
-    -- Treasury deposited gold visual (grows as more gold deposited)
-    local treasuryGoldParts = {}
-    for i = 1, 6 do
-        local goldStack = Instance.new("Part")
-        goldStack.Name = "TreasuryGold" .. i
-        goldStack.Shape = Enum.PartType.Cylinder
-        goldStack.Size = Vector3.new(0.3, 0.8 + (i-1)*0.2, 0.8 + (i-1)*0.2)
-        goldStack.Position = Vector3.new(baseX + 13 + ((i-1) % 3) * 1, GROUND_Y + 0.5 + math.floor((i-1)/3) * 0.8, baseZ - 8)
-        goldStack.Orientation = Vector3.new(0, 0, 90)
-        goldStack.Anchored = true
-        goldStack.Material = Enum.Material.Metal
-        goldStack.Color = Color3.fromRGB(255, 200, 50)
-        goldStack.Transparency = 1
-        goldStack.Parent = townHallModel
-        table.insert(treasuryGoldParts, goldStack)
-    end
-
-    local totalGoldDeposited = 0
-
-    local function updateTreasuryVisuals()
-        local visibleStacks = math.min(math.floor(totalGoldDeposited / 50), 6)
-        for i, part in ipairs(treasuryGoldParts) do
-            part.Transparency = i <= visibleStacks and 0 or 1
-        end
-    end
-    TownHallState.updateGoldQueueVisuals = updateTreasuryVisuals
 
     -- Sign
-    createSign(townHallModel, "DEPOSIT GOLD", Vector3.new(baseX + 15, GROUND_Y + 6, baseZ - 8), Vector3.new(5, 0.8, 0.3))
+    createSign(townHallModel, "BUILDING UPGRADES", Vector3.new(baseX - 25, GROUND_Y + 5.5, baseZ + 10), Vector3.new(8, 1, 0.3))
 
-    -- WALK-THROUGH TRIGGER: Deposit gold bags (final reward station)
-    local vaultTrigger = Instance.new("Part")
-    vaultTrigger.Name = "VaultTrigger"
-    vaultTrigger.Size = Vector3.new(10, 5, 8)
-    vaultTrigger.Position = Vector3.new(baseX + 15, GROUND_Y + 2.5, baseZ - 8)
-    vaultTrigger.Anchored = true
-    vaultTrigger.Transparency = 1
-    vaultTrigger.CanCollide = false
-    vaultTrigger.Parent = townHallModel
+    -- Upgrade center interaction
+    local upgradePrompt = Instance.new("ProximityPrompt")
+    upgradePrompt.Name = "UpgradeCenterPrompt"
+    upgradePrompt.ObjectText = "Upgrade Center"
+    upgradePrompt.ActionText = "View Upgrades"
+    upgradePrompt.HoldDuration = 0.3
+    upgradePrompt.MaxActivationDistance = 10
+    upgradePrompt.Parent = upgradeDesk
 
-    local vaultDebounce = {}
-    vaultTrigger.Touched:Connect(function(hit)
-        local character = hit.Parent
-        local humanoid = character and character:FindFirstChild("Humanoid")
-        if not humanoid then return end
-        local player = Players:GetPlayerFromCharacter(character)
-        if not player then return end
-        if vaultDebounce[player.UserId] then return end
-        vaultDebounce[player.UserId] = true
+    upgradePrompt.Triggered:Connect(function(player)
+        print("[TownHall] === BUILDING UPGRADE CENTER ===")
+        print(string.format("  Gold Mine: Level %d", TownHallState.buildingLevels.goldMine))
+        print(string.format("  Lumber Mill: Level %d", TownHallState.buildingLevels.lumberMill))
+        print(string.format("  Barracks: Level %d", TownHallState.buildingLevels.barracks))
+        for i = 1, 6 do
+            local farmKey = "farm" .. i
+            print(string.format("  Farm %d: Level %d", i, TownHallState.buildingLevels[farmKey]))
+        end
+        print("")
+        print("  [Upgrade costs scale with level]")
+        print("  Use the upgrade kiosk in each building to upgrade")
+    end)
 
-        local playerGoldBags = getPlayerGoldBags(player)
-        if playerGoldBags > 0 then
-            local vaultStats = VaultStats[TownHallState.equipment.vault]
-            local ledgerStats = LedgerStats[TownHallState.equipment.ledgers]
+    -- ========================================================================
+    -- NEW STATION 3: SHIELD CONTROL CENTER
+    -- ========================================================================
 
-            -- Calculate gold value based on population and equipment
-            local baseTax = TownHallState.population * 2
-            local goldPerBag = math.floor(baseTax * ledgerStats.taxRate * vaultStats.security)
-            local totalGold = playerGoldBags * goldPerBag
+    -- Shield control panel (right side of hall)
+    local shieldPanel = Instance.new("Part")
+    shieldPanel.Name = "ShieldControlPanel"
+    shieldPanel.Size = Vector3.new(6, 6, 2)
+    shieldPanel.Position = Vector3.new(baseX + 25, GROUND_Y + 3, baseZ + 10)
+    shieldPanel.Anchored = true
+    shieldPanel.Material = Enum.Material.Metal
+    shieldPanel.Color = Color3.fromRGB(60, 60, 70)
+    shieldPanel.Parent = townHallModel
 
-            -- Deposit all gold bags
-            setPlayerGoldBags(player, 0)
-            updatePlayerGoldBagsVisual(player, 0)
+    -- Shield status display
+    local shieldStatusGui = Instance.new("SurfaceGui")
+    shieldStatusGui.Name = "ShieldStatusGui"
+    shieldStatusGui.Face = Enum.NormalId.Front
+    shieldStatusGui.Parent = shieldPanel
 
-            totalGoldDeposited = totalGoldDeposited + totalGold
-            TownHallState.totalTaxesCollected = TownHallState.totalTaxesCollected + totalGold
-            updateTreasuryVisuals()
+    local shieldStatusFrame = Instance.new("Frame")
+    shieldStatusFrame.Size = UDim2.new(1, 0, 1, 0)
+    shieldStatusFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
+    shieldStatusFrame.Parent = shieldStatusGui
 
-            -- Vault opening effect
-            local depositEffect = Instance.new("ParticleEmitter")
-            depositEffect.Color = ColorSequence.new(Color3.fromRGB(255, 200, 50))
-            depositEffect.Size = NumberSequence.new(0.5, 0)
-            depositEffect.Lifetime = NumberRange.new(0.5, 1)
-            depositEffect.Rate = 50
-            depositEffect.Speed = NumberRange.new(3, 5)
-            depositEffect.SpreadAngle = Vector2.new(20, 20)
-            depositEffect.Parent = vaultDoor
-            task.delay(1, function() depositEffect:Destroy() end)
+    local shieldStatusLabel = Instance.new("TextLabel")
+    shieldStatusLabel.Name = "StatusLabel"
+    shieldStatusLabel.Size = UDim2.new(1, 0, 0.4, 0)
+    shieldStatusLabel.Position = UDim2.new(0, 0, 0.1, 0)
+    shieldStatusLabel.BackgroundTransparency = 1
+    shieldStatusLabel.Text = "SHIELDS: OFFLINE"
+    shieldStatusLabel.TextScaled = true
+    shieldStatusLabel.Font = Enum.Font.Code
+    shieldStatusLabel.TextColor3 = Color3.fromRGB(255, 50, 50)
+    shieldStatusLabel.Parent = shieldStatusFrame
 
-            addTownHallXP(20 * playerGoldBags)
-            rewardPlayer(player, "gold", totalGold, "TownHall")
+    local shieldTimeLabel = Instance.new("TextLabel")
+    shieldTimeLabel.Name = "TimeLabel"
+    shieldTimeLabel.Size = UDim2.new(1, 0, 0.3, 0)
+    shieldTimeLabel.Position = UDim2.new(0, 0, 0.55, 0)
+    shieldTimeLabel.BackgroundTransparency = 1
+    shieldTimeLabel.Text = ""
+    shieldTimeLabel.TextScaled = true
+    shieldTimeLabel.Font = Enum.Font.Code
+    shieldTimeLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+    shieldTimeLabel.Parent = shieldStatusFrame
 
-            print(string.format("[TownHall] %s deposited %d gold bag(s) into the treasury!", player.Name, playerGoldBags))
-            print(string.format("  +%d Gold reward!", totalGold))
-            print(string.format("  Population: %d | Tax rate: %.1fx | Vault security: %.1fx",
-                TownHallState.population, ledgerStats.taxRate, vaultStats.security))
-            print(string.format("  Total taxes collected: %d", TownHallState.totalTaxesCollected))
+    -- Update shield status visuals
+    local function updateShieldStatusVisuals()
+        if TownHallState.shields.isActive then
+            local remaining = TownHallState.shields.endTime - tick()
+            if remaining > 0 then
+                shieldStatusLabel.Text = "SHIELDS: ONLINE"
+                shieldStatusLabel.TextColor3 = Color3.fromRGB(50, 255, 50)
+                local hours = math.floor(remaining / 3600)
+                local minutes = math.floor((remaining % 3600) / 60)
+                shieldTimeLabel.Text = string.format("Time: %dh %dm", hours, minutes)
+            else
+                TownHallState.shields.isActive = false
+                shieldStatusLabel.Text = "SHIELDS: OFFLINE"
+                shieldStatusLabel.TextColor3 = Color3.fromRGB(255, 50, 50)
+                shieldTimeLabel.Text = ""
+            end
         else
-            print(string.format("[TownHall] %s: Not carrying any gold bags! Complete the cycle:", player.Name))
-            print("  Tax Office → Census → Library → Treasury")
+            shieldStatusLabel.Text = "SHIELDS: OFFLINE"
+            shieldStatusLabel.TextColor3 = Color3.fromRGB(255, 50, 50)
+            shieldTimeLabel.Text = ""
         end
+    end
+    TownHallState.updateShieldStatusVisuals = updateShieldStatusVisuals
 
-        task.delay(1.5, function() vaultDebounce[player.UserId] = nil end)
+    -- Sign
+    createSign(townHallModel, "SHIELD CONTROL", Vector3.new(baseX + 25, GROUND_Y + 7, baseZ + 10), Vector3.new(7, 1, 0.3))
+
+    -- Shield activation prompt
+    local shieldPrompt = Instance.new("ProximityPrompt")
+    shieldPrompt.Name = "ShieldControlPrompt"
+    shieldPrompt.ObjectText = "Shield Control"
+    shieldPrompt.ActionText = "Manage Shields"
+    shieldPrompt.HoldDuration = 0.3
+    shieldPrompt.MaxActivationDistance = 10
+    shieldPrompt.Parent = shieldPanel
+
+    shieldPrompt.Triggered:Connect(function(player)
+        print("[TownHall] === SHIELD CONTROL CENTER ===")
+        if TownHallState.shields.isActive then
+            local remaining = TownHallState.shields.endTime - tick()
+            local hours = math.floor(remaining / 3600)
+            local minutes = math.floor((remaining % 3600) / 60)
+            print(string.format("  Shield ACTIVE: %dh %dm remaining", hours, minutes))
+        else
+            print("  Shield OFFLINE")
+            print("")
+            print("  Available Shield Options:")
+            for i, option in ipairs(ShieldOptions) do
+                print(string.format("    %d. %s (%d hours) - %d Gold",
+                    i, option.name, option.duration / 3600, option.cost.gold))
+            end
+            print("")
+            print("  [Shield activation coming soon - use interaction for demo]")
+
+            -- Demo: Activate 1-hour shield
+            TownHallState.shields.isActive = true
+            TownHallState.shields.duration = 3600
+            TownHallState.shields.endTime = tick() + 3600
+            updateShieldStatusVisuals()
+            print("  [DEMO] 1-hour shield activated!")
+        end
+    end)
+
+    -- Shield status update loop
+    task.spawn(function()
+        while true do
+            task.wait(60) -- Update every minute
+            if TownHallState.updateShieldStatusVisuals then
+                TownHallState.updateShieldStatusVisuals()
+            end
+        end
     end)
 
     -- ========================================================================
-    -- STATION 5: ADVISOR QUARTERS (Hire advisors - Level 3+)
+    -- NEW STATION 4: RESEARCH STATION (Future expansion placeholder)
     -- ========================================================================
-    local advisorQuarters = Instance.new("Part")
-    advisorQuarters.Name = "AdvisorQuarters"
-    advisorQuarters.Size = Vector3.new(6, 5, 5)
-    advisorQuarters.Position = Vector3.new(baseX - 15, GROUND_Y + 2.5, baseZ - 12)
-    advisorQuarters.Anchored = true
-    advisorQuarters.Material = Enum.Material.Brick
-    advisorQuarters.Color = Color3.fromRGB(120, 90, 70)
-    advisorQuarters.Parent = townHallModel
 
-    -- Advisor quarters roof
-    local advisorRoof = Instance.new("Part")
-    advisorRoof.Name = "AdvisorRoof"
-    advisorRoof.Size = Vector3.new(7, 1, 6)
-    advisorRoof.Position = Vector3.new(baseX - 15, GROUND_Y + 5.5, baseZ - 12)
-    advisorRoof.Anchored = true
-    advisorRoof.Material = Enum.Material.Slate
-    advisorRoof.Color = Color3.fromRGB(80, 60, 50)
-    advisorRoof.Parent = townHallModel
+    -- Research desk (near throne)
+    local researchDesk = Instance.new("Part")
+    researchDesk.Name = "ResearchDesk"
+    researchDesk.Size = Vector3.new(5, 3, 3)
+    researchDesk.Position = Vector3.new(baseX - 10, GROUND_Y + 1.5, baseZ - 30)
+    researchDesk.Anchored = true
+    researchDesk.Material = Enum.Material.Wood
+    researchDesk.Color = Color3.fromRGB(70, 50, 35)
+    researchDesk.Parent = townHallModel
 
-    -- Advisor sign
-    local advisorSign = Instance.new("Part")
-    advisorSign.Name = "AdvisorSign"
-    advisorSign.Size = Vector3.new(3, 1, 0.2)
-    advisorSign.Position = Vector3.new(baseX - 15, GROUND_Y + 4, baseZ - 9.5)
-    advisorSign.Anchored = true
-    advisorSign.Material = Enum.Material.Wood
-    advisorSign.Color = Color3.fromRGB(100, 70, 45)
-    advisorSign.Parent = townHallModel
+    -- Ancient books
+    for i = 1, 4 do
+        local book = Instance.new("Part")
+        book.Name = "ResearchBook" .. i
+        book.Size = Vector3.new(0.8, 0.2, 0.6)
+        book.Position = Vector3.new(baseX - 11 + i * 0.9, GROUND_Y + 3.15, baseZ - 30)
+        book.Anchored = true
+        book.Material = Enum.Material.Fabric
+        book.Color = Color3.fromRGB(60 + i * 20, 40 + i * 10, 30)
+        book.Parent = townHallModel
+    end
 
-    -- Comfortable chair
-    local chair = Instance.new("Part")
-    chair.Name = "AdvisorChair"
-    chair.Size = Vector3.new(2, 2.5, 2)
-    chair.Position = Vector3.new(baseX - 15, GROUND_Y + 1.25, baseZ - 13)
-    chair.Anchored = true
-    chair.Material = Enum.Material.Fabric
-    chair.Color = Color3.fromRGB(100, 50, 50)
-    chair.Parent = townHallModel
+    -- Sign
+    createSign(townHallModel, "RESEARCH", Vector3.new(baseX - 10, GROUND_Y + 5, baseZ - 30), Vector3.new(5, 0.8, 0.3))
 
-    createInteraction(advisorQuarters, "Hire Advisor", "Advisor Quarters", 2, function(player)
-        if TownHallState.level < 3 then
-            print(string.format("[TownHall] Need Level 3 to hire advisors! (Currently Level %d)", TownHallState.level))
-            return
-        end
+    local researchPrompt = Instance.new("ProximityPrompt")
+    researchPrompt.Name = "ResearchPrompt"
+    researchPrompt.ObjectText = "Research Station"
+    researchPrompt.ActionText = "View Research"
+    researchPrompt.HoldDuration = 0.3
+    researchPrompt.MaxActivationDistance = 8
+    researchPrompt.Parent = researchDesk
 
-        local numAdvisors = #TownHallState.advisors
-        if numAdvisors >= 4 then
-            print("[TownHall] Maximum advisors hired (4)")
-            return
-        end
-
-        local cost = AdvisorCosts[numAdvisors + 1]
-        print(string.format("[TownHall] Hiring Advisor #%d (Cost: %d Gold, %d Food)",
-            numAdvisors + 1, cost.gold, cost.food))
-
-        table.insert(TownHallState.advisors, {
-            id = numAdvisors + 1,
-            specialty = ({"Tax", "Census", "Research", "Treasury"})[numAdvisors + 1],
-            efficiency = 1.0 + numAdvisors * 0.15,
-            hiredAt = tick(),
-        })
-
-        addTownHallXP(50)
-        print(string.format("  Advisors: %d/4", #TownHallState.advisors))
-        print(string.format("  New advisor specialty: %s", TownHallState.advisors[#TownHallState.advisors].specialty))
-
-        -- Spawn advisor visual
-        local advisorVisual = Instance.new("Part")
-        advisorVisual.Name = "Advisor" .. numAdvisors + 1
-        advisorVisual.Size = Vector3.new(1.5, 4, 1.5)
-        advisorVisual.Position = Vector3.new(baseX - 18 + numAdvisors * 2, GROUND_Y + 2, baseZ - 14)
-        advisorVisual.Anchored = true
-        advisorVisual.Material = Enum.Material.SmoothPlastic
-        advisorVisual.Color = Color3.fromRGB(80, 60, 120) -- Purple robes
-        advisorVisual.Parent = townHallModel
-
-        local advisorHead = Instance.new("Part")
-        advisorHead.Name = "AdvisorHead" .. numAdvisors + 1
-        advisorHead.Shape = Enum.PartType.Ball
-        advisorHead.Size = Vector3.new(1.2, 1.2, 1.2)
-        advisorHead.Position = Vector3.new(baseX - 18 + numAdvisors * 2, GROUND_Y + 4.6, baseZ - 14)
-        advisorHead.Anchored = true
-        advisorHead.Material = Enum.Material.SmoothPlastic
-        advisorHead.Color = Color3.fromRGB(227, 183, 151)
-        advisorHead.Parent = townHallModel
+    researchPrompt.Triggered:Connect(function(player)
+        print("[TownHall] === RESEARCH STATION ===")
+        print("  Coming in future update!")
+        print("  Unlock city-wide improvements through research")
     end)
 
     -- ========================================================================
-    -- STATION 6: ROYAL ARCHIVES (Upgrade ledgers, scrolls, vault)
+    -- ADDITIONAL HELPER: Update positions for new layout
     -- ========================================================================
-    local archives = Instance.new("Part")
-    archives.Name = "RoyalArchives"
-    archives.Size = Vector3.new(7, 6, 6)
-    archives.Position = Vector3.new(baseX, GROUND_Y + 3, baseZ - 15)
-    archives.Anchored = true
-    archives.Material = Enum.Material.Marble
-    archives.Color = Color3.fromRGB(200, 195, 190)
-    archives.Parent = townHallModel
+    TownHallState.positions = {
+        jewelCase = Vector3.new(baseX, GROUND_Y + 6, baseZ - 47),
+        upgradeCenter = Vector3.new(baseX - 25, GROUND_Y + 1.5, baseZ + 10),
+        shieldControl = Vector3.new(baseX + 25, GROUND_Y + 3, baseZ + 10),
+        research = Vector3.new(baseX - 10, GROUND_Y + 1.5, baseZ - 30),
+        throne = Vector3.new(baseX, GROUND_Y, baseZ - 45),
+    }
 
-    -- Archives dome roof
-    local archivesDome = Instance.new("Part")
-    archivesDome.Name = "ArchivesDome"
-    archivesDome.Shape = Enum.PartType.Ball
-    archivesDome.Size = Vector3.new(8, 4, 8)
-    archivesDome.Position = Vector3.new(baseX, GROUND_Y + 7, baseZ - 15)
-    archivesDome.Anchored = true
-    archivesDome.Material = Enum.Material.Marble
-    archivesDome.Color = Color3.fromRGB(180, 175, 170)
-    archivesDome.Parent = townHallModel
-
-    -- Archive shelves with ancient documents
-    local archiveShelf = Instance.new("Part")
-    archiveShelf.Name = "ArchiveShelf"
-    archiveShelf.Size = Vector3.new(5, 4, 1)
-    archiveShelf.Position = Vector3.new(baseX, GROUND_Y + 2, baseZ - 17)
-    archiveShelf.Anchored = true
-    archiveShelf.Material = Enum.Material.Wood
-    archiveShelf.Color = Color3.fromRGB(60, 45, 30)
-    archiveShelf.Parent = townHallModel
-
-    -- Glowing runes
-    local rune = Instance.new("Part")
-    rune.Name = "GlowingRune"
-    rune.Shape = Enum.PartType.Cylinder
-    rune.Size = Vector3.new(0.1, 2, 2)
-    rune.Position = Vector3.new(baseX, GROUND_Y + 4, baseZ - 12)
-    rune.Orientation = Vector3.new(90, 0, 0)
-    rune.Anchored = true
-    rune.Material = Enum.Material.Neon
-    rune.Color = Color3.fromRGB(100, 200, 255)
-    rune.Parent = townHallModel
-
-    createInteraction(archives, "Upgrade Administration", "Royal Archives", 2.5, function(player)
-        print("[TownHall] === ROYAL ARCHIVES UPGRADES ===")
-        print(string.format("  Current Ledgers: %s", TownHallState.equipment.ledgers))
-        print(string.format("  Current Scrolls: %s", TownHallState.equipment.scrolls))
-        print(string.format("  Current Vault: %s", TownHallState.equipment.vault))
-
-        -- Auto-upgrade to next tier (simplified)
-        local ledgerTiers = {"Basic", "Copper", "Silver", "Gold"}
-        local scrollTiers = {"Basic", "Ancient", "Enchanted", "Legendary"}
-        local vaultTiers = {"Basic", "Reinforced", "Iron", "Royal"}
-
-        -- Upgrade ledgers first
-        for i, tier in ipairs(ledgerTiers) do
-            if TownHallState.equipment.ledgers == tier and i < #ledgerTiers then
-                local nextTier = ledgerTiers[i + 1]
-                local cost = LedgerStats[nextTier].cost
-                print(string.format("[TownHall] Upgrading ledgers to %s (Cost: %d Gold)", nextTier, cost))
-                TownHallState.equipment.ledgers = nextTier
-                addTownHallXP(40)
-
-                -- Magical upgrade effect
-                local upgrade = Instance.new("ParticleEmitter")
-                upgrade.Color = ColorSequence.new(Color3.fromRGB(100, 200, 255))
-                upgrade.Size = NumberSequence.new(0.5, 0)
-                upgrade.Lifetime = NumberRange.new(0.5, 1)
-                upgrade.Rate = 50
-                upgrade.Speed = NumberRange.new(3, 6)
-                upgrade.SpreadAngle = Vector2.new(60, 60)
-                upgrade.Parent = rune
-                task.delay(1, function() upgrade:Destroy() end)
-                return
-            end
-        end
-
-        -- Then scrolls
-        for i, tier in ipairs(scrollTiers) do
-            if TownHallState.equipment.scrolls == tier and i < #scrollTiers then
-                local nextTier = scrollTiers[i + 1]
-                local cost = ScrollStats[nextTier].cost
-                print(string.format("[TownHall] Upgrading scrolls to %s (Cost: %d Gold)", nextTier, cost))
-                TownHallState.equipment.scrolls = nextTier
-                addTownHallXP(40)
-                return
-            end
-        end
-
-        -- Then vault
-        for i, tier in ipairs(vaultTiers) do
-            if TownHallState.equipment.vault == tier and i < #vaultTiers then
-                local nextTier = vaultTiers[i + 1]
-                local cost = VaultStats[nextTier].cost
-                print(string.format("[TownHall] Upgrading vault to %s (Cost: %d Gold)", nextTier, cost))
-                TownHallState.equipment.vault = nextTier
-                addTownHallXP(40)
-                return
-            end
-        end
-
-        print("[TownHall] All administration at maximum level!")
-    end)
-
+    -- (Old stations removed: Tax Office, Census Desk, Research Library,
+    -- Treasury Vault, Advisor Quarters, Royal Archives)
+    -- See commit history for original implementation
     -- Parent the town hall interior
     townHallModel.Parent = interiorsFolder
 
-    print("  ✓ Town Hall created (GRAND HALL interior):")
+    print("  ✓ Town Hall created (CITY COMMAND CENTER):")
     print("    - Enter building in village to teleport inside")
-    print("    - Full progression: Tax → Census → Research → Treasury")
+    print("    - Jewel Trophy Case: Display gems for city-wide bonuses")
+    print("    - Building Upgrade Center: Upgrade all buildings")
+    print("    - Shield Control: Manage city defenses")
 end
 
 -- ============================================================================
