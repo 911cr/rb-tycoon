@@ -212,12 +212,12 @@ local TeleportCooldown = {}
 local BUILDING_EXTERIOR_POSITIONS = {
     GoldMine = { exitPos = Vector3.new(38, 3, 50), buildingPos = Vector3.new(25, 0, 50) },        -- Exit east of building (X=38 clears entrance trigger at X=30-32)
     LumberMill = { exitPos = Vector3.new(90, 3, 50), buildingPos = Vector3.new(95, 0, 50) },     -- Exit west of building, face toward path
-    Farm1 = { exitPos = Vector3.new(30, 3, 100), buildingPos = Vector3.new(25, 0, 100) },        -- Exit east of building
-    Farm2 = { exitPos = Vector3.new(30, 3, 130), buildingPos = Vector3.new(25, 0, 130) },
-    Farm3 = { exitPos = Vector3.new(90, 3, 130), buildingPos = Vector3.new(95, 0, 130) },
-    Farm4 = { exitPos = Vector3.new(15, 3, 115), buildingPos = Vector3.new(10, 0, 115) },
-    Farm5 = { exitPos = Vector3.new(105, 3, 115), buildingPos = Vector3.new(110, 0, 115) },
-    Farm6 = { exitPos = Vector3.new(60, 3, 135), buildingPos = Vector3.new(60, 0, 140) },
+    Farm1 = { exitPos = Vector3.new(45, 3, 100), buildingPos = Vector3.new(25, 0, 100) },        -- Exit east of barn (facing east, door on +X)
+    Farm2 = { exitPos = Vector3.new(45, 3, 130), buildingPos = Vector3.new(25, 0, 130) },        -- Exit east of barn
+    Farm3 = { exitPos = Vector3.new(75, 3, 130), buildingPos = Vector3.new(95, 0, 130) },        -- Exit west of barn (facing west, door on -X)
+    Farm4 = { exitPos = Vector3.new(30, 3, 115), buildingPos = Vector3.new(10, 0, 115) },        -- Exit east of barn
+    Farm5 = { exitPos = Vector3.new(90, 3, 115), buildingPos = Vector3.new(110, 0, 115) },       -- Exit west of barn
+    Farm6 = { exitPos = Vector3.new(60, 3, 160), buildingPos = Vector3.new(60, 0, 140) },        -- Exit south of barn (facing south, door on +Z)
     Barracks = { exitPos = Vector3.new(90, 3, 100), buildingPos = Vector3.new(95, 0, 100) },     -- Exit west of building
     TownHall = { exitPos = Vector3.new(60, 3, 150), buildingPos = Vector3.new(60, 0, 155) },     -- Exit south of building
 }
@@ -1766,15 +1766,25 @@ end
 -- Gems provide city-wide production bonuses when displayed in Town Hall
 -- ============================================================================
 
--- Gem type definitions with colors and boost types
+-- Gem type definitions with colors, boost types, rarity tier, and gold values
 local GemTypes = {
-    Ruby = { color = Color3.fromRGB(220, 20, 60), boost = "production" },
-    Emerald = { color = Color3.fromRGB(0, 201, 87), boost = "speed" },
-    Sapphire = { color = Color3.fromRGB(15, 82, 186), boost = "defense" },
-    Diamond = { color = Color3.fromRGB(185, 242, 255), boost = "all" },
+    -- Common gems (worth 50-100 gold)
+    Quartz = { color = Color3.fromRGB(255, 255, 255), boost = "production", rarity = "Common", minValue = 50, maxValue = 100 },
+    Amethyst = { color = Color3.fromRGB(153, 102, 204), boost = "speed", rarity = "Common", minValue = 50, maxValue = 100 },
+    -- Uncommon gems (worth 200-500 gold)
+    Topaz = { color = Color3.fromRGB(255, 200, 50), boost = "production", rarity = "Uncommon", minValue = 200, maxValue = 500 },
+    Emerald = { color = Color3.fromRGB(0, 201, 87), boost = "speed", rarity = "Uncommon", minValue = 200, maxValue = 500 },
+    -- Rare gems (worth 1,000-2,500 gold)
+    Sapphire = { color = Color3.fromRGB(15, 82, 186), boost = "defense", rarity = "Rare", minValue = 1000, maxValue = 2500 },
+    Ruby = { color = Color3.fromRGB(220, 20, 60), boost = "production", rarity = "Rare", minValue = 1000, maxValue = 2500 },
+    -- Epic gems (worth 5,000-10,000 gold)
+    Diamond = { color = Color3.fromRGB(185, 242, 255), boost = "all", rarity = "Epic", minValue = 5000, maxValue = 10000 },
+    -- Legendary gems (worth 25,000-50,000 gold)
+    StarRuby = { color = Color3.fromRGB(255, 50, 100), boost = "all", rarity = "Legendary", minValue = 25000, maxValue = 50000 },
+    BlackDiamond = { color = Color3.fromRGB(30, 30, 40), boost = "all", rarity = "Legendary", minValue = 25000, maxValue = 50000 },
 }
 
--- Gem size multipliers and rarity (probability of getting each size on success)
+-- Gem size multipliers (affects bonus, not value)
 local GemSizes = {
     Chip = { multiplier = 1.05, rarity = 0.50 },   -- 50% of successful prospects
     Stone = { multiplier = 1.10, rarity = 0.30 },  -- 30% of successful prospects
@@ -1782,37 +1792,248 @@ local GemSizes = {
     Jewel = { multiplier = 1.35, rarity = 0.05 },  -- 5% of successful prospects
 }
 
--- Gem rarity by prospecting tier (chance to get each gem type)
-local GemRarityByTier = {
-    [1] = { Ruby = 0.50, Emerald = 0.35, Sapphire = 0.14, Diamond = 0.01 }, -- Basic
-    [2] = { Ruby = 0.35, Emerald = 0.35, Sapphire = 0.25, Diamond = 0.05 }, -- Advanced
-    [3] = { Ruby = 0.25, Emerald = 0.30, Sapphire = 0.30, Diamond = 0.15 }, -- Premium
+-- Gem lists by rarity tier
+local GemsByRarity = {
+    Common = { "Quartz", "Amethyst" },
+    Uncommon = { "Topaz", "Emerald" },
+    Rare = { "Sapphire", "Ruby" },
+    Epic = { "Diamond" },
+    Legendary = { "StarRuby", "BlackDiamond" },
 }
 
--- Prospecting tier costs and duration
-local ProspectingTiers = {
-    [1] = { name = "Basic", cost = 500, duration = 300 },    -- 5 minutes, 500 gold
-    [2] = { name = "Advanced", cost = 2000, duration = 300 }, -- 5 minutes, 2000 gold
-    [3] = { name = "Premium", cost = 5000, duration = 300 },  -- 5 minutes, 5000 gold
+-- Rarity tier colors for UI
+local RarityColors = {
+    Common = Color3.fromRGB(180, 180, 180),
+    Uncommon = Color3.fromRGB(30, 200, 30),
+    Rare = Color3.fromRGB(30, 100, 255),
+    Epic = Color3.fromRGB(163, 53, 238),
+    Legendary = Color3.fromRGB(255, 165, 0),
 }
+
+-- Prospecting tier configurations
+-- Each tier has: name, cost, findChance, and rarity probabilities
+local ProspectingTiers = {
+    [1] = {
+        name = "Basic",
+        cost = 100,
+        findChance = 0.50,  -- 50% chance to find something
+        description = "Common gems only",
+        rarityChances = { Common = 0.80, Uncommon = 0.20, Rare = 0, Epic = 0, Legendary = 0 },
+    },
+    [2] = {
+        name = "Advanced",
+        cost = 500,
+        findChance = 0.65,  -- 65% chance to find something
+        description = "Common + Uncommon gems",
+        rarityChances = { Common = 0.50, Uncommon = 0.40, Rare = 0.10, Epic = 0, Legendary = 0 },
+    },
+    [3] = {
+        name = "Expert",
+        cost = 2000,
+        findChance = 0.80,  -- 80% chance to find something
+        description = "Common + Uncommon + Rare gems",
+        rarityChances = { Common = 0.30, Uncommon = 0.40, Rare = 0.25, Epic = 0.05, Legendary = 0 },
+    },
+    [4] = {
+        name = "Master",
+        cost = 10000,
+        findChance = 0.90,  -- 90% chance, better rare odds
+        description = "All gems including Legendary",
+        rarityChances = { Common = 0.20, Uncommon = 0.30, Rare = 0.30, Epic = 0.15, Legendary = 0.05 },
+    },
+}
+
+-- ============================================================================
+-- RESEARCH TREE - Unlock city-wide improvements
+-- ============================================================================
+local ResearchTree = {
+    -- Mining Category
+    mining_efficiency_1 = {
+        name = "Mining Efficiency I",
+        category = "Mining",
+        description = "+10% Gold Mine production",
+        bonus = { target = "goldMine", type = "production", value = 0.10 },
+        cost = { gold = 2000, wood = 500 },
+        duration = 300, -- 5 minutes
+        prerequisites = {},
+        thRequired = 1,
+    },
+    mining_efficiency_2 = {
+        name = "Mining Efficiency II",
+        category = "Mining",
+        description = "+15% Gold Mine production",
+        bonus = { target = "goldMine", type = "production", value = 0.15 },
+        cost = { gold = 8000, wood = 2000 },
+        duration = 900, -- 15 minutes
+        prerequisites = { "mining_efficiency_1" },
+        thRequired = 3,
+    },
+    smelting_mastery = {
+        name = "Smelting Mastery",
+        category = "Mining",
+        description = "+20% Smelter production",
+        bonus = { target = "smelter", type = "production", value = 0.20 },
+        cost = { gold = 5000, wood = 1500 },
+        duration = 600, -- 10 minutes
+        prerequisites = { "mining_efficiency_1" },
+        thRequired = 2,
+    },
+
+    -- Forestry Category
+    forestry_efficiency_1 = {
+        name = "Forestry Efficiency I",
+        category = "Forestry",
+        description = "+10% Lumber Mill production",
+        bonus = { target = "lumberMill", type = "production", value = 0.10 },
+        cost = { gold = 2000, wood = 500 },
+        duration = 300, -- 5 minutes
+        prerequisites = {},
+        thRequired = 1,
+    },
+    forestry_efficiency_2 = {
+        name = "Forestry Efficiency II",
+        category = "Forestry",
+        description = "+15% Lumber Mill production",
+        bonus = { target = "lumberMill", type = "production", value = 0.15 },
+        cost = { gold = 8000, wood = 2000 },
+        duration = 900, -- 15 minutes
+        prerequisites = { "forestry_efficiency_1" },
+        thRequired = 3,
+    },
+    sawmill_precision = {
+        name = "Sawmill Precision",
+        category = "Forestry",
+        description = "+25% Sawmill speed",
+        bonus = { target = "sawmill", type = "speed", value = 0.25 },
+        cost = { gold = 6000, wood = 3000 },
+        duration = 720, -- 12 minutes
+        prerequisites = { "forestry_efficiency_1" },
+        thRequired = 2,
+    },
+
+    -- Agriculture Category
+    agriculture_efficiency_1 = {
+        name = "Agriculture Efficiency I",
+        category = "Agriculture",
+        description = "+10% Farm production",
+        bonus = { target = "farm", type = "production", value = 0.10 },
+        cost = { gold = 1500, food = 300 },
+        duration = 300, -- 5 minutes
+        prerequisites = {},
+        thRequired = 1,
+    },
+    agriculture_efficiency_2 = {
+        name = "Agriculture Efficiency II",
+        category = "Agriculture",
+        description = "+15% Farm production",
+        bonus = { target = "farm", type = "production", value = 0.15 },
+        cost = { gold = 6000, food = 1200 },
+        duration = 900, -- 15 minutes
+        prerequisites = { "agriculture_efficiency_1" },
+        thRequired = 3,
+    },
+    windmill_efficiency = {
+        name = "Windmill Efficiency",
+        category = "Agriculture",
+        description = "+20% Windmill speed",
+        bonus = { target = "windmill", type = "speed", value = 0.20 },
+        cost = { gold = 4000, food = 800 },
+        duration = 600, -- 10 minutes
+        prerequisites = { "agriculture_efficiency_1" },
+        thRequired = 2,
+    },
+
+    -- Military Category
+    military_training_1 = {
+        name = "Military Training I",
+        category = "Military",
+        description = "+15% Training speed",
+        bonus = { target = "barracks", type = "speed", value = 0.15 },
+        cost = { gold = 3000, food = 600 },
+        duration = 480, -- 8 minutes
+        prerequisites = {},
+        thRequired = 2,
+    },
+    military_training_2 = {
+        name = "Military Training II",
+        category = "Military",
+        description = "+25% Training speed",
+        bonus = { target = "barracks", type = "speed", value = 0.25 },
+        cost = { gold = 12000, food = 2400 },
+        duration = 1200, -- 20 minutes
+        prerequisites = { "military_training_1" },
+        thRequired = 5,
+    },
+
+    -- Universal Category
+    productivity_1 = {
+        name = "Productivity I",
+        category = "Universal",
+        description = "+5% ALL production",
+        bonus = { target = "all", type = "production", value = 0.05 },
+        cost = { gold = 15000, wood = 5000, food = 2000 },
+        duration = 1800, -- 30 minutes
+        prerequisites = { "mining_efficiency_2", "forestry_efficiency_2", "agriculture_efficiency_2" },
+        thRequired = 5,
+    },
+}
+
+-- ============================================================================
+-- BUILDING UPGRADE COSTS - Scaling costs per building type
+-- ============================================================================
+-- Cost formula: base * (1.5 ^ (level - 1))
+local BuildingUpgradeCosts = {
+    goldMine = { base = { gold = 500, wood = 100 }, maxLevel = 10 },
+    lumberMill = { base = { gold = 500, wood = 100 }, maxLevel = 10 },
+    barracks = { base = { gold = 800, food = 200 }, maxLevel = 10 },
+    farm1 = { base = { gold = 300, wood = 50 }, maxLevel = 10 },
+    farm2 = { base = { gold = 300, wood = 50 }, maxLevel = 10 },
+    farm3 = { base = { gold = 300, wood = 50 }, maxLevel = 10 },
+    farm4 = { base = { gold = 300, wood = 50 }, maxLevel = 10 },
+    farm5 = { base = { gold = 300, wood = 50 }, maxLevel = 10 },
+    farm6 = { base = { gold = 300, wood = 50 }, maxLevel = 10 },
+}
+
+-- Calculate upgrade cost for a building at current level
+local function getUpgradeCost(buildingName, currentLevel)
+    local config = BuildingUpgradeCosts[buildingName]
+    if not config then return nil end
+    if currentLevel >= config.maxLevel then return nil end
+
+    local multiplier = math.pow(1.5, currentLevel - 1)
+    local cost = {}
+    for resource, amount in pairs(config.base) do
+        cost[resource] = math.floor(amount * multiplier)
+    end
+    return cost
+end
 
 -- Roll a gem based on prospecting tier (returns gem data or nil)
 local function rollGem(tier)
-    -- Determine gem type based on tier-specific rarity
-    local rarityTable = GemRarityByTier[tier] or GemRarityByTier[1]
+    local tierData = ProspectingTiers[tier] or ProspectingTiers[1]
+    local rarityChances = tierData.rarityChances
+
+    -- Step 1: Determine rarity tier based on tier's rarity chances
     local roll = math.random()
     local cumulative = 0
-    local gemType = "Ruby" -- Default fallback
+    local selectedRarity = "Common" -- Default fallback
 
-    for gType, chance in pairs(rarityTable) do
+    -- Order matters for cumulative probability
+    local rarityOrder = { "Common", "Uncommon", "Rare", "Epic", "Legendary" }
+    for _, rarityTier in ipairs(rarityOrder) do
+        local chance = rarityChances[rarityTier] or 0
         cumulative = cumulative + chance
         if roll <= cumulative then
-            gemType = gType
+            selectedRarity = rarityTier
             break
         end
     end
 
-    -- Determine gem size
+    -- Step 2: Pick a random gem from that rarity tier
+    local gemsInRarity = GemsByRarity[selectedRarity]
+    local gemType = gemsInRarity[math.random(#gemsInRarity)]
+
+    -- Step 3: Determine gem size
     roll = math.random()
     cumulative = 0
     local gemSize = "Chip" -- Default fallback
@@ -1825,12 +2046,18 @@ local function rollGem(tier)
         end
     end
 
+    -- Step 4: Calculate gem value (random between min and max)
+    local gemData = GemTypes[gemType]
+    local gemValue = math.random(gemData.minValue, gemData.maxValue)
+
     return {
         type = gemType,
         size = gemSize,
-        color = GemTypes[gemType].color,
-        boost = GemTypes[gemType].boost,
+        rarity = selectedRarity,
+        color = gemData.color,
+        boost = gemData.boost,
         multiplier = GemSizes[gemSize].multiplier,
+        value = gemValue,
     }
 end
 
@@ -2258,38 +2485,96 @@ local function createGoldMine()
         ore.Parent = mineEntrance
     end
 
-    -- Hanging sign off to the LEFT side (not blocking approach path)
+    -- ===== LARGE SIGN WITH PRODUCTION RATE =====
+    -- Sign post (support beam)
     local signPost = Instance.new("Part")
     signPost.Name = "SignPost"
-    signPost.Size = Vector3.new(0.4, 5, 0.4)
-    signPost.Position = Vector3.new(exteriorX + 6, extGround + 2.5, exteriorZ - 10)
+    signPost.Size = Vector3.new(0.6, 8, 0.6)
+    signPost.Position = Vector3.new(exteriorX + 6, extGround + 4, exteriorZ - 10)
     signPost.Anchored = true
     signPost.Material = Enum.Material.Wood
     signPost.Color = Color3.fromRGB(50, 35, 20)
     signPost.Parent = mineEntrance
 
+    -- Large sign board (similar to Lumber Yard)
     local signBoard = Instance.new("Part")
     signBoard.Name = "Sign"
-    signBoard.Size = Vector3.new(0.3, 1.8, 5)
-    signBoard.Position = Vector3.new(exteriorX + 6.2, extGround + 5.5, exteriorZ - 10)
-    signBoard.Orientation = Vector3.new(0, 90, -5)
+    signBoard.Size = Vector3.new(0.5, 6, 14)  -- Much larger sign
+    signBoard.Position = Vector3.new(exteriorX + 6.5, extGround + 11, exteriorZ - 5)
     signBoard.Anchored = true
     signBoard.Material = Enum.Material.Wood
-    signBoard.Color = Color3.fromRGB(70, 50, 30)
+    signBoard.Color = Color3.fromRGB(60, 40, 25)
     signBoard.Parent = mineEntrance
 
-    local gui = Instance.new("SurfaceGui")
-    gui.Face = Enum.NormalId.Front
-    gui.Parent = signBoard
+    local goldMineGui = Instance.new("SurfaceGui")
+    goldMineGui.Face = Enum.NormalId.Right  -- Face east toward main path
+    goldMineGui.Parent = signBoard
 
-    local label = Instance.new("TextLabel")
-    label.Size = UDim2.new(1, 0, 1, 0)
-    label.BackgroundTransparency = 1
-    label.Text = "GOLD MINE"
-    label.TextColor3 = Color3.fromRGB(255, 215, 0)
-    label.TextScaled = true
-    label.Font = Enum.Font.Antique
-    label.Parent = gui
+    -- Title label (large)
+    local goldMineTitleLabel = Instance.new("TextLabel")
+    goldMineTitleLabel.Name = "TitleLabel"
+    goldMineTitleLabel.Size = UDim2.new(1, 0, 0.6, 0)
+    goldMineTitleLabel.Position = UDim2.new(0, 0, 0, 0)
+    goldMineTitleLabel.BackgroundTransparency = 1
+    goldMineTitleLabel.Text = "GOLD MINE"
+    goldMineTitleLabel.TextColor3 = Color3.fromRGB(255, 215, 0)  -- Gold color
+    goldMineTitleLabel.TextScaled = true
+    goldMineTitleLabel.Font = Enum.Font.Antique
+    goldMineTitleLabel.Parent = goldMineGui
+
+    -- Production rate label (below title)
+    local goldMineProductionLabel = Instance.new("TextLabel")
+    goldMineProductionLabel.Name = "ProductionLabel"
+    goldMineProductionLabel.Size = UDim2.new(1, 0, 0.35, 0)
+    goldMineProductionLabel.Position = UDim2.new(0, 0, 0.6, 0)
+    goldMineProductionLabel.BackgroundTransparency = 1
+    goldMineProductionLabel.Text = "+0 gold/min"
+    goldMineProductionLabel.TextColor3 = Color3.fromRGB(180, 255, 180)  -- Green for production
+    goldMineProductionLabel.TextScaled = true
+    goldMineProductionLabel.Font = Enum.Font.GothamBold
+    goldMineProductionLabel.Parent = goldMineGui
+
+    -- Function to update production rate display
+    local function updateGoldMineProduction()
+        -- Calculate production based on workers and upgrades
+        local minerCount = #GoldMineState.miners
+        local collectorCount = #GoldMineState.collectors
+        local minerStats = getMinerStats(GoldMineState.equipment.minerLevel)
+        local smelterStats = getSmelterStats(GoldMineState.equipment.smelterLevel)
+
+        -- Estimate: each miner produces ~oreCapacity ore per cycle (~30 sec cycle = ~2 cycles per minute)
+        -- Smelter converts ore to gold at goldPerOre rate
+        -- Collectors deliver gold from smelter to chest
+
+        local cyclesPerMinute = 2  -- Approximate miner cycles per minute
+        local orePerMinute = minerCount * (minerStats.oreCapacity * cyclesPerMinute)
+        local goldPerMinute = orePerMinute * smelterStats.goldPerOre
+
+        -- Only count production if we have both miners and collectors
+        local effectiveProduction = (minerCount > 0 and collectorCount > 0) and math.floor(goldPerMinute) or 0
+
+        goldMineProductionLabel.Text = string.format("+%d gold/min", effectiveProduction)
+
+        -- Color based on production level
+        if effectiveProduction == 0 then
+            goldMineProductionLabel.TextColor3 = Color3.fromRGB(150, 150, 150)  -- Gray when idle
+        elseif effectiveProduction < 20 then
+            goldMineProductionLabel.TextColor3 = Color3.fromRGB(180, 255, 180)  -- Light green
+        else
+            goldMineProductionLabel.TextColor3 = Color3.fromRGB(100, 255, 100)  -- Bright green
+        end
+    end
+
+    -- Store update function for use when workers are hired or equipment upgraded
+    GoldMineState.updateExteriorSign = updateGoldMineProduction
+
+    -- Update sign periodically
+    task.spawn(function()
+        while true do
+            updateGoldMineProduction()
+            task.wait(5)  -- Update every 5 seconds
+        end
+    end)
 
     -- Walk-through entrance trigger (the black hole)
     local entranceTrigger = Instance.new("Part")
@@ -2660,13 +2945,21 @@ local function createGoldMine()
             return
         end
 
-        local oreGained = stats.orePerSwing
+        -- Apply production bonuses from Town Hall (gems, building levels, research)
+        local baseOre = stats.orePerSwing
+        local productionMultiplier = 1.0
+        if TownHallState and calculateTotalBonuses then
+            local bonuses = calculateTotalBonuses()
+            productionMultiplier = bonuses.production.goldMine or 1.0
+        end
+        local oreGained = math.floor(baseOre * productionMultiplier)
         local newOre = math.min(currentOre + oreGained, maxOre)
         setPlayerOre(player, newOre)
         addMineXP(5)
 
-        print(string.format("[GoldMine] %s mined %d ore! (Lv%d Pickaxe) Carrying: %d/%d",
-            player.Name, newOre - currentOre, pickaxeLevel, newOre, maxOre))
+        local bonusText = productionMultiplier > 1.0 and string.format(" (%.0f%% bonus!)", (productionMultiplier - 1) * 100) or ""
+        print(string.format("[GoldMine] %s mined %d ore! (Lv%d Pickaxe)%s Carrying: %d/%d",
+            player.Name, newOre - currentOre, pickaxeLevel, bonusText, newOre, maxOre))
 
         -- Mining sparkle effect
         local sparkle = Instance.new("ParticleEmitter")
@@ -2870,15 +3163,35 @@ local function createGoldMine()
             if GoldMineState.smelterOre > 0 then
                 -- Get current smelter stats (rechecks each ore for live upgrades)
                 local smelterStats = getSmelterStats(GoldMineState.equipment.smelterLevel)
-                local goldPerOre = smelterStats.goldPerOre
-                local smeltTime = smelterStats.smeltTime
+                local baseGoldPerOre = smelterStats.goldPerOre
+                local baseSmeltTime = smelterStats.smeltTime
+
+                -- Apply production and speed bonuses from Town Hall
+                local productionMultiplier = 1.0
+                local speedMultiplier = 1.0
+                if TownHallState and calculateTotalBonuses then
+                    local bonuses = calculateTotalBonuses()
+                    productionMultiplier = bonuses.production.smelter or 1.0
+                    speedMultiplier = bonuses.speed.smelter or 1.0
+                end
+                local goldPerOre = math.floor(baseGoldPerOre * productionMultiplier)
+                local smeltTime = baseSmeltTime / speedMultiplier -- faster = divide time
 
                 -- Process one ore at a time
                 while GoldMineState.smelterOre > 0 do
                     -- Recheck stats each ore (in case player upgrades mid-batch)
                     smelterStats = getSmelterStats(GoldMineState.equipment.smelterLevel)
-                    goldPerOre = smelterStats.goldPerOre
-                    smeltTime = smelterStats.smeltTime
+                    baseGoldPerOre = smelterStats.goldPerOre
+                    baseSmeltTime = smelterStats.smeltTime
+
+                    -- Re-apply bonuses
+                    if TownHallState and calculateTotalBonuses then
+                        local bonuses = calculateTotalBonuses()
+                        productionMultiplier = bonuses.production.smelter or 1.0
+                        speedMultiplier = bonuses.speed.smelter or 1.0
+                    end
+                    goldPerOre = math.floor(baseGoldPerOre * productionMultiplier)
+                    smeltTime = baseSmeltTime / speedMultiplier
 
                     local oreRemaining = GoldMineState.smelterOre
 
@@ -3489,6 +3802,11 @@ local function createGoldMine()
         print(string.format("[GoldMine] %s hired Miner #%d for %d gold + %d food!",
             player.Name, minerId, cost.gold, cost.food))
         print(string.format("[GoldMine] Miner #%d will mine ore → deliver to smelter → repeat!", minerId))
+
+        -- Update exterior sign to reflect new production rate
+        if GoldMineState.updateExteriorSign then
+            GoldMineState.updateExteriorSign()
+        end
     end)
 
     -- Store reference for prompt (needed for disabling when fully staffed)
@@ -3758,6 +4076,11 @@ local function createGoldMine()
         print(string.format("[GoldMine] %s hired Collector #%d for %d gold + %d food!",
             player.Name, collectorId, cost.gold, cost.food))
         print(string.format("[GoldMine] Collector #%d will take gold from smelter → deliver to YOUR chest!", collectorId))
+
+        -- Update exterior sign to reflect new production rate
+        if GoldMineState.updateExteriorSign then
+            GoldMineState.updateExteriorSign()
+        end
     end)
 
     -- Store reference for prompt (needed for disabling when fully staffed)
@@ -3987,6 +4310,10 @@ local function createGoldMine()
             print(string.format("[Upgrade] %s upgraded Smelter to Lv%d! Now %d gold/ore, %.1fs (-%d gold)",
                 player.Name, currentLevel + 1, nextStats.goldPerOre, nextStats.smeltTime, nextStats.upgradeCost))
             createUpgradeGui(player)
+            -- Update exterior sign to reflect new production rate
+            if GoldMineState.updateExteriorSign then
+                GoldMineState.updateExteriorSign()
+            end
         end)
 
         minersBtn.MouseButton1Click:Connect(function()
@@ -3997,6 +4324,10 @@ local function createGoldMine()
             print(string.format("[Upgrade] %s upgraded Miners to Lv%d! Now %d ore capacity (-%d gold)",
                 player.Name, currentLevel + 1, nextStats.oreCapacity, nextStats.upgradeCost))
             createUpgradeGui(player)
+            -- Update exterior sign to reflect new production rate
+            if GoldMineState.updateExteriorSign then
+                GoldMineState.updateExteriorSign()
+            end
         end)
 
         collectorsBtn.MouseButton1Click:Connect(function()
@@ -4007,6 +4338,10 @@ local function createGoldMine()
             print(string.format("[Upgrade] %s upgraded Collectors to Lv%d! Now %d gold capacity (-%d gold)",
                 player.Name, currentLevel + 1, nextStats.goldCapacity, nextStats.upgradeCost))
             createUpgradeGui(player)
+            -- Update exterior sign to reflect new production rate (collectors affect effective production)
+            if GoldMineState.updateExteriorSign then
+                GoldMineState.updateExteriorSign()
+            end
         end)
 
         closeButton.MouseButton1Click:Connect(function()
@@ -4111,129 +4446,343 @@ local function createGoldMine()
     -- Sign
     createSign(mineModel, "GEM PROSPECTING", prospectingPos + Vector3.new(0, 4.5, 0), Vector3.new(6, 0.8, 0.3))
 
-    -- Prospecting state display function
-    local function updateProspectingDisplay()
-        local state = GoldMineState.prospecting
-        if state.isActive then
-            local remaining = state.endTime - tick()
-            if remaining > 0 then
-                local minutes = math.floor(remaining / 60)
-                local seconds = math.floor(remaining % 60)
-                timerLabel.Text = string.format("Prospecting: %d:%02d", minutes, seconds)
-                timerLabel.TextColor3 = Color3.fromRGB(100, 200, 255)
-                resultGem.Transparency = 1 -- Hide while prospecting
-            else
-                timerLabel.Text = "READY TO COLLECT!"
-                timerLabel.TextColor3 = Color3.fromRGB(50, 255, 50)
-                resultGem.Transparency = 0 -- Show mystery gem
-                resultGem.Color = Color3.fromRGB(200, 180, 100) -- Mystery color
-            end
-        else
-            timerLabel.Text = "GEM PROSPECTING"
-            timerLabel.TextColor3 = Color3.fromRGB(255, 215, 0)
-            resultGem.Transparency = 1
+    -- Track active prospecting GUIs per player
+    local activeProspectingGuis = {}
+
+    -- Function to format gold with commas
+    local function formatGold(amount)
+        local formatted = tostring(amount)
+        local k
+        while true do
+            formatted, k = string.gsub(formatted, "^(-?%d+)(%d%d%d)", '%1,%2')
+            if k == 0 then break end
         end
+        return formatted
+    end
+
+    -- Function to create the prospecting investment GUI
+    local function createProspectingGui(player)
+        -- Remove existing GUI if any
+        if activeProspectingGuis[player.UserId] then
+            activeProspectingGuis[player.UserId]:Destroy()
+            activeProspectingGuis[player.UserId] = nil
+        end
+
+        local playerGui = player:FindFirstChild("PlayerGui")
+        if not playerGui then return end
+
+        -- Create ScreenGui
+        local screenGui = Instance.new("ScreenGui")
+        screenGui.Name = "ProspectingInvestmentMenu"
+        screenGui.ResetOnSpawn = false
+        screenGui.Parent = playerGui
+        activeProspectingGuis[player.UserId] = screenGui
+
+        -- Main frame
+        local mainFrame = Instance.new("Frame")
+        mainFrame.Name = "MainFrame"
+        mainFrame.Size = UDim2.new(0, 500, 0, 580)
+        mainFrame.Position = UDim2.new(0.5, -250, 0.5, -290)
+        mainFrame.BackgroundColor3 = Color3.fromRGB(25, 20, 35)
+        mainFrame.BorderSizePixel = 3
+        mainFrame.BorderColor3 = Color3.fromRGB(180, 100, 255)
+        mainFrame.Parent = screenGui
+
+        -- Add corner rounding
+        local corner = Instance.new("UICorner")
+        corner.CornerRadius = UDim.new(0, 10)
+        corner.Parent = mainFrame
+
+        -- Title
+        local title = Instance.new("TextLabel")
+        title.Name = "Title"
+        title.Size = UDim2.new(1, 0, 0, 50)
+        title.Position = UDim2.new(0, 0, 0, 0)
+        title.BackgroundColor3 = Color3.fromRGB(40, 30, 55)
+        title.BorderSizePixel = 0
+        title.Text = "PROSPECT FOR GEMS"
+        title.TextColor3 = Color3.fromRGB(180, 100, 255)
+        title.TextScaled = true
+        title.Font = Enum.Font.GothamBold
+        title.Parent = mainFrame
+
+        local titleCorner = Instance.new("UICorner")
+        titleCorner.CornerRadius = UDim.new(0, 10)
+        titleCorner.Parent = title
+
+        -- Subtitle
+        local subtitle = Instance.new("TextLabel")
+        subtitle.Name = "Subtitle"
+        subtitle.Size = UDim2.new(1, 0, 0, 25)
+        subtitle.Position = UDim2.new(0, 0, 0, 50)
+        subtitle.BackgroundTransparency = 1
+        subtitle.Text = "Choose your investment level:"
+        subtitle.TextColor3 = Color3.fromRGB(200, 200, 200)
+        subtitle.TextScaled = true
+        subtitle.Font = Enum.Font.Gotham
+        subtitle.Parent = mainFrame
+
+        -- Function to create an investment tier card
+        local function createTierCard(yOffset, tierIndex)
+            local tierData = ProspectingTiers[tierIndex]
+            local tierColors = {
+                [1] = Color3.fromRGB(150, 150, 150),  -- Basic - gray
+                [2] = Color3.fromRGB(50, 180, 50),    -- Advanced - green
+                [3] = Color3.fromRGB(50, 100, 220),   -- Expert - blue
+                [4] = Color3.fromRGB(220, 150, 30),   -- Master - gold
+            }
+            local tierColor = tierColors[tierIndex] or Color3.fromRGB(150, 150, 150)
+
+            local card = Instance.new("Frame")
+            card.Name = tierData.name .. "Card"
+            card.Size = UDim2.new(0.94, 0, 0, 105)
+            card.Position = UDim2.new(0.03, 0, 0, yOffset)
+            card.BackgroundColor3 = Color3.fromRGB(35, 30, 45)
+            card.BorderSizePixel = 2
+            card.BorderColor3 = tierColor
+            card.Parent = mainFrame
+
+            local cardCorner = Instance.new("UICorner")
+            cardCorner.CornerRadius = UDim.new(0, 8)
+            cardCorner.Parent = card
+
+            -- Tier name and cost
+            local tierName = Instance.new("TextLabel")
+            tierName.Size = UDim2.new(0.6, 0, 0, 28)
+            tierName.Position = UDim2.new(0.02, 0, 0, 5)
+            tierName.BackgroundTransparency = 1
+            tierName.Text = string.format("%s PROSPECT - %s gold", tierData.name:upper(), formatGold(tierData.cost))
+            tierName.TextColor3 = tierColor
+            tierName.TextXAlignment = Enum.TextXAlignment.Left
+            tierName.TextScaled = true
+            tierName.Font = Enum.Font.GothamBold
+            tierName.Parent = card
+
+            -- Description
+            local description = Instance.new("TextLabel")
+            description.Size = UDim2.new(0.96, 0, 0, 20)
+            description.Position = UDim2.new(0.02, 0, 0, 33)
+            description.BackgroundTransparency = 1
+            description.Text = tierData.description
+            description.TextColor3 = Color3.fromRGB(180, 180, 180)
+            description.TextXAlignment = Enum.TextXAlignment.Left
+            description.TextScaled = true
+            description.Font = Enum.Font.Gotham
+            description.Parent = card
+
+            -- Find chance
+            local findChance = Instance.new("TextLabel")
+            findChance.Size = UDim2.new(0.96, 0, 0, 20)
+            findChance.Position = UDim2.new(0.02, 0, 0, 53)
+            findChance.BackgroundTransparency = 1
+            findChance.Text = string.format("%.0f%% chance of finding something", tierData.findChance * 100)
+            findChance.TextColor3 = Color3.fromRGB(100, 200, 100)
+            findChance.TextXAlignment = Enum.TextXAlignment.Left
+            findChance.TextScaled = true
+            findChance.Font = Enum.Font.Gotham
+            findChance.Parent = card
+
+            -- Prospect button
+            local prospectButton = Instance.new("TextButton")
+            prospectButton.Name = "ProspectButton"
+            prospectButton.Size = UDim2.new(0.3, 0, 0, 28)
+            prospectButton.Position = UDim2.new(0.68, 0, 0, 70)
+            prospectButton.BackgroundColor3 = tierColor
+            prospectButton.BorderSizePixel = 0
+            prospectButton.Text = "PROSPECT"
+            prospectButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+            prospectButton.TextScaled = true
+            prospectButton.Font = Enum.Font.GothamBold
+            prospectButton.Parent = card
+
+            local buttonCorner = Instance.new("UICorner")
+            buttonCorner.CornerRadius = UDim.new(0, 6)
+            buttonCorner.Parent = prospectButton
+
+            return prospectButton, tierData
+        end
+
+        -- Create cards for each tier
+        local basicBtn, basicData = createTierCard(85, 1)
+        local advancedBtn, advancedData = createTierCard(200, 2)
+        local expertBtn, expertData = createTierCard(315, 3)
+        local masterBtn, masterData = createTierCard(430, 4)
+
+        -- Close button
+        local closeButton = Instance.new("TextButton")
+        closeButton.Name = "CloseButton"
+        closeButton.Size = UDim2.new(0.4, 0, 0, 35)
+        closeButton.Position = UDim2.new(0.3, 0, 0, 540)
+        closeButton.BackgroundColor3 = Color3.fromRGB(120, 50, 50)
+        closeButton.BorderSizePixel = 0
+        closeButton.Text = "CLOSE"
+        closeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+        closeButton.TextScaled = true
+        closeButton.Font = Enum.Font.GothamBold
+        closeButton.Parent = mainFrame
+
+        local closeCorner = Instance.new("UICorner")
+        closeCorner.CornerRadius = UDim.new(0, 6)
+        closeCorner.Parent = closeButton
+
+        -- Function to start prospecting at a specific tier
+        local function startProspecting(tierIndex)
+            local tierData = ProspectingTiers[tierIndex]
+
+            -- Check and deduct gold via DataService
+            if DataService then
+                local playerData = DataService:GetPlayerData(player)
+                if playerData then
+                    if playerData.resources.gold < tierData.cost then
+                        print(string.format("[GoldMine] %s: Not enough gold! Need %s, have %s.",
+                            player.Name, formatGold(tierData.cost), formatGold(playerData.resources.gold)))
+                        return
+                    end
+
+                    -- Deduct gold
+                    local success = DataService:DeductResources(player, { gold = tierData.cost })
+                    if not success then
+                        print(string.format("[GoldMine] %s: Failed to deduct gold!", player.Name))
+                        return
+                    end
+
+                    -- Sync HUD
+                    local Events = ReplicatedStorage:FindFirstChild("Events")
+                    if Events then
+                        local SyncPlayerData = Events:FindFirstChild("SyncPlayerData")
+                        if SyncPlayerData then
+                            SyncPlayerData:FireClient(player, playerData)
+                        end
+                    end
+                else
+                    print(string.format("[GoldMine] %s: No player data found!", player.Name))
+                    return
+                end
+            else
+                print("[GoldMine] DataService not available - using demo mode (no gold deducted)")
+            end
+
+            -- Roll for gem immediately (instant result)
+            local success = math.random() < tierData.findChance
+
+            if success then
+                local gem = rollGem(tierIndex)
+                GoldMineState.playerHeldGem[player.UserId] = gem
+
+                -- Show gem visual
+                resultGem.Color = gem.color
+                resultGem.Transparency = 0
+
+                -- Size based on gem size
+                local sizeMap = { Chip = 0.5, Stone = 0.7, Gem = 0.9, Jewel = 1.2 }
+                local visualSize = sizeMap[gem.size] or 0.8
+                resultGem.Size = Vector3.new(visualSize, visualSize, visualSize)
+
+                -- Get rarity color for display
+                local rarityColor = RarityColors[gem.rarity] or Color3.fromRGB(255, 255, 255)
+
+                print(string.format("[GoldMine] %s found a %s %s %s!",
+                    player.Name, gem.rarity, gem.size, gem.type))
+                print(string.format("  Value: %s gold | Bonus: +%.0f%% %s",
+                    formatGold(gem.value), (gem.multiplier - 1) * 100, gem.boost))
+                print("  Take it to the Town Hall Trophy Case to display!")
+
+                -- Award gem value to player
+                if DataService then
+                    local playerData = DataService:GetPlayerData(player)
+                    if playerData then
+                        DataService:UpdateResources(player, { gold = gem.value })
+                        print(string.format("[GoldMine] %s received %s gold for the gem!", player.Name, formatGold(gem.value)))
+
+                        -- Sync HUD
+                        local Events = ReplicatedStorage:FindFirstChild("Events")
+                        if Events then
+                            local SyncPlayerData = Events:FindFirstChild("SyncPlayerData")
+                            if SyncPlayerData then
+                                SyncPlayerData:FireClient(player, playerData)
+                            end
+                        end
+                    end
+                end
+
+                -- Sparkle effect
+                local sparkle = Instance.new("ParticleEmitter")
+                sparkle.Color = ColorSequence.new(gem.color)
+                sparkle.Size = NumberSequence.new(0.3, 0)
+                sparkle.Lifetime = NumberRange.new(0.5, 1)
+                sparkle.Rate = 50
+                sparkle.Speed = NumberRange.new(2, 4)
+                sparkle.SpreadAngle = Vector2.new(180, 180)
+                sparkle.Parent = resultGem
+                task.delay(2, function() sparkle:Destroy() end)
+
+                -- Update timer display
+                timerLabel.Text = string.format("FOUND: %s %s!", gem.rarity:upper(), gem.type)
+                timerLabel.TextColor3 = rarityColor
+                task.delay(3, function()
+                    timerLabel.Text = "GEM PROSPECTING"
+                    timerLabel.TextColor3 = Color3.fromRGB(255, 215, 0)
+                    resultGem.Transparency = 1
+                end)
+            else
+                print(string.format("[GoldMine] %s: No gems found this time. Better luck next prospect!", player.Name))
+
+                -- Update timer display
+                timerLabel.Text = "Nothing found..."
+                timerLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
+                task.delay(2, function()
+                    timerLabel.Text = "GEM PROSPECTING"
+                    timerLabel.TextColor3 = Color3.fromRGB(255, 215, 0)
+                end)
+            end
+
+            -- Close the GUI
+            screenGui:Destroy()
+            activeProspectingGuis[player.UserId] = nil
+        end
+
+        -- Button handlers
+        basicBtn.MouseButton1Click:Connect(function()
+            startProspecting(1)
+        end)
+
+        advancedBtn.MouseButton1Click:Connect(function()
+            startProspecting(2)
+        end)
+
+        expertBtn.MouseButton1Click:Connect(function()
+            startProspecting(3)
+        end)
+
+        masterBtn.MouseButton1Click:Connect(function()
+            startProspecting(4)
+        end)
+
+        closeButton.MouseButton1Click:Connect(function()
+            screenGui:Destroy()
+            activeProspectingGuis[player.UserId] = nil
+        end)
     end
 
     -- Start prospecting interaction
     local startProspectPrompt = Instance.new("ProximityPrompt")
     startProspectPrompt.Name = "StartProspectPrompt"
     startProspectPrompt.ObjectText = "Gem Prospecting"
-    startProspectPrompt.ActionText = "Invest Gold"
-    startProspectPrompt.HoldDuration = 0.5
+    startProspectPrompt.ActionText = "Open Prospecting"
+    startProspectPrompt.HoldDuration = 0.3
     startProspectPrompt.MaxActivationDistance = 8
     startProspectPrompt.Parent = prospectingTable
 
     startProspectPrompt.Triggered:Connect(function(player)
-        local state = GoldMineState.prospecting
-
-        -- Check if already prospecting
-        if state.isActive then
-            local remaining = state.endTime - tick()
-            if remaining > 0 then
-                local minutes = math.floor(remaining / 60)
-                local seconds = math.floor(remaining % 60)
-                print(string.format("[GoldMine] Prospecting in progress... %d:%02d remaining", minutes, seconds))
-                return
-            else
-                -- Ready to collect!
-                local success = math.random() < 0.5 -- 50% success rate
-
-                if success then
-                    local gem = rollGem(state.tier)
-                    GoldMineState.playerHeldGem[player.UserId] = gem
-
-                    -- Show gem visual
-                    resultGem.Color = gem.color
-                    resultGem.Transparency = 0
-
-                    -- Size based on gem size
-                    local sizeMap = { Chip = 0.5, Stone = 0.7, Gem = 0.9, Jewel = 1.2 }
-                    local visualSize = sizeMap[gem.size] or 0.8
-                    resultGem.Size = Vector3.new(visualSize, visualSize, visualSize)
-
-                    print(string.format("[GoldMine] %s found a %s %s!",
-                        player.Name, gem.size, gem.type))
-                    print(string.format("  Bonus: +%.0f%% %s", (gem.multiplier - 1) * 100, gem.boost))
-                    print("  Take it to the Town Hall Trophy Case to display!")
-
-                    -- Sparkle effect
-                    local sparkle = Instance.new("ParticleEmitter")
-                    sparkle.Color = ColorSequence.new(gem.color)
-                    sparkle.Size = NumberSequence.new(0.3, 0)
-                    sparkle.Lifetime = NumberRange.new(0.5, 1)
-                    sparkle.Rate = 50
-                    sparkle.Speed = NumberRange.new(2, 4)
-                    sparkle.SpreadAngle = Vector2.new(180, 180)
-                    sparkle.Parent = resultGem
-                    task.delay(2, function() sparkle:Destroy() end)
-                else
-                    print(string.format("[GoldMine] %s: No gems found this time. Better luck next prospect!", player.Name))
-                end
-
-                -- Reset state
-                state.isActive = false
-                state.tier = nil
-                task.delay(1, updateProspectingDisplay)
-                return
-            end
+        -- Check if GUI already open
+        if activeProspectingGuis[player.UserId] then
+            activeProspectingGuis[player.UserId]:Destroy()
+            activeProspectingGuis[player.UserId] = nil
+            return
         end
 
-        -- Show tier options
-        print("[GoldMine] === GEM PROSPECTING ===")
-        print("  Select investment tier (higher = better gems):")
-        for i, tier in ipairs(ProspectingTiers) do
-            local rarityTable = GemRarityByTier[i]
-            print(string.format("    %d. %s (%d gold) - Diamond chance: %.0f%%",
-                i, tier.name, tier.cost, (rarityTable.Diamond or 0) * 100))
-        end
-        print("")
-        print("  [Demo: Starting Basic prospecting]")
-
-        -- Start basic prospecting for demo
-        local tier = 1
-        local tierData = ProspectingTiers[tier]
-
-        -- TODO: Check and deduct gold
-        print(string.format("[GoldMine] %s started %s prospecting! (%d gold)",
-            player.Name, tierData.name, tierData.cost))
-
-        state.isActive = true
-        state.tier = tier
-        state.startTime = tick()
-        state.endTime = tick() + tierData.duration
-
-        updateProspectingDisplay()
-    end)
-
-    -- Update timer every second
-    task.spawn(function()
-        while true do
-            task.wait(1)
-            if GoldMineState.prospecting.isActive then
-                updateProspectingDisplay()
-            end
-        end
+        -- Show the investment selection GUI
+        createProspectingGui(player)
     end)
 
     -- ========== EXIT PORTAL ==========
@@ -5396,15 +5945,35 @@ local function createLumberMill()
             if LumberMillState.sawmillLogs > 0 then
                 -- Get current sawmill stats (rechecks each log for live upgrades)
                 local sawmillStats = getSawmillStats(LumberMillState.equipment.sawmillLevel)
-                local planksPerLog = sawmillStats.planksPerLog
-                local processTime = sawmillStats.processTime
+                local basePlanksPerLog = sawmillStats.planksPerLog
+                local baseProcessTime = sawmillStats.processTime
+
+                -- Apply production and speed bonuses from Town Hall
+                local productionMultiplier = 1.0
+                local speedMultiplier = 1.0
+                if TownHallState and calculateTotalBonuses then
+                    local bonuses = calculateTotalBonuses()
+                    productionMultiplier = bonuses.production.sawmill or 1.0
+                    speedMultiplier = bonuses.speed.sawmill or 1.0
+                end
+                local planksPerLog = math.floor(basePlanksPerLog * productionMultiplier)
+                local processTime = baseProcessTime / speedMultiplier -- faster = divide time
 
                 -- Process one log at a time
                 while LumberMillState.sawmillLogs > 0 do
                     -- Recheck stats each log (in case player upgrades mid-batch)
                     sawmillStats = getSawmillStats(LumberMillState.equipment.sawmillLevel)
-                    planksPerLog = sawmillStats.planksPerLog
-                    processTime = sawmillStats.processTime
+                    basePlanksPerLog = sawmillStats.planksPerLog
+                    baseProcessTime = sawmillStats.processTime
+
+                    -- Re-apply bonuses
+                    if TownHallState and calculateTotalBonuses then
+                        local bonuses = calculateTotalBonuses()
+                        productionMultiplier = bonuses.production.sawmill or 1.0
+                        speedMultiplier = bonuses.speed.sawmill or 1.0
+                    end
+                    planksPerLog = math.floor(basePlanksPerLog * productionMultiplier)
+                    processTime = baseProcessTime / speedMultiplier
 
                     local logsRemaining = LumberMillState.sawmillLogs
 
@@ -7513,15 +8082,35 @@ local function createFarm(farmNumber)
             if FarmState.windmillCrops > 0 then
                 -- Get current windmill stats (rechecks each crop for live upgrades)
                 local windmillStats = getWindmillStatsFunc(FarmState.equipment.windmillLevel)
-                local grainPerCrop = windmillStats.grainPerCrop
-                local processTime = windmillStats.processTime
+                local baseGrainPerCrop = windmillStats.grainPerCrop
+                local baseProcessTime = windmillStats.processTime
+
+                -- Apply production and speed bonuses from Town Hall
+                local productionMultiplier = 1.0
+                local speedMultiplier = 1.0
+                if TownHallState and calculateTotalBonuses then
+                    local bonuses = calculateTotalBonuses()
+                    productionMultiplier = bonuses.production.windmill or 1.0
+                    speedMultiplier = bonuses.speed.windmill or 1.0
+                end
+                local grainPerCrop = math.floor(baseGrainPerCrop * productionMultiplier)
+                local processTime = baseProcessTime / speedMultiplier -- faster = divide time
 
                 -- Process one crop at a time
                 while FarmState.windmillCrops > 0 do
                     -- Recheck stats each crop (in case player upgrades mid-batch)
                     windmillStats = getWindmillStatsFunc(FarmState.equipment.windmillLevel)
-                    grainPerCrop = windmillStats.grainPerCrop
-                    processTime = windmillStats.processTime
+                    baseGrainPerCrop = windmillStats.grainPerCrop
+                    baseProcessTime = windmillStats.processTime
+
+                    -- Re-apply bonuses
+                    if TownHallState and calculateTotalBonuses then
+                        local bonuses = calculateTotalBonuses()
+                        productionMultiplier = bonuses.production.windmill or 1.0
+                        speedMultiplier = bonuses.speed.windmill or 1.0
+                    end
+                    grainPerCrop = math.floor(baseGrainPerCrop * productionMultiplier)
+                    processTime = baseProcessTime / speedMultiplier
 
                     local cropsRemaining = FarmState.windmillCrops
 
@@ -9550,7 +10139,16 @@ local function createBarracks()
     -- Training processing loop (trainees → trained recruits over time)
     task.spawn(function()
         while true do
-            task.wait(3) -- Process every 3 seconds
+            -- Apply speed bonus from Town Hall research
+            local baseTrainTime = 3 -- Base 3 seconds per trainee
+            local speedMultiplier = 1.0
+            if TownHallState and calculateTotalBonuses then
+                local bonuses = calculateTotalBonuses()
+                speedMultiplier = bonuses.speed.barracks or 1.0
+            end
+            local actualTrainTime = baseTrainTime / speedMultiplier
+            task.wait(actualTrainTime)
+
             if traineesInTraining > 0 and traineesReady < 6 then
                 local dummyStats = DummyStats[BarracksState.equipment.dummies]
                 traineesInTraining = traineesInTraining - 1
@@ -9559,7 +10157,8 @@ local function createBarracks()
 
                 local xpGain = 15 * dummyStats.xpBonus
                 addBarracksXP(xpGain)
-                print(string.format("[Barracks] Training complete! (+%d XP) Recruits ready: %d", xpGain, traineesReady))
+                local bonusText = speedMultiplier > 1.0 and string.format(" (%.0f%% faster!)", (speedMultiplier - 1) * 100) or ""
+                print(string.format("[Barracks] Training complete!%s (+%d XP) Recruits ready: %d", bonusText, xpGain, traineesReady))
 
                 -- Sparks on dummy for visual effect
                 local sparks = Instance.new("ParticleEmitter")
@@ -10311,6 +10910,115 @@ local function calculateGemBonuses()
     bonuses.defense = bonuses.defense * bonuses.all
 
     return bonuses
+end
+
+-- Get building level multiplier (Level 1 = 1.0x, Level 2 = 1.1x, Level 3 = 1.2x, etc.)
+-- Each level adds +10% production
+local function getBuildingLevelMultiplier(buildingName)
+    local level = TownHallState.buildingLevels[buildingName]
+    if not level then return 1.0 end
+    return 1.0 + (level - 1) * 0.1
+end
+
+-- Get research bonuses from completed research
+-- Returns bonuses per building and global bonuses
+local function getResearchBonuses()
+    local bonuses = {
+        -- Per-building production bonuses
+        production = {
+            goldMine = 1.0,
+            smelter = 1.0,
+            lumberMill = 1.0,
+            sawmill = 1.0,
+            farm = 1.0,
+            windmill = 1.0,
+            barracks = 1.0,
+        },
+        -- Per-building speed bonuses
+        speed = {
+            goldMine = 1.0,
+            smelter = 1.0,
+            lumberMill = 1.0,
+            sawmill = 1.0,
+            farm = 1.0,
+            windmill = 1.0,
+            barracks = 1.0,
+        },
+        -- Global bonuses (apply to all)
+        all = {
+            production = 1.0,
+            speed = 1.0,
+        },
+    }
+
+    for _, researchId in ipairs(TownHallState.research.completed) do
+        local research = ResearchTree[researchId]
+        if research and research.bonus then
+            local target = research.bonus.target
+            local bonusType = research.bonus.type
+            local value = research.bonus.value
+
+            if target == "all" then
+                -- Universal bonus applies to global all
+                if bonusType == "production" then
+                    bonuses.all.production = bonuses.all.production + value
+                elseif bonusType == "speed" then
+                    bonuses.all.speed = bonuses.all.speed + value
+                end
+            else
+                -- Target-specific bonus
+                if bonusType == "production" and bonuses.production[target] then
+                    bonuses.production[target] = bonuses.production[target] + value
+                elseif bonusType == "speed" and bonuses.speed[target] then
+                    bonuses.speed[target] = bonuses.speed[target] + value
+                end
+            end
+        end
+    end
+
+    return bonuses
+end
+
+-- Master bonus calculation function
+-- Combines gem bonuses, building level bonuses, and research bonuses
+-- Returns final multipliers for each building/system
+local function calculateTotalBonuses()
+    local gemBonuses = calculateGemBonuses()
+    local researchBonuses = getResearchBonuses()
+
+    local totals = {
+        -- Production multipliers by building (base * gem * research_global * research_target * building_level)
+        production = {
+            goldMine = gemBonuses.production * researchBonuses.all.production * researchBonuses.production.goldMine * getBuildingLevelMultiplier("goldMine"),
+            smelter = gemBonuses.production * researchBonuses.all.production * researchBonuses.production.smelter * getBuildingLevelMultiplier("goldMine"), -- smelter tied to goldMine level
+            lumberMill = gemBonuses.production * researchBonuses.all.production * researchBonuses.production.lumberMill * getBuildingLevelMultiplier("lumberMill"),
+            sawmill = gemBonuses.production * researchBonuses.all.production * researchBonuses.production.sawmill * getBuildingLevelMultiplier("lumberMill"), -- sawmill tied to lumberMill level
+            farm = gemBonuses.production * researchBonuses.all.production * researchBonuses.production.farm,
+            windmill = gemBonuses.production * researchBonuses.all.production * researchBonuses.production.windmill,
+            barracks = gemBonuses.production * researchBonuses.all.production * researchBonuses.production.barracks * getBuildingLevelMultiplier("barracks"),
+        },
+        -- Speed multipliers by building
+        speed = {
+            goldMine = gemBonuses.speed * researchBonuses.all.speed * researchBonuses.speed.goldMine,
+            smelter = gemBonuses.speed * researchBonuses.all.speed * researchBonuses.speed.smelter,
+            lumberMill = gemBonuses.speed * researchBonuses.all.speed * researchBonuses.speed.lumberMill,
+            sawmill = gemBonuses.speed * researchBonuses.all.speed * researchBonuses.speed.sawmill,
+            farm = gemBonuses.speed * researchBonuses.all.speed * researchBonuses.speed.farm,
+            windmill = gemBonuses.speed * researchBonuses.all.speed * researchBonuses.speed.windmill,
+            barracks = gemBonuses.speed * researchBonuses.all.speed * researchBonuses.speed.barracks,
+        },
+        -- Defense bonus (gems only for now)
+        defense = gemBonuses.defense,
+    }
+
+    -- Apply farm building level multipliers (each farm has its own level)
+    for i = 1, 6 do
+        local farmKey = "farm" .. i
+        local farmLevelMultiplier = getBuildingLevelMultiplier(farmKey)
+        totals.production["farm" .. i] = totals.production.farm * farmLevelMultiplier
+    end
+
+    return totals
 end
 
 -- Add XP to town hall and handle leveling
@@ -11082,18 +11790,174 @@ local function createTownHall()
     upgradePrompt.MaxActivationDistance = 10
     upgradePrompt.Parent = upgradeDesk
 
-    upgradePrompt.Triggered:Connect(function(player)
-        print("[TownHall] === BUILDING UPGRADE CENTER ===")
-        print(string.format("  Gold Mine: Level %d", TownHallState.buildingLevels.goldMine))
-        print(string.format("  Lumber Mill: Level %d", TownHallState.buildingLevels.lumberMill))
-        print(string.format("  Barracks: Level %d", TownHallState.buildingLevels.barracks))
-        for i = 1, 6 do
-            local farmKey = "farm" .. i
-            print(string.format("  Farm %d: Level %d", i, TownHallState.buildingLevels[farmKey]))
+    -- Track selected building for upgrades per player
+    local selectedBuildingForUpgrade = {}  -- [playerId] = buildingName
+    local lastInteractionTime = {}  -- [playerId] = tick()
+
+    -- Building display names for nicer output
+    local buildingDisplayNames = {
+        goldMine = "Gold Mine",
+        lumberMill = "Lumber Mill",
+        barracks = "Barracks",
+        farm1 = "Farm 1",
+        farm2 = "Farm 2",
+        farm3 = "Farm 3",
+        farm4 = "Farm 4",
+        farm5 = "Farm 5",
+        farm6 = "Farm 6",
+    }
+
+    local buildingOrder = { "goldMine", "lumberMill", "barracks", "farm1", "farm2", "farm3", "farm4", "farm5", "farm6" }
+
+    -- Function to upgrade a building from the center
+    local function upgradeBuildingFromCenter(player, buildingName)
+        local config = BuildingUpgradeCosts[buildingName]
+        if not config then
+            print(string.format("[TownHall] %s: Invalid building type: %s", player.Name, buildingName))
+            return false
         end
-        print("")
-        print("  [Upgrade costs scale with level]")
-        print("  Use the upgrade kiosk in each building to upgrade")
+
+        local currentLevel = TownHallState.buildingLevels[buildingName] or 1
+        if currentLevel >= config.maxLevel then
+            print(string.format("[TownHall] %s: %s is already at max level (%d)!", player.Name, buildingDisplayNames[buildingName], config.maxLevel))
+            return false
+        end
+
+        local cost = getUpgradeCost(buildingName, currentLevel)
+        if not cost then
+            print(string.format("[TownHall] %s: Cannot calculate upgrade cost", player.Name))
+            return false
+        end
+
+        -- Check if player has enough resources
+        local hasGold = not cost.gold or GoldMineState.chestGold >= cost.gold
+        local hasWood = not cost.wood or LumberMillState.woodStorage >= cost.wood
+        local hasFood = not cost.food or FarmState.foodStorage >= cost.food
+
+        if not hasGold or not hasWood or not hasFood then
+            print(string.format("[TownHall] %s: Insufficient resources for %s upgrade!", player.Name, buildingDisplayNames[buildingName]))
+            local needParts = {}
+            if cost.gold then table.insert(needParts, string.format("%d Gold", cost.gold)) end
+            if cost.wood then table.insert(needParts, string.format("%d Wood", cost.wood)) end
+            if cost.food then table.insert(needParts, string.format("%d Food", cost.food)) end
+            print(string.format("  Need: %s", table.concat(needParts, ", ")))
+            print(string.format("  Have: %d Gold, %d Wood, %d Food",
+                GoldMineState.chestGold, LumberMillState.woodStorage, FarmState.foodStorage))
+            return false
+        end
+
+        -- Deduct resources
+        if cost.gold then GoldMineState.chestGold = GoldMineState.chestGold - cost.gold end
+        if cost.wood then LumberMillState.woodStorage = LumberMillState.woodStorage - cost.wood end
+        if cost.food then FarmState.foodStorage = FarmState.foodStorage - cost.food end
+
+        -- Perform upgrade
+        TownHallState.buildingLevels[buildingName] = currentLevel + 1
+        local newLevel = TownHallState.buildingLevels[buildingName]
+        local newBonus = (newLevel - 1) * 10 -- +10% per level above 1
+
+        print("[TownHall] ========== UPGRADE COMPLETE! ==========")
+        print(string.format("  %s upgraded to Level %d!", buildingDisplayNames[buildingName], newLevel))
+        print(string.format("  Production bonus: +%d%%", newBonus))
+        print("================================================")
+
+        -- Add Town Hall XP for upgrading
+        addTownHallXP(50 * newLevel)
+
+        return true
+    end
+
+    upgradePrompt.Triggered:Connect(function(player)
+        local now = tick()
+        local lastTime = lastInteractionTime[player.UserId] or 0
+        local selected = selectedBuildingForUpgrade[player.UserId]
+
+        -- Quick interaction (within 1.5 seconds) cycles or upgrades
+        if now - lastTime < 1.5 and selected then
+            -- Try to upgrade the selected building
+            local success = upgradeBuildingFromCenter(player, selected)
+            if success then
+                selectedBuildingForUpgrade[player.UserId] = nil
+            else
+                -- Cycle to next building if upgrade failed
+                local currentIdx = 1
+                for i, name in ipairs(buildingOrder) do
+                    if name == selected then
+                        currentIdx = i
+                        break
+                    end
+                end
+
+                for offset = 1, #buildingOrder do
+                    local nextIdx = ((currentIdx - 1 + offset) % #buildingOrder) + 1
+                    local buildingName = buildingOrder[nextIdx]
+                    local level = TownHallState.buildingLevels[buildingName] or 1
+                    local config = BuildingUpgradeCosts[buildingName]
+                    if config and level < config.maxLevel then
+                        selectedBuildingForUpgrade[player.UserId] = buildingName
+                        local cost = getUpgradeCost(buildingName, level)
+                        local costParts = {}
+                        if cost.gold then table.insert(costParts, string.format("%dg", cost.gold)) end
+                        if cost.wood then table.insert(costParts, string.format("%dw", cost.wood)) end
+                        if cost.food then table.insert(costParts, string.format("%df", cost.food)) end
+                        print(string.format("[TownHall] >> Selected: %s (Lv%d -> %d) | Cost: %s",
+                            buildingDisplayNames[buildingName], level, level + 1, table.concat(costParts, "/")))
+                        break
+                    end
+                end
+            end
+        else
+            -- Show full upgrade menu
+            print("[TownHall] ============ BUILDING UPGRADE CENTER ============")
+            print(string.format("  Town Hall Level: %d | Total Bonuses Active!", TownHallState.level))
+            print("")
+            print("  BUILDING LEVELS & PRODUCTION BONUSES:")
+            print("  ----------------------------------------")
+
+            for idx, buildingName in ipairs(buildingOrder) do
+                local level = TownHallState.buildingLevels[buildingName] or 1
+                local config = BuildingUpgradeCosts[buildingName]
+                local maxLevel = config and config.maxLevel or 10
+                local bonus = (level - 1) * 10
+                local displayName = buildingDisplayNames[buildingName]
+
+                if level >= maxLevel then
+                    print(string.format("  %d. %s: Lv%d (MAX) | +%d%% production",
+                        idx, displayName, level, bonus))
+                else
+                    local cost = getUpgradeCost(buildingName, level)
+                    local costParts = {}
+                    if cost then
+                        if cost.gold then table.insert(costParts, string.format("%dg", cost.gold)) end
+                        if cost.wood then table.insert(costParts, string.format("%dw", cost.wood)) end
+                        if cost.food then table.insert(costParts, string.format("%df", cost.food)) end
+                    end
+                    print(string.format("  %d. %s: Lv%d/%d | +%d%% | Next: %s",
+                        idx, displayName, level, maxLevel, bonus, table.concat(costParts, "/")))
+                end
+            end
+
+            print("")
+            print("  YOUR RESOURCES:")
+            print(string.format("    Gold: %d | Wood: %d | Food: %d",
+                GoldMineState.chestGold, LumberMillState.woodStorage, FarmState.foodStorage))
+            print("")
+
+            -- Auto-select first upgradeable building
+            for _, buildingName in ipairs(buildingOrder) do
+                local level = TownHallState.buildingLevels[buildingName] or 1
+                local config = BuildingUpgradeCosts[buildingName]
+                if config and level < config.maxLevel then
+                    selectedBuildingForUpgrade[player.UserId] = buildingName
+                    print(string.format("  >> %s selected. Interact again to UPGRADE!", buildingDisplayNames[buildingName]))
+                    print("     (Interact quickly to cycle buildings)")
+                    break
+                end
+            end
+            print("==========================================================")
+        end
+
+        lastInteractionTime[player.UserId] = now
     end)
 
     -- ========================================================================
@@ -11253,10 +12117,242 @@ local function createTownHall()
     researchPrompt.MaxActivationDistance = 8
     researchPrompt.Parent = researchDesk
 
+    -- Track selected research for each player
+    local selectedResearch = {}  -- [playerId] = researchId
+    local lastResearchInteraction = {}  -- [playerId] = tick()
+
+    -- Check if research prerequisites are met
+    local function hasPrerequisites(researchId)
+        local research = ResearchTree[researchId]
+        if not research then return false end
+
+        for _, prereqId in ipairs(research.prerequisites) do
+            local found = false
+            for _, completedId in ipairs(TownHallState.research.completed) do
+                if completedId == prereqId then
+                    found = true
+                    break
+                end
+            end
+            if not found then return false end
+        end
+        return true
+    end
+
+    -- Check if research is already completed
+    local function isResearchCompleted(researchId)
+        for _, completedId in ipairs(TownHallState.research.completed) do
+            if completedId == researchId then
+                return true
+            end
+        end
+        return false
+    end
+
+    -- Get available research (prerequisites met, not completed, TH level met)
+    local function getAvailableResearch()
+        local available = {}
+        for researchId, research in pairs(ResearchTree) do
+            if not isResearchCompleted(researchId)
+               and hasPrerequisites(researchId)
+               and TownHallState.level >= research.thRequired then
+                table.insert(available, researchId)
+            end
+        end
+        -- Sort by category for consistent display
+        table.sort(available, function(a, b)
+            return ResearchTree[a].category < ResearchTree[b].category
+        end)
+        return available
+    end
+
+    -- Start research
+    local function startResearch(player, researchId)
+        local research = ResearchTree[researchId]
+        if not research then
+            print(string.format("[Research] %s: Invalid research ID", player.Name))
+            return false
+        end
+
+        if TownHallState.research.inProgress then
+            print(string.format("[Research] %s: Research already in progress!", player.Name))
+            return false
+        end
+
+        if isResearchCompleted(researchId) then
+            print(string.format("[Research] %s: %s already completed!", player.Name, research.name))
+            return false
+        end
+
+        if not hasPrerequisites(researchId) then
+            print(string.format("[Research] %s: Prerequisites not met for %s", player.Name, research.name))
+            return false
+        end
+
+        if TownHallState.level < research.thRequired then
+            print(string.format("[Research] %s: Town Hall level %d required (you have %d)",
+                player.Name, research.thRequired, TownHallState.level))
+            return false
+        end
+
+        -- Check resources
+        local cost = research.cost
+        local hasGold = not cost.gold or GoldMineState.chestGold >= cost.gold
+        local hasWood = not cost.wood or LumberMillState.woodStorage >= cost.wood
+        local hasFood = not cost.food or FarmState.foodStorage >= cost.food
+
+        if not hasGold or not hasWood or not hasFood then
+            print(string.format("[Research] %s: Insufficient resources for %s!", player.Name, research.name))
+            local needParts = {}
+            if cost.gold then table.insert(needParts, string.format("%d Gold", cost.gold)) end
+            if cost.wood then table.insert(needParts, string.format("%d Wood", cost.wood)) end
+            if cost.food then table.insert(needParts, string.format("%d Food", cost.food)) end
+            print(string.format("  Need: %s", table.concat(needParts, ", ")))
+            return false
+        end
+
+        -- Deduct resources
+        if cost.gold then GoldMineState.chestGold = GoldMineState.chestGold - cost.gold end
+        if cost.wood then LumberMillState.woodStorage = LumberMillState.woodStorage - cost.wood end
+        if cost.food then FarmState.foodStorage = FarmState.foodStorage - cost.food end
+
+        -- Start research
+        local now = tick()
+        TownHallState.research.inProgress = {
+            id = researchId,
+            startTime = now,
+            endTime = now + research.duration,
+        }
+
+        local minutes = math.floor(research.duration / 60)
+        local seconds = research.duration % 60
+        print("[Research] ========== RESEARCH STARTED! ==========")
+        print(string.format("  Researching: %s", research.name))
+        print(string.format("  Time: %dm %ds", minutes, seconds))
+        print(string.format("  Bonus: %s", research.description))
+        print("=================================================")
+
+        return true
+    end
+
+    -- Complete research (called by timer)
+    local function completeResearch()
+        if not TownHallState.research.inProgress then return end
+
+        local researchId = TownHallState.research.inProgress.id
+        local research = ResearchTree[researchId]
+
+        if research then
+            table.insert(TownHallState.research.completed, researchId)
+            print("[Research] ========== RESEARCH COMPLETE! ==========")
+            print(string.format("  Completed: %s", research.name))
+            print(string.format("  UNLOCKED: %s", research.description))
+            print("===================================================")
+
+            -- Add Town Hall XP
+            addTownHallXP(100)
+        end
+
+        TownHallState.research.inProgress = nil
+    end
+
+    -- Research timer loop
+    task.spawn(function()
+        while true do
+            task.wait(1) -- Check every second
+            if TownHallState.research.inProgress then
+                local now = tick()
+                if now >= TownHallState.research.inProgress.endTime then
+                    completeResearch()
+                end
+            end
+        end
+    end)
+
     researchPrompt.Triggered:Connect(function(player)
-        print("[TownHall] === RESEARCH STATION ===")
-        print("  Coming in future update!")
-        print("  Unlock city-wide improvements through research")
+        local now = tick()
+        local lastTime = lastResearchInteraction[player.UserId] or 0
+        local selected = selectedResearch[player.UserId]
+
+        -- Quick interaction to start selected research
+        if now - lastTime < 1.5 and selected then
+            local success = startResearch(player, selected)
+            if success then
+                selectedResearch[player.UserId] = nil
+            end
+        else
+            -- Show research menu
+            print("[TownHall] ============ RESEARCH STATION ============")
+            print(string.format("  Town Hall Level: %d", TownHallState.level))
+            print("")
+
+            -- Show in-progress research
+            if TownHallState.research.inProgress then
+                local inProgress = TownHallState.research.inProgress
+                local research = ResearchTree[inProgress.id]
+                local remaining = math.max(0, inProgress.endTime - tick())
+                local minutes = math.floor(remaining / 60)
+                local seconds = math.floor(remaining % 60)
+                print("  >>> RESEARCH IN PROGRESS <<<")
+                print(string.format("  %s: %dm %ds remaining", research.name, minutes, seconds))
+                print(string.format("  Bonus: %s", research.description))
+                print("")
+            end
+
+            -- Show completed research
+            if #TownHallState.research.completed > 0 then
+                print("  COMPLETED RESEARCH:")
+                for _, researchId in ipairs(TownHallState.research.completed) do
+                    local research = ResearchTree[researchId]
+                    if research then
+                        print(string.format("  [OK] %s - %s", research.name, research.description))
+                    end
+                end
+                print("")
+            end
+
+            -- Show available research
+            local available = getAvailableResearch()
+            if #available > 0 and not TownHallState.research.inProgress then
+                print("  AVAILABLE RESEARCH:")
+                local currentCategory = ""
+                for idx, researchId in ipairs(available) do
+                    local research = ResearchTree[researchId]
+                    if research.category ~= currentCategory then
+                        currentCategory = research.category
+                        print(string.format("  -- %s --", currentCategory))
+                    end
+
+                    local costParts = {}
+                    if research.cost.gold then table.insert(costParts, string.format("%dg", research.cost.gold)) end
+                    if research.cost.wood then table.insert(costParts, string.format("%dw", research.cost.wood)) end
+                    if research.cost.food then table.insert(costParts, string.format("%df", research.cost.food)) end
+                    local time = string.format("%dm", math.floor(research.duration / 60))
+
+                    print(string.format("  %d. %s | %s | %s | TH%d",
+                        idx, research.name, table.concat(costParts, "/"), time, research.thRequired))
+                    print(string.format("     -> %s", research.description))
+                end
+                print("")
+
+                -- Auto-select first available
+                selectedResearch[player.UserId] = available[1]
+                local research = ResearchTree[available[1]]
+                print(string.format("  >> %s selected. Interact again to START!", research.name))
+            elseif TownHallState.research.inProgress then
+                print("  [Wait for current research to complete]")
+            else
+                print("  No research available. Complete prerequisites or upgrade Town Hall!")
+            end
+
+            print("")
+            print("  YOUR RESOURCES:")
+            print(string.format("    Gold: %d | Wood: %d | Food: %d",
+                GoldMineState.chestGold, LumberMillState.woodStorage, FarmState.foodStorage))
+            print("====================================================")
+        end
+
+        lastResearchInteraction[player.UserId] = now
     end)
 
     -- ========================================================================
