@@ -80,6 +80,17 @@ local FindOpponent = createRemoteEvent("FindOpponent")
 local NextOpponent = createRemoteEvent("NextOpponent")
 local OpponentFound = createRemoteEvent("OpponentFound")
 
+-- World Map events
+local GetMapPlayers = createRemoteFunction("GetMapPlayers")
+local RelocateBase = createRemoteEvent("RelocateBase")
+local GetRelocationStatus = createRemoteFunction("GetRelocationStatus")
+local StartTravel = createRemoteEvent("StartTravel")
+local CancelTravel = createRemoteEvent("CancelTravel")
+local GetTravelTime = createRemoteFunction("GetTravelTime")
+local TravelUpdate = createRemoteEvent("TravelUpdate")
+local AddFriend = createRemoteEvent("AddFriend")
+local RemoveFriend = createRemoteEvent("RemoveFriend")
+
 -- Alliance events
 local CreateAlliance = createRemoteEvent("CreateAlliance")
 local JoinAlliance = createRemoteEvent("JoinAlliance")
@@ -162,6 +173,7 @@ local QuestService = loadService("QuestService")
 local DailyRewardService = loadService("DailyRewardService")
 local SpellService = loadService("SpellService")
 local LeaderboardService = loadService("LeaderboardService")
+local WorldMapService = loadService("WorldMapService")
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- STEP 4: Initialize services
@@ -193,6 +205,23 @@ initService(AllianceService, "AllianceService")
 initService(QuestService, "QuestService")
 initService(DailyRewardService, "DailyRewardService")
 initService(LeaderboardService, "LeaderboardService")
+initService(WorldMapService, "WorldMapService")
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- STEP 4.5: Build the village environment (streets, gate, decorations)
+-- ═══════════════════════════════════════════════════════════════════════════════
+print("[SERVER] Building village environment...")
+
+local VillageBuilder = require(ServerScriptService:WaitForChild("VillageBuilder"))
+local buildSuccess, buildErr = pcall(function()
+    VillageBuilder.Build()
+end)
+
+if buildSuccess then
+    print("[SERVER] Village environment built successfully (includes gate)")
+else
+    warn("[SERVER] Failed to build village environment:", tostring(buildErr))
+end
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- STEP 5: Connect service signals for food supply updates
@@ -474,6 +503,79 @@ GetLeaderboardInfo.OnServerInvoke = function(player)
     end
     return nil
 end
+
+-- World Map functions
+GetMapPlayers.OnServerInvoke = function(player, centerPosition, maxCount)
+    if WorldMapService and WorldMapService.GetNearbyPlayers then
+        return WorldMapService:GetNearbyPlayers(player, centerPosition, maxCount)
+    end
+    return {}
+end
+
+GetRelocationStatus.OnServerInvoke = function(player)
+    if WorldMapService and WorldMapService.GetRelocationStatus then
+        return WorldMapService:GetRelocationStatus(player)
+    end
+    return { canRelocateFree = true, cooldownRemaining = 0, costIfNow = 0 }
+end
+
+GetTravelTime.OnServerInvoke = function(player, targetPosition)
+    if WorldMapService and WorldMapService.GetTravelTime then
+        return WorldMapService:GetTravelTime(player, targetPosition)
+    end
+    return { success = false, error = "SERVICE_UNAVAILABLE" }
+end
+
+connectEvent(RelocateBase, function(player, newPosition)
+    if WorldMapService and WorldMapService.RelocateBase then
+        local result = WorldMapService:RelocateBase(player, newPosition)
+        ServerResponse:FireClient(player, "RelocateBase", result)
+    end
+end)
+
+connectEvent(StartTravel, function(player, targetUserId)
+    if WorldMapService and WorldMapService.StartTravel then
+        local result = WorldMapService:StartTravel(player, targetUserId)
+        ServerResponse:FireClient(player, "StartTravel", result)
+
+        -- If traveling, send updates
+        if result.success and result.travelTime > 0 then
+            task.spawn(function()
+                while true do
+                    task.wait(1)
+                    local remaining = WorldMapService:GetRemainingTravelTime(player)
+                    if remaining <= 0 then
+                        TravelUpdate:FireClient(player, { complete = true, targetId = targetUserId })
+                        break
+                    else
+                        TravelUpdate:FireClient(player, { complete = false, remaining = remaining })
+                    end
+                end
+            end)
+        end
+    end
+end)
+
+connectEvent(CancelTravel, function(player)
+    if WorldMapService and WorldMapService.CancelTravel then
+        local result = WorldMapService:CancelTravel(player)
+        ServerResponse:FireClient(player, "CancelTravel", { success = result })
+    end
+end)
+
+connectEvent(AddFriend, function(player, friendUserId)
+    if WorldMapService and WorldMapService.AddFriend then
+        local result = WorldMapService:AddFriend(player, friendUserId)
+        ServerResponse:FireClient(player, "AddFriend", { success = result })
+    end
+end)
+
+connectEvent(RemoveFriend, function(player, friendUserId)
+    if WorldMapService and WorldMapService.RemoveFriend then
+        local result = WorldMapService:RemoveFriend(player, friendUserId)
+        ServerResponse:FireClient(player, "RemoveFriend", { success = result })
+    end
+end)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- STEP 6: Player connection handling
