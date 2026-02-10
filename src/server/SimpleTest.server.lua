@@ -707,21 +707,26 @@ local function createBarnExterior(name, position, size, buildingName, facingDire
     roofRidge.Parent = exterior
 
     -- GABLE FILL (red barn wall under roof at front and back)
+    -- Reduce heights slightly so they don't poke through angled roof
+    local gableInset = 0.8 -- How much shorter to make gable fills
+
     -- Front gable - fill the gambrel shape with barn red
+    local upperGableHeight = (roofPeakHeight - kneeHeight) - gableInset
     local frontGableUpper = Instance.new("Part")
     frontGableUpper.Name = "FrontGableUpper"
-    frontGableUpper.Size = Vector3.new(kneeX * 2, roofPeakHeight - kneeHeight, 0.4)
-    frontGableUpper.Position = position + rotateOffset(Vector3.new(0, wallHeight + kneeHeight + (roofPeakHeight - kneeHeight)/2, size.Z/2 + 0.2))
+    frontGableUpper.Size = Vector3.new(kneeX * 2 - gableInset, upperGableHeight, 0.4)
+    frontGableUpper.Position = position + rotateOffset(Vector3.new(0, wallHeight + kneeHeight + upperGableHeight/2, size.Z/2 + 0.2))
     frontGableUpper.Orientation = Vector3.new(0, rotation, 0)
     frontGableUpper.Anchored = true
     frontGableUpper.Material = Enum.Material.Wood
     frontGableUpper.Color = barnRed
     frontGableUpper.Parent = exterior
 
+    local lowerGableHeight = kneeHeight - gableInset
     local frontGableLowerLeft = Instance.new("Part")
     frontGableLowerLeft.Name = "FrontGableLowerLeft"
-    frontGableLowerLeft.Size = Vector3.new(lowerRun, kneeHeight, 0.4)
-    frontGableLowerLeft.Position = position + rotateOffset(Vector3.new(-(kneeX + lowerRun/2), wallHeight + kneeHeight/2, size.Z/2 + 0.2))
+    frontGableLowerLeft.Size = Vector3.new(lowerRun - gableInset/2, lowerGableHeight, 0.4)
+    frontGableLowerLeft.Position = position + rotateOffset(Vector3.new(-(kneeX + lowerRun/2), wallHeight + lowerGableHeight/2, size.Z/2 + 0.2))
     frontGableLowerLeft.Orientation = Vector3.new(0, rotation, 0)
     frontGableLowerLeft.Anchored = true
     frontGableLowerLeft.Material = Enum.Material.Wood
@@ -730,8 +735,8 @@ local function createBarnExterior(name, position, size, buildingName, facingDire
 
     local frontGableLowerRight = Instance.new("Part")
     frontGableLowerRight.Name = "FrontGableLowerRight"
-    frontGableLowerRight.Size = Vector3.new(lowerRun, kneeHeight, 0.4)
-    frontGableLowerRight.Position = position + rotateOffset(Vector3.new(kneeX + lowerRun/2, wallHeight + kneeHeight/2, size.Z/2 + 0.2))
+    frontGableLowerRight.Size = Vector3.new(lowerRun - gableInset/2, lowerGableHeight, 0.4)
+    frontGableLowerRight.Position = position + rotateOffset(Vector3.new(kneeX + lowerRun/2, wallHeight + lowerGableHeight/2, size.Z/2 + 0.2))
     frontGableLowerRight.Orientation = Vector3.new(0, rotation, 0)
     frontGableLowerRight.Anchored = true
     frontGableLowerRight.Material = Enum.Material.Wood
@@ -741,8 +746,8 @@ local function createBarnExterior(name, position, size, buildingName, facingDire
     -- Back gable - same fill pattern
     local backGableUpper = Instance.new("Part")
     backGableUpper.Name = "BackGableUpper"
-    backGableUpper.Size = Vector3.new(kneeX * 2, roofPeakHeight - kneeHeight, 0.4)
-    backGableUpper.Position = position + rotateOffset(Vector3.new(0, wallHeight + kneeHeight + (roofPeakHeight - kneeHeight)/2, -size.Z/2 - 0.2))
+    backGableUpper.Size = Vector3.new(kneeX * 2 - gableInset, upperGableHeight, 0.4)
+    backGableUpper.Position = position + rotateOffset(Vector3.new(0, wallHeight + kneeHeight + upperGableHeight/2, -size.Z/2 - 0.2))
     backGableUpper.Orientation = Vector3.new(0, rotation, 0)
     backGableUpper.Anchored = true
     backGableUpper.Material = Enum.Material.Wood
@@ -751,8 +756,8 @@ local function createBarnExterior(name, position, size, buildingName, facingDire
 
     local backGableLowerLeft = Instance.new("Part")
     backGableLowerLeft.Name = "BackGableLowerLeft"
-    backGableLowerLeft.Size = Vector3.new(lowerRun, kneeHeight, 0.4)
-    backGableLowerLeft.Position = position + rotateOffset(Vector3.new(-(kneeX + lowerRun/2), wallHeight + kneeHeight/2, -size.Z/2 - 0.2))
+    backGableLowerLeft.Size = Vector3.new(lowerRun - gableInset/2, lowerGableHeight, 0.4)
+    backGableLowerLeft.Position = position + rotateOffset(Vector3.new(-(kneeX + lowerRun/2), wallHeight + lowerGableHeight/2, -size.Z/2 - 0.2))
     backGableLowerLeft.Orientation = Vector3.new(0, rotation, 0)
     backGableLowerLeft.Anchored = true
     backGableLowerLeft.Material = Enum.Material.Wood
@@ -761,8 +766,8 @@ local function createBarnExterior(name, position, size, buildingName, facingDire
 
     local backGableLowerRight = Instance.new("Part")
     backGableLowerRight.Name = "BackGableLowerRight"
-    backGableLowerRight.Size = Vector3.new(lowerRun, kneeHeight, 0.4)
-    backGableLowerRight.Position = position + rotateOffset(Vector3.new(kneeX + lowerRun/2, wallHeight + kneeHeight/2, -size.Z/2 - 0.2))
+    backGableLowerRight.Size = Vector3.new(lowerRun - gableInset/2, lowerGableHeight, 0.4)
+    backGableLowerRight.Position = position + rotateOffset(Vector3.new(kneeX + lowerRun/2, wallHeight + lowerGableHeight/2, -size.Z/2 - 0.2))
     backGableLowerRight.Orientation = Vector3.new(0, rotation, 0)
     backGableLowerRight.Anchored = true
     backGableLowerRight.Material = Enum.Material.Wood
