@@ -2492,6 +2492,134 @@ local ResearchTree = {
         prerequisites = { "mining_efficiency_2", "forestry_efficiency_2", "agriculture_efficiency_2" },
         thRequired = 5,
     },
+
+    -- ====== DEFENSE CATEGORY ======
+    defense_basic = {
+        name = "Basic Fortifications",
+        category = "Defense",
+        description = "Enables Cannon targeting during base defense",
+        bonus = {
+            target = "cannon",
+            type = "activation",
+            value = 1
+        },
+        cost = { gold = 1500, wood = 500 },
+        duration = 300, -- 5 minutes
+        prerequisites = {},
+        thRequired = 1,
+    },
+    defense_archery = {
+        name = "Archer Towers",
+        category = "Defense",
+        description = "Enables Archer Tower targeting during base defense",
+        bonus = {
+            target = "archerTower",
+            type = "activation",
+            value = 1
+        },
+        cost = { gold = 3000, wood = 1000 },
+        duration = 600, -- 10 minutes
+        prerequisites = {"defense_basic"},
+        thRequired = 2,
+    },
+    defense_splash = {
+        name = "Mortar Emplacements",
+        category = "Defense",
+        description = "Enables Mortar targeting during base defense",
+        bonus = {
+            target = "mortar",
+            type = "activation",
+            value = 1
+        },
+        cost = { gold = 6000, wood = 2000 },
+        duration = 900, -- 15 minutes
+        prerequisites = {"defense_basic"},
+        thRequired = 3,
+    },
+    defense_walls = {
+        name = "Stone Walls",
+        category = "Defense",
+        description = "+50% Wall HP during base defense",
+        bonus = {
+            target = "wall",
+            type = "defense_hp",
+            value = 0.50
+        },
+        cost = { gold = 3000, wood = 2000 },
+        duration = 600, -- 10 minutes
+        prerequisites = {"defense_basic"},
+        thRequired = 2,
+    },
+    defense_anti_air = {
+        name = "Air Defense",
+        category = "Defense",
+        description = "Enables Air Defense targeting during base defense",
+        bonus = {
+            target = "airDefense",
+            type = "activation",
+            value = 1
+        },
+        cost = { gold = 10000, wood = 3000 },
+        duration = 1200, -- 20 minutes
+        prerequisites = {"defense_archery"},
+        thRequired = 4,
+    },
+    defense_magic = {
+        name = "Wizard Towers",
+        category = "Defense",
+        description = "Enables Wizard Tower targeting during base defense",
+        bonus = {
+            target = "wizardTower",
+            type = "activation",
+            value = 1
+        },
+        cost = { gold = 15000, wood = 5000, food = 1000 },
+        duration = 1500, -- 25 minutes
+        prerequisites = {"defense_splash"},
+        thRequired = 5,
+    },
+    defense_damage_1 = {
+        name = "Reinforced Ammo",
+        category = "Defense",
+        description = "+15% damage for all defense buildings",
+        bonus = {
+            target = "all_defense",
+            type = "defense_damage",
+            value = 0.15
+        },
+        cost = { gold = 5000, wood = 2000 },
+        duration = 720, -- 12 minutes
+        prerequisites = {"defense_basic"},
+        thRequired = 3,
+    },
+    defense_damage_2 = {
+        name = "Enhanced Ballistics",
+        category = "Defense",
+        description = "+25% damage for all defense buildings",
+        bonus = {
+            target = "all_defense",
+            type = "defense_damage",
+            value = 0.25
+        },
+        cost = { gold = 12000, wood = 4000 },
+        duration = 1200, -- 20 minutes
+        prerequisites = {"defense_damage_1"},
+        thRequired = 5,
+    },
+    defense_range_1 = {
+        name = "Extended Range",
+        category = "Defense",
+        description = "+10% range for all defense buildings",
+        bonus = {
+            target = "all_defense",
+            type = "defense_range",
+            value = 0.10
+        },
+        cost = { gold = 8000, wood = 3000 },
+        duration = 900, -- 15 minutes
+        prerequisites = {"defense_archery"},
+        thRequired = 4,
+    },
 }
 
 -- ============================================================================
@@ -4147,7 +4275,7 @@ local function createGoldMine()
     end
 
     -- INTERACTION: Hire Miner (on the table)
-    local minerHirePrompt = createInteraction(minerTable, "Hire Miner (500 gold)", "Hiring Table", 1, function(player)
+    local minerHirePrompt = createInteraction(minerTable, "Hire Miner (1,500g + 300f)", "Hiring Table", 1, function(player)
         -- Check if any waiting workers left at the stand
         if #GoldMineState.waitingMiners == 0 then
             print(string.format("[GoldMine] %s: No workers available to hire!", player.Name))
@@ -4418,7 +4546,7 @@ local function createGoldMine()
     end
 
     -- INTERACTION: Hire Collector (on the table)
-    local collectorHirePrompt = createInteraction(collectorTable, "Hire Collector (300 gold)", "Hiring Table", 1, function(player)
+    local collectorHirePrompt = createInteraction(collectorTable, "Hire Collector (900g + 150f)", "Hiring Table", 1, function(player)
         -- Check if any waiting workers left at the stand
         if #GoldMineState.waitingCollectors == 0 then
             print(string.format("[GoldMine] %s: No collectors available to hire!", player.Name))
@@ -6844,7 +6972,7 @@ local function createLumberMill()
     end
 
     -- INTERACTION: Hire Logger
-    createInteraction(loggerBoard, "Hire Logger", "Hiring Board", 1, function(player)
+    createInteraction(loggerBoard, "Hire Logger (1,200g + 240f)", "Hiring Board", 1, function(player)
         local loggerCount = #LumberMillState.loggers
         local maxLoggers = 3
 
@@ -7055,7 +7183,7 @@ local function createLumberMill()
     end
 
     -- INTERACTION: Hire Hauler
-    createInteraction(haulerBoard, "Hire Hauler", "Hiring Board", 1, function(player)
+    createInteraction(haulerBoard, "Hire Hauler (900g + 180f)", "Hiring Board", 1, function(player)
         local haulerCount = #LumberMillState.haulers
         local maxHaulers = 3
 
@@ -9243,7 +9371,7 @@ local function createFarm(farmNumber)
     end
 
     -- INTERACTION: Hire Farmer NPC (on the table, like Gold Mine)
-    createInteraction(farmerTable, "Hire Farmer", "Hiring Table", 1, function(player)
+    createInteraction(farmerTable, "Hire Farmer (1,200g + 240f)", "Hiring Table", 1, function(player)
         -- Check if any waiting workers left at the stand
         if #FarmState.waitingFarmers == 0 then
             print(string.format("[Farm] %s: No workers available to hire!", player.Name))
@@ -9495,7 +9623,7 @@ local function createFarm(farmNumber)
     end
 
     -- INTERACTION: Hire Carrier NPC (on the table, like Gold Mine)
-    createInteraction(carrierTable, "Hire Carrier", "Hiring Table", 1, function(player)
+    createInteraction(carrierTable, "Hire Carrier (900g + 180f)", "Hiring Table", 1, function(player)
         -- Check if any waiting workers left at the stand
         if #FarmState.waitingCarriers == 0 then
             print(string.format("[Farm] %s: No carriers available to hire!", player.Name))
@@ -13033,6 +13161,22 @@ local function createTownHall()
 
             -- Add Town Hall XP
             addTownHallXP(100)
+
+            -- Notify all connected players about research completion
+            local Events = ReplicatedStorage:FindFirstChild("Events")
+            if Events then
+                local researchUpdateEvent = Events:FindFirstChild("ResearchUpdate")
+                if researchUpdateEvent then
+                    for _, p in ipairs(game:GetService("Players"):GetPlayers()) do
+                        researchUpdateEvent:FireClient(p, {
+                            action = "completed",
+                            researchId = researchId,
+                            name = research.name,
+                            description = research.description,
+                        })
+                    end
+                end
+            end
         end
 
         TownHallState.research.inProgress = nil
@@ -13051,91 +13195,176 @@ local function createTownHall()
         end
     end)
 
+    -- Get research RemoteEvents from Events folder
+    local ResearchEvents = {}
+    task.defer(function()
+        local Events = ReplicatedStorage:FindFirstChild("Events")
+        if Events then
+            ResearchEvents.OpenResearchUI = Events:FindFirstChild("OpenResearchUI")
+            ResearchEvents.StartResearchRequest = Events:FindFirstChild("StartResearchRequest")
+            ResearchEvents.ResearchUpdate = Events:FindFirstChild("ResearchUpdate")
+        end
+    end)
+
     researchPrompt.Triggered:Connect(function(player)
-        local now = tick()
-        local lastTime = lastResearchInteraction[player.UserId] or 0
-        local selected = selectedResearch[player.UserId]
+        -- Gather research data to send to client
+        local researchData = {
+            townHallLevel = TownHallState.level,
+            completed = TownHallState.research.completed,
+            inProgress = nil,
+            available = {},
+            allResearch = {},
+            resources = {
+                gold = GoldMineState.chestGold,
+                wood = LumberMillState.woodStorage,
+                food = FarmState.foodStorage,
+            },
+        }
 
-        -- Quick interaction to start selected research
-        if now - lastTime < 1.5 and selected then
-            local success = startResearch(player, selected)
-            if success then
-                selectedResearch[player.UserId] = nil
-            end
-        else
-            -- Show research menu
-            print("[TownHall] ============ RESEARCH STATION ============")
-            print(string.format("  Town Hall Level: %d", TownHallState.level))
-            print("")
-
-            -- Show in-progress research
-            if TownHallState.research.inProgress then
-                local inProgress = TownHallState.research.inProgress
-                local research = ResearchTree[inProgress.id]
-                local remaining = math.max(0, inProgress.endTime - tick())
-                local minutes = math.floor(remaining / 60)
-                local seconds = math.floor(remaining % 60)
-                print("  >>> RESEARCH IN PROGRESS <<<")
-                print(string.format("  %s: %dm %ds remaining", research.name, minutes, seconds))
-                print(string.format("  Bonus: %s", research.description))
-                print("")
-            end
-
-            -- Show completed research
-            if #TownHallState.research.completed > 0 then
-                print("  COMPLETED RESEARCH:")
-                for _, researchId in ipairs(TownHallState.research.completed) do
-                    local research = ResearchTree[researchId]
-                    if research then
-                        print(string.format("  [OK] %s - %s", research.name, research.description))
-                    end
-                end
-                print("")
-            end
-
-            -- Show available research
-            local available = getAvailableResearch()
-            if #available > 0 and not TownHallState.research.inProgress then
-                print("  AVAILABLE RESEARCH:")
-                local currentCategory = ""
-                for idx, researchId in ipairs(available) do
-                    local research = ResearchTree[researchId]
-                    if research.category ~= currentCategory then
-                        currentCategory = research.category
-                        print(string.format("  -- %s --", currentCategory))
-                    end
-
-                    local costParts = {}
-                    if research.cost.gold then table.insert(costParts, string.format("%dg", research.cost.gold)) end
-                    if research.cost.wood then table.insert(costParts, string.format("%dw", research.cost.wood)) end
-                    if research.cost.food then table.insert(costParts, string.format("%df", research.cost.food)) end
-                    local time = string.format("%dm", math.floor(research.duration / 60))
-
-                    print(string.format("  %d. %s | %s | %s | TH%d",
-                        idx, research.name, table.concat(costParts, "/"), time, research.thRequired))
-                    print(string.format("     -> %s", research.description))
-                end
-                print("")
-
-                -- Auto-select first available
-                selectedResearch[player.UserId] = available[1]
-                local research = ResearchTree[available[1]]
-                print(string.format("  >> %s selected. Interact again to START!", research.name))
-            elseif TownHallState.research.inProgress then
-                print("  [Wait for current research to complete]")
-            else
-                print("  No research available. Complete prerequisites or upgrade Town Hall!")
-            end
-
-            print("")
-            print("  YOUR RESOURCES:")
-            print(string.format("    Gold: %d | Wood: %d | Food: %d",
-                GoldMineState.chestGold, LumberMillState.woodStorage, FarmState.foodStorage))
-            print("====================================================")
+        -- In-progress research
+        if TownHallState.research.inProgress then
+            local inProgress = TownHallState.research.inProgress
+            local research = ResearchTree[inProgress.id]
+            local remaining = math.max(0, inProgress.endTime - tick())
+            researchData.inProgress = {
+                id = inProgress.id,
+                name = research and research.name or "Unknown",
+                description = research and research.description or "",
+                category = research and research.category or "",
+                remaining = remaining,
+                duration = research and research.duration or 0,
+            }
         end
 
-        lastResearchInteraction[player.UserId] = now
+        -- Available research
+        local available = getAvailableResearch()
+        for _, researchId in ipairs(available) do
+            local research = ResearchTree[researchId]
+            if research then
+                table.insert(researchData.available, {
+                    id = researchId,
+                    name = research.name,
+                    description = research.description,
+                    category = research.category,
+                    cost = research.cost,
+                    duration = research.duration,
+                    thRequired = research.thRequired,
+                    prerequisites = research.prerequisites,
+                })
+            end
+        end
+
+        -- All research (for tree visualization)
+        for researchId, research in pairs(ResearchTree) do
+            researchData.allResearch[researchId] = {
+                id = researchId,
+                name = research.name,
+                description = research.description,
+                category = research.category,
+                cost = research.cost,
+                duration = research.duration,
+                thRequired = research.thRequired,
+                prerequisites = research.prerequisites,
+                completed = isResearchCompleted(researchId),
+                available = false, -- will be set below
+            }
+        end
+        -- Mark available ones
+        for _, avail in ipairs(researchData.available) do
+            if researchData.allResearch[avail.id] then
+                researchData.allResearch[avail.id].available = true
+            end
+        end
+
+        -- Fire to client to open UI
+        if ResearchEvents.OpenResearchUI then
+            ResearchEvents.OpenResearchUI:FireClient(player, researchData)
+        end
     end)
+
+    -- Handle research start request from client UI
+    if ResearchEvents.StartResearchRequest then
+        ResearchEvents.StartResearchRequest.OnServerEvent:Connect(function(player, researchId)
+            if typeof(researchId) ~= "string" then return end
+
+            local success = startResearch(player, researchId)
+
+            -- Send updated research state back to client
+            if success then
+                local remaining = 0
+                if TownHallState.research.inProgress then
+                    remaining = math.max(0, TownHallState.research.inProgress.endTime - tick())
+                end
+                if ResearchEvents.ResearchUpdate then
+                    ResearchEvents.ResearchUpdate:FireClient(player, {
+                        action = "started",
+                        researchId = researchId,
+                        remaining = remaining,
+                        resources = {
+                            gold = GoldMineState.chestGold,
+                            wood = LumberMillState.woodStorage,
+                            food = FarmState.foodStorage,
+                        },
+                    })
+                end
+            else
+                if ResearchEvents.ResearchUpdate then
+                    ResearchEvents.ResearchUpdate:FireClient(player, {
+                        action = "failed",
+                        researchId = researchId,
+                        error = "Could not start research. Check resources and prerequisites.",
+                    })
+                end
+            end
+        end)
+    else
+        -- Deferred setup for StartResearchRequest handler (events may not be ready yet)
+        task.defer(function()
+            local Events = ReplicatedStorage:FindFirstChild("Events")
+            if not Events then
+                task.wait(2)
+                Events = ReplicatedStorage:FindFirstChild("Events")
+            end
+            if Events then
+                local startEvent = Events:FindFirstChild("StartResearchRequest")
+                if startEvent then
+                    startEvent.OnServerEvent:Connect(function(player, researchId)
+                        if typeof(researchId) ~= "string" then return end
+
+                        local success = startResearch(player, researchId)
+
+                        local updateEvent = Events:FindFirstChild("ResearchUpdate")
+                        if success then
+                            local remaining = 0
+                            if TownHallState.research.inProgress then
+                                remaining = math.max(0, TownHallState.research.inProgress.endTime - tick())
+                            end
+                            if updateEvent then
+                                updateEvent:FireClient(player, {
+                                    action = "started",
+                                    researchId = researchId,
+                                    remaining = remaining,
+                                    resources = {
+                                        gold = GoldMineState.chestGold,
+                                        wood = LumberMillState.woodStorage,
+                                        food = FarmState.foodStorage,
+                                    },
+                                })
+                            end
+                        else
+                            if updateEvent then
+                                updateEvent:FireClient(player, {
+                                    action = "failed",
+                                    researchId = researchId,
+                                    error = "Could not start research. Check resources and prerequisites.",
+                                })
+                            end
+                        end
+                    end)
+                end
+            end
+        end)
+    end
 
     -- ========================================================================
     -- ADDITIONAL HELPER: Update positions for new layout

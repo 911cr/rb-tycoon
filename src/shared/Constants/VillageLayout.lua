@@ -61,7 +61,11 @@ VillageLayout.Decorations = {
 -- ============================================================================
 
 VillageLayout.Gate = {
-    -- No pre-placed gate
+    -- Trigger zone in front of the entrance gate (local coords, offset by CenterOffset)
+    -- Gate arch is at world (60, Y, 8), towers at X=45..75
+    -- Local: center X=10, Z=-42; trigger just outside gate (lower Z = outside village)
+    position = Vector3.new(10, 3, -46),
+    size = Vector3.new(30, 10, 6), -- Wide enough for gate opening, thin trigger strip
 }
 
 -- ============================================================================
