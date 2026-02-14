@@ -434,6 +434,7 @@ export type MiniBaseData = {
     isFriend: boolean,
     isOwnBase: boolean,
     hasShield: boolean,
+    viewerTownHallLevel: number?,
 }
 
 --[[
@@ -446,16 +447,17 @@ function MiniBaseBuilder.Create(data: MiniBaseData): Model
     local base = Instance.new("Model")
     base.Name = "Base_" .. data.userId
 
-    -- Determine color based on ownership/relationship
+    -- Determine color based on ownership/relationship/difficulty
     local color: Color3
     if data.isOwnBase then
         color = OverworldConfig.Visuals.OwnBaseColor
     elseif data.isFriend then
         color = OverworldConfig.Visuals.FriendColor
     else
-        -- Difficulty color would need attacker's TH level
-        -- For now, use medium color
-        color = OverworldConfig.Visuals.DifficultyColors.Medium
+        -- Calculate difficulty color from TH difference
+        local viewerTH = data.viewerTownHallLevel or 1
+        local thDiff = data.townHallLevel - viewerTH
+        color = OverworldConfig.GetDifficultyColor(thDiff)
     end
 
     -- Create components

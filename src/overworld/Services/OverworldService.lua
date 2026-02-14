@@ -326,6 +326,32 @@ function OverworldService:GetBaseData(targetUserId: number, viewerPlayer: Player
         isFriend = table.find(viewerState.friends, targetUserId) ~= nil
     end
 
+    -- Get viewer's TH level for difficulty comparison
+    local viewerTH = 1
+    if viewerState then
+        viewerTH = viewerState.townHallLevel or 1
+    end
+
+    -- Estimate available loot (20% of target resources)
+    local lootEstimate = nil
+    if not isOwnBase then
+        local dataService = getDataService()
+        if dataService and dataService.GetPlayerData then
+            local targetPlayer = game:GetService("Players"):GetPlayerByUserId(targetUserId)
+            if targetPlayer then
+                local targetData = dataService:GetPlayerData(targetPlayer)
+                if targetData and targetData.resources then
+                    local lootPercent = 0.20
+                    lootEstimate = {
+                        gold = math.floor((targetData.resources.gold or 0) * lootPercent),
+                        wood = math.floor((targetData.resources.wood or 0) * lootPercent),
+                        food = math.floor((targetData.resources.food or 0) * lootPercent),
+                    }
+                end
+            end
+        end
+    end
+
     return {
         userId = targetUserId,
         username = targetState.username,
@@ -336,6 +362,8 @@ function OverworldService:GetBaseData(targetUserId: number, viewerPlayer: Player
         isOnline = targetState.isOnline,
         isFriend = isFriend,
         isOwnBase = isOwnBase,
+        viewerTownHallLevel = viewerTH,
+        lootEstimate = lootEstimate,
     }
 end
 

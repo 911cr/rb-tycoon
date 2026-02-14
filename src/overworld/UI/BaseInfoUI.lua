@@ -61,8 +61,8 @@ local function createUI(): ScreenGui
     -- Main container frame
     local mainFrame = Instance.new("Frame")
     mainFrame.Name = "MainFrame"
-    mainFrame.Size = UDim2.new(0, 320, 0, 200)
-    mainFrame.Position = UDim2.new(0.5, -160, 0, -220) -- Start off-screen
+    mainFrame.Size = UDim2.new(0, 320, 0, 280)
+    mainFrame.Position = UDim2.new(0.5, -160, 0, -300) -- Start off-screen
     mainFrame.AnchorPoint = Vector2.new(0, 0)
     mainFrame.BackgroundColor3 = Color3.fromRGB(30, 28, 25)
     mainFrame.BackgroundTransparency = 0.05
@@ -217,6 +217,61 @@ local function createUI(): ScreenGui
     diffLabel.Font = Enum.Font.GothamBold
     diffLabel.Parent = difficultyFrame
 
+    -- Loot preview (for enemy bases only, hidden by default)
+    local lootFrame = Instance.new("Frame")
+    lootFrame.Name = "LootFrame"
+    lootFrame.Size = UDim2.new(1, -20, 0, 65)
+    lootFrame.Position = UDim2.new(0, 10, 0, 135)
+    lootFrame.BackgroundColor3 = Color3.fromRGB(40, 38, 33)
+    lootFrame.BorderSizePixel = 0
+    lootFrame.Visible = false
+    lootFrame.Parent = mainFrame
+
+    local lootCorner = Instance.new("UICorner")
+    lootCorner.CornerRadius = UDim.new(0, 4)
+    lootCorner.Parent = lootFrame
+
+    local lootTitle = Instance.new("TextLabel")
+    lootTitle.Name = "LootTitle"
+    lootTitle.Size = UDim2.new(1, 0, 0, 18)
+    lootTitle.Position = UDim2.new(0, 0, 0, 2)
+    lootTitle.BackgroundTransparency = 1
+    lootTitle.Text = "AVAILABLE LOOT"
+    lootTitle.TextColor3 = Color3.fromRGB(150, 140, 120)
+    lootTitle.TextSize = 10
+    lootTitle.Font = Enum.Font.GothamBold
+    lootTitle.Parent = lootFrame
+
+    local lootRow = Instance.new("Frame")
+    lootRow.Name = "LootRow"
+    lootRow.Size = UDim2.new(1, -10, 0, 40)
+    lootRow.Position = UDim2.new(0, 5, 0, 20)
+    lootRow.BackgroundTransparency = 1
+    lootRow.Parent = lootFrame
+
+    local lootLayout = Instance.new("UIListLayout")
+    lootLayout.FillDirection = Enum.FillDirection.Horizontal
+    lootLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    lootLayout.Padding = UDim.new(0, 8)
+    lootLayout.Parent = lootRow
+
+    local function createLootLabel(name: string, color: Color3): TextLabel
+        local label = Instance.new("TextLabel")
+        label.Name = name
+        label.Size = UDim2.new(0, 85, 1, 0)
+        label.BackgroundTransparency = 1
+        label.Text = "0"
+        label.TextColor3 = color
+        label.TextSize = 16
+        label.Font = Enum.Font.GothamBold
+        label.Parent = lootRow
+        return label
+    end
+
+    createLootLabel("GoldLoot", Color3.fromRGB(255, 200, 80))
+    createLootLabel("WoodLoot", Color3.fromRGB(139, 90, 43))
+    createLootLabel("FoodLoot", Color3.fromRGB(120, 190, 80))
+
     -- Buttons container
     local buttonsFrame = Instance.new("Frame")
     buttonsFrame.Name = "ButtonsFrame"
@@ -338,7 +393,7 @@ local function updateUI(baseData: any)
         end
     end
 
-    -- Update difficulty
+    -- Update difficulty (using real TH comparison)
     local difficultyFrame = _mainFrame:FindFirstChild("DifficultyFrame") :: Frame?
     if difficultyFrame then
         local diffLabel = difficultyFrame:FindFirstChild("DifficultyLabel") :: TextLabel?
@@ -353,15 +408,60 @@ local function updateUI(baseData: any)
             difficulty = "FRIEND"
             diffColor = OverworldConfig.Visuals.FriendColor
         else
-            -- Would calculate based on TH difference
-            difficulty = "MEDIUM"
-            diffColor = OverworldConfig.Visuals.DifficultyColors.Medium
+            -- Calculate difficulty from TH difference
+            local viewerTH = baseData.viewerTownHallLevel or 1
+            local defenderTH = baseData.townHallLevel or 1
+            local thDiff = defenderTH - viewerTH
+
+            diffColor = OverworldConfig.GetDifficultyColor(thDiff)
+
+            if thDiff <= -2 then
+                difficulty = "EASY"
+            elseif thDiff <= 0 then
+                difficulty = "MEDIUM"
+            else
+                difficulty = "HARD"
+            end
         end
 
         if diffLabel then
             diffLabel.Text = difficulty
         end
         difficultyFrame.BackgroundColor3 = diffColor
+    end
+
+    -- Update loot preview
+    local lootFrame = _mainFrame:FindFirstChild("LootFrame") :: Frame?
+    if lootFrame then
+        local showLoot = not (baseData.isOwnBase or false) and baseData.lootEstimate ~= nil
+        lootFrame.Visible = showLoot
+
+        -- Resize panel based on whether loot is shown
+        if showLoot then
+            _mainFrame.Size = UDim2.new(0, 320, 0, 280)
+        else
+            _mainFrame.Size = UDim2.new(0, 320, 0, 200)
+        end
+
+        if showLoot and baseData.lootEstimate then
+            local lootRow = lootFrame:FindFirstChild("LootRow") :: Frame?
+            if lootRow then
+                local goldLoot = lootRow:FindFirstChild("GoldLoot") :: TextLabel?
+                local woodLoot = lootRow:FindFirstChild("WoodLoot") :: TextLabel?
+                local foodLoot = lootRow:FindFirstChild("FoodLoot") :: TextLabel?
+
+                local function formatLoot(amount: number): string
+                    if amount >= 1000 then
+                        return string.format("%.1fK", amount / 1000)
+                    end
+                    return tostring(amount)
+                end
+
+                if goldLoot then goldLoot.Text = formatLoot(baseData.lootEstimate.gold or 0) .. " g" end
+                if woodLoot then woodLoot.Text = formatLoot(baseData.lootEstimate.wood or 0) .. " w" end
+                if foodLoot then foodLoot.Text = formatLoot(baseData.lootEstimate.food or 0) .. " f" end
+            end
+        end
     end
 
     -- Update buttons visibility
