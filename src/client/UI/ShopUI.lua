@@ -422,10 +422,10 @@ function ShopUI:Init()
     -- Category tabs
     createCategoryTabs(content)
 
-    -- Scrolling content
+    -- Scrolling content (leave room for code entry bar at bottom)
     _contentContainer = Components.CreateScrollFrame({
         Name = "ShopContent",
-        Size = UDim2.new(1, 0, 1, -50),
+        Size = UDim2.new(1, 0, 1, -94),
         Position = UDim2.new(0, 0, 0, 48),
         Parent = content,
     })
@@ -434,6 +434,99 @@ function ShopUI:Init()
         Padding = UDim.new(0, 8),
         Parent = _contentContainer,
     })
+
+    -- Code redemption bar at bottom of shop
+    local codeBar = Components.CreateFrame({
+        Name = "CodeBar",
+        Size = UDim2.new(1, 0, 0, 36),
+        Position = UDim2.new(0, 0, 1, -36),
+        BackgroundColor = Components.Colors.BackgroundLight,
+        CornerRadius = Components.Sizes.CornerRadiusSmall,
+        Parent = content,
+    })
+
+    local codeInput = Instance.new("TextBox")
+    codeInput.Name = "CodeInput"
+    codeInput.Size = UDim2.new(1, -100, 1, -6)
+    codeInput.Position = UDim2.new(0, 8, 0, 3)
+    codeInput.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    codeInput.TextColor3 = Components.Colors.TextPrimary
+    codeInput.PlaceholderText = "Enter code..."
+    codeInput.PlaceholderColor3 = Components.Colors.TextSecondary
+    codeInput.Text = ""
+    codeInput.TextSize = Components.Sizes.FontSizeSmall
+    codeInput.Font = Enum.Font.Gotham
+    codeInput.ClearTextOnFocus = true
+    codeInput.BorderSizePixel = 0
+    codeInput.Parent = codeBar
+
+    local codeCorner = Instance.new("UICorner")
+    codeCorner.CornerRadius = Components.Sizes.CornerRadiusSmall
+    codeCorner.Parent = codeInput
+
+    local redeemButton = Components.CreateButton({
+        Name = "RedeemButton",
+        Text = "Redeem",
+        Size = UDim2.new(0, 80, 1, -6),
+        Position = UDim2.new(1, -4, 0, 3),
+        AnchorPoint = Vector2.new(1, 0),
+        BackgroundColor = Components.Colors.Secondary,
+        TextSize = Components.Sizes.FontSizeSmall,
+        CornerRadius = Components.Sizes.CornerRadiusSmall,
+        Parent = codeBar,
+    })
+
+    local codeStatus = Instance.new("TextLabel")
+    codeStatus.Name = "CodeStatus"
+    codeStatus.Size = UDim2.new(1, 0, 0, 16)
+    codeStatus.Position = UDim2.new(0, 0, 1, -52)
+    codeStatus.BackgroundTransparency = 1
+    codeStatus.TextColor3 = Components.Colors.TextSecondary
+    codeStatus.TextSize = 11
+    codeStatus.Font = Enum.Font.Gotham
+    codeStatus.Text = ""
+    codeStatus.Parent = content
+
+    local function submitCode()
+        local code = codeInput.Text
+        if code == "" then return end
+        local Events = ReplicatedStorage:WaitForChild("Events", 5)
+        if not Events then return end
+        local RedeemCode = Events:FindFirstChild("RedeemCode")
+        if not RedeemCode then return end
+        RedeemCode:FireServer(code)
+        codeInput.Text = ""
+        codeStatus.Text = "Sending..."
+        codeStatus.TextColor3 = Components.Colors.TextSecondary
+    end
+
+    redeemButton.MouseButton1Click:Connect(submitCode)
+    codeInput.FocusLost:Connect(function(enterPressed)
+        if enterPressed then
+            submitCode()
+        end
+    end)
+
+    -- Listen for server response
+    local Events = ReplicatedStorage:WaitForChild("Events", 5)
+    if Events then
+        local ServerResponse = Events:FindFirstChild("ServerResponse")
+        if ServerResponse then
+            ServerResponse.OnClientEvent:Connect(function(action, result)
+                if action ~= "RedeemCode" then return end
+                if result.success then
+                    codeStatus.Text = result.message or "Code redeemed!"
+                    codeStatus.TextColor3 = Components.Colors.Secondary
+                else
+                    codeStatus.Text = result.error or "Invalid code"
+                    codeStatus.TextColor3 = Components.Colors.Danger
+                end
+                task.delay(3, function()
+                    codeStatus.Text = ""
+                end)
+            end)
+        end
+    end
 
     _initialized = true
     print("ShopUI initialized")

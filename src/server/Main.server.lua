@@ -99,6 +99,7 @@ local DonateTroops = createRemoteEvent("DonateTroops")
 
 -- Shop events
 local ShopPurchase = createRemoteEvent("ShopPurchase")
+local RedeemCode = createRemoteEvent("RedeemCode")
 
 -- Tutorial events
 local CompleteTutorial = createRemoteEvent("CompleteTutorial")
@@ -269,6 +270,30 @@ connectEvent(SyncPlayerData, function(player)
         if data then
             SyncPlayerData:FireClient(player, data)
         end
+    end
+end)
+
+-- Code redemption
+local VALID_CODES = {
+    ["giveme"] = { gold = 10000, wood = 10000, food = 10000 },
+}
+
+connectEvent(RedeemCode, function(player, code)
+    if typeof(code) ~= "string" then return end
+    code = string.lower(string.gsub(code, "%s+", ""))
+    local reward = VALID_CODES[code]
+    if not reward then
+        ServerResponse:FireClient(player, "RedeemCode", { success = false, error = "Invalid code" })
+        return
+    end
+    if DataService and DataService.UpdateResources then
+        DataService:UpdateResources(player, reward)
+        local data = DataService:GetPlayerData(player)
+        if data then
+            SyncPlayerData:FireClient(player, data)
+        end
+        ServerResponse:FireClient(player, "RedeemCode", { success = true, message = string.format("+%dg +%dw +%df", reward.gold or 0, reward.wood or 0, reward.food or 0) })
+        print(string.format("[RedeemCode] %s redeemed '%s'", player.Name, code))
     end
 end)
 
