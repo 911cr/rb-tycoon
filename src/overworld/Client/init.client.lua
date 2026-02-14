@@ -108,6 +108,7 @@ local UIFolder = script.Parent:FindFirstChild("UI")
 local BaseInfoUI: any
 local OverworldHUD: any
 local MatchmakingUI: any
+local TradeUI: any
 
 local function loadUI(name: string): any?
     if UIFolder then
@@ -130,6 +131,7 @@ end
 BaseInfoUI = loadUI("BaseInfoUI")
 OverworldHUD = loadUI("OverworldHUD")
 MatchmakingUI = loadUI("MatchmakingUI")
+TradeUI = loadUI("TradeUI")
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- Initialize controllers
@@ -154,6 +156,7 @@ initController(BaseInteractionController, "BaseInteractionController")
 initController(BaseInfoUI, "BaseInfoUI")
 initController(OverworldHUD, "OverworldHUD")
 initController(MatchmakingUI, "MatchmakingUI")
+initController(TradeUI, "TradeUI")
 
 -- Connect Go to City button
 if OverworldHUD and OverworldHUD.GoToCityClicked then
@@ -1398,6 +1401,93 @@ do
             refreshResourceNodes()
         end
     end)
+end
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- Trading system
+-- ═══════════════════════════════════════════════════════════════════════════════
+print("[CLIENT] Setting up trading system...")
+
+do
+    -- Get trade events
+    local ProposeTrade = Events:FindFirstChild("ProposeTrade") :: RemoteEvent?
+    local TradeProposal = Events:FindFirstChild("TradeProposal") :: RemoteEvent?
+    local RespondToTrade = Events:FindFirstChild("RespondToTrade") :: RemoteEvent?
+    local TradeResult = Events:FindFirstChild("TradeResult") :: RemoteEvent?
+    local CancelTrade = Events:FindFirstChild("CancelTrade") :: RemoteEvent?
+
+    -- Connect BaseInfoUI Trade button -> open trade panel
+    if BaseInfoUI and BaseInfoUI.TradeClicked then
+        BaseInfoUI.TradeClicked:Connect(function(baseData)
+            if not TradeUI or not baseData then return end
+
+            -- Fetch current resources to show "you have X" in the UI
+            local GetPlayerResources = Events:FindFirstChild("GetPlayerResources") :: RemoteFunction?
+            local resources = { gold = 0, wood = 0, food = 0 }
+            if GetPlayerResources then
+                local ok, res = pcall(function() return GetPlayerResources:InvokeServer() end)
+                if ok and res then resources = res end
+            end
+
+            TradeUI:ShowProposalPanel(baseData, resources)
+        end)
+    end
+
+    -- TradeUI proposes trade -> fire to server
+    if TradeUI and ProposeTrade then
+        TradeUI.TradeProposed:Connect(function(targetUserId, offering, requesting)
+            ProposeTrade:FireServer({
+                targetUserId = targetUserId,
+                offering = offering,
+                requesting = requesting,
+            })
+        end)
+    end
+
+    -- Server sends incoming trade proposal -> show to target
+    if TradeProposal and TradeUI then
+        TradeProposal.OnClientEvent:Connect(function(tradeData)
+            TradeUI:ShowIncomingTrade(tradeData)
+        end)
+    end
+
+    -- TradeUI accept/decline -> fire to server
+    if TradeUI and RespondToTrade then
+        TradeUI.TradeAccepted:Connect(function(tradeId)
+            RespondToTrade:FireServer({ tradeId = tradeId, accepted = true })
+        end)
+        TradeUI.TradeDeclined:Connect(function(tradeId)
+            RespondToTrade:FireServer({ tradeId = tradeId, accepted = false })
+        end)
+    end
+
+    -- TradeUI cancel -> fire to server
+    if TradeUI and CancelTrade then
+        TradeUI.TradeCancelled:Connect(function(tradeId)
+            CancelTrade:FireServer({ tradeId = tradeId })
+        end)
+    end
+
+    -- Server trade results -> show feedback
+    if TradeResult and TradeUI then
+        TradeResult.OnClientEvent:Connect(function(result)
+            if result.status == "accepted" then
+                TradeUI:ShowResult("Trade completed!", true)
+            elseif result.status == "declined" then
+                TradeUI:ShowResult("Trade declined.", false)
+            elseif result.status == "cancelled" then
+                TradeUI:ShowResult("Trade cancelled.", false)
+            elseif result.status == "expired" then
+                TradeUI:ShowResult("Trade expired.", false)
+            elseif result.status == "error" then
+                TradeUI:ShowResult(result.error or "Trade failed.", false)
+            elseif result.status == "proposed" then
+                TradeUI:ShowResult("Trade proposed! Waiting for response...", true)
+            end
+        end)
+    end
+
+    print("[CLIENT] Trading system wired")
 end
 
 -- ═══════════════════════════════════════════════════════════════════════════════

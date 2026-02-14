@@ -96,6 +96,13 @@ local GetGoblinCamps = createRemoteFunction("GetGoblinCamps")
 local CollectResourceNode = createRemoteEvent("CollectResourceNode")
 local GetResourceNodes = createRemoteFunction("GetResourceNodes")
 
+-- Trade events
+local ProposeTrade = createRemoteEvent("ProposeTrade")
+local TradeProposal = createRemoteEvent("TradeProposal")
+local RespondToTrade = createRemoteEvent("RespondToTrade")
+local TradeResult = createRemoteEvent("TradeResult")
+local CancelTrade = createRemoteEvent("CancelTrade")
+
 -- UI data
 local GetOwnBaseData = createRemoteFunction("GetOwnBaseData")
 local GetPlayerResources = createRemoteFunction("GetPlayerResources")
@@ -144,6 +151,7 @@ local BattleArenaService = loadService("BattleArenaService")
 local MatchmakingService = loadService("MatchmakingService")
 local GoblinCampService = loadService("GoblinCampService")
 local ResourceNodeService = loadService("ResourceNodeService")
+local TradeService = loadService("TradeService")
 
 -- Load shared module references
 local OverworldConfig = require(ReplicatedStorage.Shared.Constants.OverworldConfig)
@@ -172,6 +180,7 @@ initService(MatchmakingService, "MatchmakingService")
 initService(BattleArenaService, "BattleArenaService")
 initService(GoblinCampService, "GoblinCampService")
 initService(ResourceNodeService, "ResourceNodeService")
+initService(TradeService, "TradeService")
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- STEP 5: Build the overworld environment
@@ -221,6 +230,32 @@ if TeleportManager then
 
     TeleportManager.TeleportFailed:Connect(function(player, destination, errorMsg)
         TeleportFailed:FireClient(player, destination, errorMsg)
+    end)
+end
+
+if TradeService then
+    TradeService.TradeCancelled:Connect(function(trade, reason)
+        -- Notify both players when a trade is cancelled/expired/declined
+        local proposer = Players:GetPlayerByUserId(trade.proposerUserId)
+        local target = Players:GetPlayerByUserId(trade.targetUserId)
+        if proposer then
+            TradeResult:FireClient(proposer, { status = reason, tradeId = trade.id })
+        end
+        if target then
+            TradeResult:FireClient(target, { status = reason, tradeId = trade.id })
+        end
+    end)
+
+    TradeService.TradeCompleted:Connect(function(trade)
+        -- Notify both players when a trade completes
+        local proposer = Players:GetPlayerByUserId(trade.proposerUserId)
+        local target = Players:GetPlayerByUserId(trade.targetUserId)
+        if proposer then
+            TradeResult:FireClient(proposer, { status = "accepted", tradeId = trade.id })
+        end
+        if target then
+            TradeResult:FireClient(target, { status = "accepted", tradeId = trade.id })
+        end
     end)
 end
 
@@ -851,6 +886,98 @@ connectEvent(CollectResourceNode, function(player, nodeId)
 
     print(string.format("[OVERWORLD] CollectResourceNode from %s for node %s: %s",
         player.Name, tostring(nodeId), success and ("+" .. tostring(amount) .. " " .. tostring(resourceType)) or (resourceType or "failed")))
+end)
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- STEP 7.9: Trading handlers
+-- ═══════════════════════════════════════════════════════════════════════════════
+print("[OVERWORLD] Connecting trade handlers...")
+
+connectEvent(ProposeTrade, function(player, data)
+    if not TradeService then return end
+
+    -- Validate data is a table
+    if typeof(data) ~= "table" then return end
+    if typeof(data.targetUserId) ~= "number" then return end
+    if typeof(data.offering) ~= "table" then return end
+    if typeof(data.requesting) ~= "table" then return end
+
+    -- Sanitize resource values to non-negative integers
+    local offering = {
+        gold = math.max(0, math.floor(tonumber(data.offering.gold) or 0)),
+        wood = math.max(0, math.floor(tonumber(data.offering.wood) or 0)),
+        food = math.max(0, math.floor(tonumber(data.offering.food) or 0)),
+    }
+    local requesting = {
+        gold = math.max(0, math.floor(tonumber(data.requesting.gold) or 0)),
+        wood = math.max(0, math.floor(tonumber(data.requesting.wood) or 0)),
+        food = math.max(0, math.floor(tonumber(data.requesting.food) or 0)),
+    }
+
+    local success, tradeIdOrErr = TradeService:ProposeTrade(player, data.targetUserId, offering, requesting)
+
+    if success then
+        -- Notify the target player of the incoming proposal
+        local targetPlayer = Players:GetPlayerByUserId(data.targetUserId)
+        if targetPlayer then
+            local trade = TradeService:GetActiveTrade(player)
+            if trade then
+                TradeProposal:FireClient(targetPlayer, {
+                    tradeId = trade.id,
+                    proposerName = player.Name,
+                    proposerUserId = player.UserId,
+                    offering = trade.offering,
+                    requesting = trade.requesting,
+                    expiresAt = trade.expiresAt,
+                })
+            end
+        end
+        -- Confirm to proposer
+        TradeResult:FireClient(player, { status = "proposed", tradeId = tradeIdOrErr })
+    else
+        TradeResult:FireClient(player, { status = "error", error = tradeIdOrErr })
+    end
+end)
+
+connectEvent(RespondToTrade, function(player, data)
+    if not TradeService then return end
+    if typeof(data) ~= "table" then return end
+    if typeof(data.tradeId) ~= "string" then return end
+    if typeof(data.accepted) ~= "boolean" then return end
+
+    -- Get the trade state before responding (for notification purposes)
+    local trade = TradeService:GetTradeById(data.tradeId)
+    local proposerUserId = trade and trade.proposerUserId or 0
+
+    local success, err = TradeService:RespondToTrade(player, data.tradeId, data.accepted)
+
+    if success then
+        -- TradeService signals (TradeCompleted / TradeCancelled) handle notifications
+        -- to both players via the signal connections in STEP 6.
+        -- We still send immediate feedback to the responder.
+        if data.accepted then
+            TradeResult:FireClient(player, { status = "accepted", tradeId = data.tradeId })
+        else
+            TradeResult:FireClient(player, { status = "declined", tradeId = data.tradeId })
+        end
+    else
+        TradeResult:FireClient(player, { status = "error", error = err })
+    end
+end)
+
+connectEvent(CancelTrade, function(player, data)
+    if not TradeService then return end
+    if typeof(data) ~= "table" then return end
+    if typeof(data.tradeId) ~= "string" then return end
+
+    local success, err = TradeService:CancelTrade(player, data.tradeId)
+
+    if success then
+        -- TradeService.TradeCancelled signal handles notifications to both players
+        TradeResult:FireClient(player, { status = "cancelled", tradeId = data.tradeId })
+    else
+        TradeResult:FireClient(player, { status = "error", error = err })
+    end
 end)
 
 -- ═══════════════════════════════════════════════════════════════════════════════

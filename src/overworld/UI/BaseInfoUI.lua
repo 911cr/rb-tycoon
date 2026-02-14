@@ -26,6 +26,7 @@ BaseInfoUI.__index = BaseInfoUI
 BaseInfoUI.EnterClicked = Signal.new()
 BaseInfoUI.ScoutClicked = Signal.new()
 BaseInfoUI.AttackClicked = Signal.new()
+BaseInfoUI.TradeClicked = Signal.new()
 
 -- ============================================================================
 -- PRIVATE STATE
@@ -334,6 +335,22 @@ local function createUI(): ScreenGui
     scoutCorner.CornerRadius = UDim.new(0, 8)
     scoutCorner.Parent = scoutButton
 
+    -- Trade button (for other players' bases)
+    local tradeButton = Instance.new("TextButton")
+    tradeButton.Name = "TradeButton"
+    tradeButton.Size = UDim2.new(0, 80, 0, 40)
+    tradeButton.BackgroundColor3 = Color3.fromRGB(40, 140, 120)
+    tradeButton.Text = "TRADE"
+    tradeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    tradeButton.TextSize = 14
+    tradeButton.Font = Enum.Font.GothamBold
+    tradeButton.Visible = false
+    tradeButton.Parent = buttonsFrame
+
+    local tradeCorner = Instance.new("UICorner")
+    tradeCorner.CornerRadius = UDim.new(0, 8)
+    tradeCorner.Parent = tradeButton
+
     -- Hint text
     local hintLabel = Instance.new("TextLabel")
     hintLabel.Name = "HintLabel"
@@ -470,6 +487,7 @@ local function updateUI(baseData: any)
         local enterButton = buttonsFrame:FindFirstChild("EnterButton") :: TextButton?
         local attackButton = buttonsFrame:FindFirstChild("AttackButton") :: TextButton?
         local scoutButton = buttonsFrame:FindFirstChild("ScoutButton") :: TextButton?
+        local tradeButton = buttonsFrame:FindFirstChild("TradeButton") :: TextButton?
 
         local isOwnBase = baseData.isOwnBase or false
         local hasShield = baseData.hasShield or false
@@ -484,6 +502,10 @@ local function updateUI(baseData: any)
 
         if scoutButton then
             scoutButton.Visible = not isOwnBase
+        end
+
+        if tradeButton then
+            tradeButton.Visible = not isOwnBase
         end
     end
 
@@ -554,6 +576,13 @@ function BaseInfoUI:Init()
             if scoutButton then
                 scoutButton.MouseButton1Click:Connect(function()
                     self.ScoutClicked:Fire(_currentBaseData)
+                end)
+            end
+
+            local tradeButton = buttonsFrame:FindFirstChild("TradeButton") :: TextButton?
+            if tradeButton then
+                tradeButton.MouseButton1Click:Connect(function()
+                    self.TradeClicked:Fire(_currentBaseData)
                 end)
             end
         end
