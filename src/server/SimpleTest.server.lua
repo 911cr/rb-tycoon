@@ -45,6 +45,9 @@ end
 -- Action button callback registry: maps Part → callback function
 local _interactionCallbacks = {}
 
+-- Parts where visitors can interact (help the owner mine/chop/farm)
+local _visitorAllowedParts = {}
+
 -- Helper: deduct resources from player, sync HUD, return true/false
 local function deductPlayerResources(player, costs, contextMsg)
     if not DataService then
@@ -285,18 +288,21 @@ local function createSign(parent, text, position, size)
     signBoard.Color = Color3.fromRGB(60, 40, 25)
     signBoard.Parent = parent
 
-    local gui = Instance.new("SurfaceGui")
-    gui.Face = Enum.NormalId.Front
-    gui.Parent = signBoard
+    -- Add text on both sides so signs are readable from any direction
+    for _, face in ipairs({Enum.NormalId.Front, Enum.NormalId.Back}) do
+        local gui = Instance.new("SurfaceGui")
+        gui.Face = face
+        gui.Parent = signBoard
 
-    local label = Instance.new("TextLabel")
-    label.Size = UDim2.new(1, 0, 1, 0)
-    label.BackgroundTransparency = 1
-    label.Text = text
-    label.TextColor3 = Color3.fromRGB(255, 230, 180)
-    label.TextScaled = true
-    label.Font = Enum.Font.Antique
-    label.Parent = gui
+        local label = Instance.new("TextLabel")
+        label.Size = UDim2.new(1, 0, 1, 0)
+        label.BackgroundTransparency = 1
+        label.Text = text
+        label.TextColor3 = Color3.fromRGB(255, 230, 180)
+        label.TextScaled = true
+        label.Font = Enum.Font.Antique
+        label.Parent = gui
+    end
     return signBoard
 end
 
@@ -323,7 +329,7 @@ local function createTorch(parent, position)
     return torch
 end
 
-local function createInteraction(part, actionText, objectText, holdDuration, callback)
+local function createInteraction(part, actionText, objectText, holdDuration, callback, allowVisitors)
     local prompt = Instance.new("ProximityPrompt")
     prompt.ActionText = actionText or "Interact"
     prompt.ObjectText = objectText or ""
@@ -332,13 +338,18 @@ local function createInteraction(part, actionText, objectText, holdDuration, cal
     prompt.RequiresLineOfSight = false
     prompt.Parent = part
 
+    -- Mark part as visitor-allowed for action button handler
+    if allowVisitors then
+        _visitorAllowedParts[part] = true
+    end
+
     if callback then
         -- Register callback for action button RemoteEvent
         _interactionCallbacks[part] = callback
 
         prompt.Triggered:Connect(function(player)
-            -- Visitor guard: only the village owner can interact with buildings
-            if not isVillageOwner(player) then
+            -- Visitor guard: only the village owner can interact (unless visitor-allowed)
+            if not isVillageOwner(player) and not allowVisitors then
                 return
             end
             callback(player)
@@ -356,8 +367,8 @@ task.defer(function()
     if not ActionButtonPressed then return end
 
     ActionButtonPressed.OnServerEvent:Connect(function(player, targetPart)
-        if not isVillageOwner(player) then return end
         if typeof(targetPart) ~= "Instance" then return end
+        if not isVillageOwner(player) and not _visitorAllowedParts[targetPart] then return end
         local callback = _interactionCallbacks[targetPart]
         if not callback then return end
         -- Validate distance (MaxActivationDistance=8 + 4 tolerance)
@@ -1203,61 +1214,92 @@ end
 
 -- Mini-game reward function - ACTUALLY stores resources AND updates HUD
 local function rewardPlayer(player, resourceType, amount, buildingName)
-    -- Add resources to player's local storage (for mini-game tracking)
-    local resources = getPlayerResources(player)
+    -- Determine reward recipient: if visitor, redirect rewards to base owner
+    local recipient = player
+    local isHelper = false
+    if not isVillageOwner(player) and _villageOwnerUserId then
+        isHelper = true
+        local ownerPlayer = Players:GetPlayerByUserId(_villageOwnerUserId)
+        if ownerPlayer then
+            recipient = ownerPlayer
+            print(string.format("[REWARD] Visitor %s helping! Redirecting +%d %s to owner %s",
+                player.Name, amount, resourceType, ownerPlayer.Name))
+        else
+            -- Owner offline: skip reward (no player object to award to)
+            print(string.format("[REWARD] Visitor %s helping but owner (ID %d) is offline, skipping reward",
+                player.Name, _villageOwnerUserId))
+            return
+        end
+    end
+
+    -- Add resources to recipient's local storage (for mini-game tracking)
+    local resources = getPlayerResources(recipient)
     if resources[resourceType] then
         resources[resourceType] = resources[resourceType] + amount
         print(string.format("[REWARD] %s gained +%d %s! (Local total: %d)",
-            player.Name, amount, resourceType, resources[resourceType]))
+            recipient.Name, amount, resourceType, resources[resourceType]))
     else
         warn("[REWARD] Unknown resource type:", resourceType)
     end
 
     -- UPDATE DATASERVICE (this is what the HUD reads from!)
     if DataService then
-        local playerData = DataService:GetPlayerData(player)
+        local playerData = DataService:GetPlayerData(recipient)
         if playerData then
             -- Build resource change table based on type
             local changes = {}
             changes[resourceType] = amount
 
             -- Update resources in DataService
-            local success = DataService:UpdateResources(player, changes)
+            local success = DataService:UpdateResources(recipient, changes)
             if success then
                 print(string.format("[REWARD] Updated DataService: %s +%d %s (DataService total: %d)",
-                    player.Name, amount, resourceType, playerData.resources[resourceType] or 0))
+                    recipient.Name, amount, resourceType, playerData.resources[resourceType] or 0))
 
-                -- Fire SyncPlayerData to update the HUD
+                -- Fire SyncPlayerData to update the owner's HUD
                 local Events = ReplicatedStorage:FindFirstChild("Events")
                 if Events then
                     local SyncPlayerData = Events:FindFirstChild("SyncPlayerData")
                     if SyncPlayerData then
-                        SyncPlayerData:FireClient(player, playerData)
-                        print(string.format("[REWARD] Synced HUD for %s", player.Name))
+                        SyncPlayerData:FireClient(recipient, playerData)
+                        print(string.format("[REWARD] Synced HUD for %s", recipient.Name))
                     end
                 end
             else
-                warn("[REWARD] Failed to update DataService for", player.Name)
+                warn("[REWARD] Failed to update DataService for", recipient.Name)
             end
         else
-            warn("[REWARD] No player data found for", player.Name)
+            warn("[REWARD] No player data found for", recipient.Name)
         end
     else
         warn("[REWARD] DataService not available yet")
     end
 
-    -- Fire event to client to show reward notification
+    -- Fire reward notification to the acting player
     local Events = ReplicatedStorage:FindFirstChild("Events")
     if Events then
         local ServerResponse = Events:FindFirstChild("ServerResponse")
         if ServerResponse then
-            ServerResponse:FireClient(player, "MiniGameReward", {
-                success = true,
-                resourceType = resourceType,
-                amount = amount,
-                building = buildingName,
-                newTotal = resources[resourceType]
-            })
+            if isHelper then
+                -- Visitor sees "Helped +X resource!" notification
+                ServerResponse:FireClient(player, "MiniGameReward", {
+                    success = true,
+                    resourceType = resourceType,
+                    amount = amount,
+                    building = buildingName,
+                    newTotal = resources[resourceType],
+                    isHelper = true,
+                })
+            else
+                -- Owner sees normal reward notification
+                ServerResponse:FireClient(player, "MiniGameReward", {
+                    success = true,
+                    resourceType = resourceType,
+                    amount = amount,
+                    building = buildingName,
+                    newTotal = resources[resourceType]
+                })
+            end
         end
     end
 
@@ -3717,7 +3759,7 @@ local function createGoldMine()
         sparkle.Speed = NumberRange.new(4, 8)
         sparkle.Parent = oreVeinBase
         task.delay(0.5, function() sparkle:Destroy() end)
-    end)
+    end, true) -- allowVisitors: visitors can mine ore for the owner
 
     -- ========== STATION 2: SMELTER (center of cave) ==========
     local smelterPos = GoldMineState.positions.smelter
@@ -4015,7 +4057,6 @@ local function createGoldMine()
         if not humanoid then return end
         local player = Players:GetPlayerFromCharacter(character)
         if not player then return end
-        if not isVillageOwner(player) then return end
         if inputDebounce[player.UserId] then return end
 
         local currentOre = getPlayerOre(player)
@@ -4063,7 +4104,6 @@ local function createGoldMine()
         if not humanoid then return end
         local player = Players:GetPlayerFromCharacter(character)
         if not player then return end
-        if not isVillageOwner(player) then return end
         if outputDebounce[player.UserId] then return end
 
         -- Check if player is carrying gold (limit: 10 per trip)
@@ -4229,7 +4269,6 @@ local function createGoldMine()
         if not humanoid then return end
         local player = Players:GetPlayerFromCharacter(character)
         if not player then return end
-        if not isVillageOwner(player) then return end
         if chestDebounce[player.UserId] then return end
 
         -- Check if player is carrying gold bars
@@ -6471,7 +6510,7 @@ local function createLumberMill()
 
                     -- Wood chip particles
                     spawnWoodChips(pos)
-                end)
+                end, true) -- allowVisitors: visitors can chop trees for the owner
             end
         end
     end
@@ -6531,7 +6570,7 @@ local function createLumberMill()
 
                 -- Wood chip particles
                 spawnWoodChips(treePos)
-            end)
+            end, true) -- allowVisitors: visitors can chop trees for the owner
         end
     end
 
@@ -6825,7 +6864,6 @@ local function createLumberMill()
         if not humanoid then return end
         local player = Players:GetPlayerFromCharacter(character)
         if not player then return end
-        if not isVillageOwner(player) then return end
         if sawmillInputDebounce[player.UserId] then return end
 
         local currentLogs = getPlayerLogs(player)
@@ -6931,7 +6969,6 @@ local function createLumberMill()
         if not humanoid then return end
         local player = Players:GetPlayerFromCharacter(character)
         if not player then return end
-        if not isVillageOwner(player) then return end
         if plankPickupDebounce[player.UserId] then return end
 
         local currentPlanks = getPlayerPlanks(player)
@@ -7019,7 +7056,6 @@ local function createLumberMill()
         if not humanoid then return end
         local player = Players:GetPlayerFromCharacter(character)
         if not player then return end
-        if not isVillageOwner(player) then return end
         if storageChestDebounce[player.UserId] then return end
 
         local playerCarriedPlanks = getPlayerPlanks(player)
@@ -8397,7 +8433,7 @@ local function createFarm(farmNumber)
     createInteraction(seedShed, "Get Seeds", "Seed Shed", 0.5, function(player)
         print(string.format("[Farm] %s grabbed wheat seeds! Go plant them in the field.", player.Name))
         addFarmXP(2)
-    end)
+    end, true) -- allowVisitors: visitors can get seeds for the owner
 
     -- ========== STEP 2: CROP FIELDS (LEFT AND RIGHT SIDES) ==========
     -- REDESIGNED: Crop plots on BOTH sides with walking path in center
@@ -8523,7 +8559,7 @@ local function createFarm(farmNumber)
                         print(string.format("[Farm] %s: Crop in %s plot #%d is still growing (stage %d/3). Water it!",
                             player.Name, sideName, plotId, plotState.stage))
                     end
-                end)
+                end, true) -- allowVisitors: visitors can plant seeds for the owner
             end
         end
 
@@ -8691,7 +8727,7 @@ local function createFarm(farmNumber)
         splash.Speed = NumberRange.new(2, 5)
         splash.Parent = bucket
         task.delay(0.4, function() splash:Destroy() end)
-    end)
+    end, true) -- allowVisitors: visitors can draw water for the owner
 
     -- ========== STEP 4: HARVEST BASKET (LOAD CROPS) ==========
     -- REDESIGNED POSITION: Near windmill for easy crop drop-off before processing
@@ -8760,7 +8796,6 @@ local function createFarm(farmNumber)
         if not humanoid then return end
         local player = Players:GetPlayerFromCharacter(character)
         if not player then return end
-        if not isVillageOwner(player) then return end
         if basketDebounce[player.UserId] then return end
 
         local currentCrops = getPlayerCrops(player)
@@ -9074,7 +9109,6 @@ local function createFarm(farmNumber)
         if not humanoid then return end
         local player = Players:GetPlayerFromCharacter(character)
         if not player then return end
-        if not isVillageOwner(player) then return end
         if windmillInputDebounce[player.UserId] then return end
 
         -- Check if player is carrying crops OR if harvest pile has crops
@@ -9208,7 +9242,6 @@ local function createFarm(farmNumber)
         if not humanoid then return end
         local player = Players:GetPlayerFromCharacter(character)
         if not player then return end
-        if not isVillageOwner(player) then return end
         if siloPickupDebounce[player.UserId] then return end
 
         local currentFood = getPlayerFood(player)
@@ -9316,7 +9349,6 @@ local function createFarm(farmNumber)
         if not humanoid then return end
         local player = Players:GetPlayerFromCharacter(character)
         if not player then return end
-        if not isVillageOwner(player) then return end
         if storageShedDebounce[player.UserId] then return end
 
         local playerCarriedFood = getPlayerFood(player)
