@@ -306,6 +306,26 @@ local function createSign(parent, text, position, size)
     return signBoard
 end
 
+-- Make any sign part readable from both sides by cloning SurfaceGuis to opposite face
+local OPPOSITE_FACE = {
+    [Enum.NormalId.Front] = Enum.NormalId.Back,
+    [Enum.NormalId.Back] = Enum.NormalId.Front,
+    [Enum.NormalId.Left] = Enum.NormalId.Right,
+    [Enum.NormalId.Right] = Enum.NormalId.Left,
+    [Enum.NormalId.Top] = Enum.NormalId.Bottom,
+    [Enum.NormalId.Bottom] = Enum.NormalId.Top,
+}
+local function makeSignDoubleSided(part)
+    for _, gui in part:GetChildren() do
+        if gui:IsA("SurfaceGui") and not gui.Name:match("_Back$") then
+            local backGui = gui:Clone()
+            backGui.Face = OPPOSITE_FACE[gui.Face] or Enum.NormalId.Back
+            backGui.Name = gui.Name .. "_Back"
+            backGui.Parent = part
+        end
+    end
+end
+
 local function createTorch(parent, position)
     local torch = Instance.new("Part")
     torch.Name = "Torch"
@@ -1529,6 +1549,166 @@ local function createEntranceGate()
     gateModel.Parent = villageFolder
     print("  ✓ Entrance gate created")
 end
+
+-- ============================================================================
+-- VILLAGE RESOURCE BOARD (visible to visitors near entrance)
+-- Shows the village owner's current resource totals on a sign by the gate
+-- ============================================================================
+
+local _resourceBoardGui: SurfaceGui? = nil
+
+local function createResourceBoard()
+    local board = Instance.new("Part")
+    board.Name = "ResourceBoard"
+    board.Size = Vector3.new(6, 4, 0.5)
+    board.Position = Vector3.new(42, GROUND_Y + 4, 14) -- Left side of gate entrance
+    board.Anchored = true
+    board.Material = Enum.Material.Wood
+    board.Color = Color3.fromRGB(50, 35, 20)
+    board.Parent = villageFolder
+
+    -- Post to hold the sign
+    local post = Instance.new("Part")
+    post.Name = "BoardPost"
+    post.Size = Vector3.new(0.5, 6, 0.5)
+    post.Position = Vector3.new(42, GROUND_Y + 3, 14)
+    post.Anchored = true
+    post.Material = Enum.Material.Wood
+    post.Color = Color3.fromRGB(60, 40, 25)
+    post.Parent = villageFolder
+
+    -- SurfaceGui on the front face
+    local gui = Instance.new("SurfaceGui")
+    gui.Name = "ResourceDisplay"
+    gui.Face = Enum.NormalId.Front
+    gui.CanvasSize = Vector2.new(400, 280)
+    gui.Parent = board
+
+    -- Title
+    local title = Instance.new("TextLabel")
+    title.Name = "Title"
+    title.Size = UDim2.new(1, 0, 0, 50)
+    title.Position = UDim2.new(0, 0, 0, 5)
+    title.BackgroundTransparency = 1
+    title.Text = "Village Resources"
+    title.TextColor3 = Color3.fromRGB(255, 215, 0)
+    title.Font = Enum.Font.GothamBold
+    title.TextSize = 36
+    title.Parent = gui
+
+    -- Gold row
+    local goldLabel = Instance.new("TextLabel")
+    goldLabel.Name = "GoldLabel"
+    goldLabel.Size = UDim2.new(1, 0, 0, 45)
+    goldLabel.Position = UDim2.new(0, 0, 0, 60)
+    goldLabel.BackgroundTransparency = 1
+    goldLabel.Text = "Gold: ---"
+    goldLabel.TextColor3 = Color3.fromRGB(255, 215, 50)
+    goldLabel.Font = Enum.Font.GothamBold
+    goldLabel.TextSize = 32
+    goldLabel.Parent = gui
+
+    -- Wood row
+    local woodLabel = Instance.new("TextLabel")
+    woodLabel.Name = "WoodLabel"
+    woodLabel.Size = UDim2.new(1, 0, 0, 45)
+    woodLabel.Position = UDim2.new(0, 0, 0, 115)
+    woodLabel.BackgroundTransparency = 1
+    woodLabel.Text = "Wood: ---"
+    woodLabel.TextColor3 = Color3.fromRGB(160, 120, 60)
+    woodLabel.Font = Enum.Font.GothamBold
+    woodLabel.TextSize = 32
+    woodLabel.Parent = gui
+
+    -- Food row
+    local foodLabel = Instance.new("TextLabel")
+    foodLabel.Name = "FoodLabel"
+    foodLabel.Size = UDim2.new(1, 0, 0, 45)
+    foodLabel.Position = UDim2.new(0, 0, 0, 170)
+    foodLabel.BackgroundTransparency = 1
+    foodLabel.Text = "Food: ---"
+    foodLabel.TextColor3 = Color3.fromRGB(80, 200, 80)
+    foodLabel.Font = Enum.Font.GothamBold
+    foodLabel.TextSize = 32
+    foodLabel.Parent = gui
+
+    -- Owner name label
+    local ownerLabel = Instance.new("TextLabel")
+    ownerLabel.Name = "OwnerLabel"
+    ownerLabel.Size = UDim2.new(1, 0, 0, 35)
+    ownerLabel.Position = UDim2.new(0, 0, 0, 230)
+    ownerLabel.BackgroundTransparency = 1
+    ownerLabel.Text = ""
+    ownerLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
+    ownerLabel.Font = Enum.Font.Gotham
+    ownerLabel.TextSize = 22
+    ownerLabel.Parent = gui
+
+    -- Also add a gui on the back face
+    local guiBack = gui:Clone()
+    guiBack.Face = Enum.NormalId.Back
+    guiBack.Parent = board
+
+    _resourceBoardGui = gui
+
+    print("  ✓ Resource board created at entrance")
+end
+
+-- Update the resource board with current owner resources
+local function updateResourceBoard()
+    if not _resourceBoardGui then return end
+    if not _villageOwnerUserId then return end
+    if not DataService then return end
+
+    local ownerPlayer = Players:GetPlayerByUserId(_villageOwnerUserId)
+    if not ownerPlayer then return end
+
+    local playerData = DataService:GetPlayerData(ownerPlayer)
+    if not playerData or not playerData.resources then return end
+
+    local gold = playerData.resources.gold or 0
+    local wood = playerData.resources.wood or 0
+    local food = playerData.resources.food or 0
+
+    -- Format numbers with commas
+    local function formatNum(n: number): string
+        local s = tostring(math.floor(n))
+        local result = ""
+        for i = #s, 1, -1 do
+            result = s:sub(i, i) .. result
+            if (#s - i + 1) % 3 == 0 and i > 1 then
+                result = "," .. result
+            end
+        end
+        return result
+    end
+
+    -- Update all SurfaceGuis on the board
+    local board = villageFolder and villageFolder:FindFirstChild("ResourceBoard")
+    if board then
+        for _, child in board:GetChildren() do
+            if child:IsA("SurfaceGui") then
+                local gLabel = child:FindFirstChild("GoldLabel") :: TextLabel?
+                local wLabel = child:FindFirstChild("WoodLabel") :: TextLabel?
+                local fLabel = child:FindFirstChild("FoodLabel") :: TextLabel?
+                local oLabel = child:FindFirstChild("OwnerLabel") :: TextLabel?
+                if gLabel then gLabel.Text = "Gold: " .. formatNum(gold) end
+                if wLabel then wLabel.Text = "Wood: " .. formatNum(wood) end
+                if fLabel then fLabel.Text = "Food: " .. formatNum(food) end
+                if oLabel then oLabel.Text = ownerPlayer.Name .. "'s Village" end
+            end
+        end
+    end
+end
+
+-- Start periodic updates for the resource board (every 5 seconds)
+task.spawn(function()
+    task.wait(5) -- Wait for village to be set up
+    while true do
+        updateResourceBoard()
+        task.wait(5)
+    end
+end)
 
 -- ============================================================================
 -- NPC WORKER SYSTEM
@@ -14667,6 +14847,7 @@ end
 local success, errorMsg = pcall(function()
     createGround()
     createEntranceGate()
+    createResourceBoard()
     createGoldMine()
     createLumberMill()
 

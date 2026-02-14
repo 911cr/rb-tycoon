@@ -199,30 +199,19 @@ if OverworldHUD and OverworldHUD.UpdateResources then
     end
 end
 
--- Connect Scout button -> move player near the target base
-if BaseInfoUI and BaseInfoUI.ScoutClicked then
-    BaseInfoUI.ScoutClicked:Connect(function(baseData)
-        if not baseData or not baseData.position then return end
+-- Connect Enter Base button -> teleport to visit another player's village
+if BaseInfoUI and BaseInfoUI.EnterBaseClicked then
+    local RequestVisitBase = Events:FindFirstChild("RequestVisitBase") :: RemoteEvent?
 
-        local player = game:GetService("Players").LocalPlayer
-        local character = player.Character
-        if not character then return end
-
-        local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
-        local humanoid = character:FindFirstChild("Humanoid") :: Humanoid?
-        if not humanoidRootPart or not humanoid then return end
-
-        -- Move player to a position near the target base (offset slightly so they're not inside it)
-        local targetPos = baseData.position
-        local direction = (humanoidRootPart.Position - targetPos).Unit
-        -- If player is already very close, pick a default offset direction
-        if direction ~= direction then -- NaN check (positions identical)
-            direction = Vector3.new(1, 0, 0)
+    BaseInfoUI.EnterBaseClicked:Connect(function(baseData)
+        if not baseData or not baseData.userId then return end
+        if not RequestVisitBase then
+            RequestVisitBase = Events:FindFirstChild("RequestVisitBase") :: RemoteEvent?
         end
-        local scoutPos = targetPos + direction * 20 + Vector3.new(0, 3, 0)
-
-        humanoidRootPart.CFrame = CFrame.new(scoutPos, targetPos)
-        print(string.format("[CLIENT] Scouting base of %s at (%.0f, %.0f)", baseData.username or "Unknown", targetPos.X, targetPos.Z))
+        if RequestVisitBase then
+            RequestVisitBase:FireServer({ targetUserId = baseData.userId })
+            print(string.format("[CLIENT] Requesting visit to %s's village", baseData.username or "Unknown"))
+        end
     end)
 end
 

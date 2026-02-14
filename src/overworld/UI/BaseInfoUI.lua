@@ -24,7 +24,7 @@ BaseInfoUI.__index = BaseInfoUI
 -- ============================================================================
 
 BaseInfoUI.EnterClicked = Signal.new()
-BaseInfoUI.ScoutClicked = Signal.new()
+BaseInfoUI.EnterBaseClicked = Signal.new()
 BaseInfoUI.AttackClicked = Signal.new()
 BaseInfoUI.TradeClicked = Signal.new()
 
@@ -319,21 +319,21 @@ local function createUI(): ScreenGui
     attackCorner.CornerRadius = UDim.new(0, 8)
     attackCorner.Parent = attackButton
 
-    -- Scout button
-    local scoutButton = Instance.new("TextButton")
-    scoutButton.Name = "ScoutButton"
-    scoutButton.Size = UDim2.new(0, 80, 0, 40)
-    scoutButton.BackgroundColor3 = Color3.fromRGB(80, 120, 180)
-    scoutButton.Text = "SCOUT"
-    scoutButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-    scoutButton.TextSize = 14
-    scoutButton.Font = Enum.Font.GothamBold
-    scoutButton.Visible = false
-    scoutButton.Parent = buttonsFrame
+    -- Enter Base button (visit another player's base)
+    local enterBaseButton = Instance.new("TextButton")
+    enterBaseButton.Name = "EnterBaseButton"
+    enterBaseButton.Size = UDim2.new(0, 80, 0, 40)
+    enterBaseButton.BackgroundColor3 = Color3.fromRGB(80, 120, 180)
+    enterBaseButton.Text = "VISIT"
+    enterBaseButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    enterBaseButton.TextSize = 14
+    enterBaseButton.Font = Enum.Font.GothamBold
+    enterBaseButton.Visible = false
+    enterBaseButton.Parent = buttonsFrame
 
-    local scoutCorner = Instance.new("UICorner")
-    scoutCorner.CornerRadius = UDim.new(0, 8)
-    scoutCorner.Parent = scoutButton
+    local enterBaseCorner = Instance.new("UICorner")
+    enterBaseCorner.CornerRadius = UDim.new(0, 8)
+    enterBaseCorner.Parent = enterBaseButton
 
     -- Trade button (for other players' bases)
     local tradeButton = Instance.new("TextButton")
@@ -486,7 +486,7 @@ local function updateUI(baseData: any)
     if buttonsFrame then
         local enterButton = buttonsFrame:FindFirstChild("EnterButton") :: TextButton?
         local attackButton = buttonsFrame:FindFirstChild("AttackButton") :: TextButton?
-        local scoutButton = buttonsFrame:FindFirstChild("ScoutButton") :: TextButton?
+        local enterBaseButton = buttonsFrame:FindFirstChild("EnterBaseButton") :: TextButton?
         local tradeButton = buttonsFrame:FindFirstChild("TradeButton") :: TextButton?
 
         local isOwnBase = baseData.isOwnBase or false
@@ -500,8 +500,8 @@ local function updateUI(baseData: any)
             attackButton.Visible = not isOwnBase and not hasShield
         end
 
-        if scoutButton then
-            scoutButton.Visible = not isOwnBase
+        if enterBaseButton then
+            enterBaseButton.Visible = not isOwnBase
         end
 
         if tradeButton then
@@ -517,7 +517,7 @@ local function updateUI(baseData: any)
         elseif baseData.hasShield then
             hintLabel.Text = "This base is shielded"
         else
-            hintLabel.Text = "Press E to attack, or Scout first"
+            hintLabel.Text = "Press E to attack, or Visit first"
         end
     end
 end
@@ -572,10 +572,10 @@ function BaseInfoUI:Init()
                 end)
             end
 
-            local scoutButton = buttonsFrame:FindFirstChild("ScoutButton") :: TextButton?
-            if scoutButton then
-                scoutButton.MouseButton1Click:Connect(function()
-                    self.ScoutClicked:Fire(_currentBaseData)
+            local enterBaseButton = buttonsFrame:FindFirstChild("EnterBaseButton") :: TextButton?
+            if enterBaseButton then
+                enterBaseButton.MouseButton1Click:Connect(function()
+                    self.EnterBaseClicked:Fire(_currentBaseData)
                 end)
             end
 

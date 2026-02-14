@@ -103,6 +103,9 @@ local RespondToTrade = createRemoteEvent("RespondToTrade")
 local TradeResult = createRemoteEvent("TradeResult")
 local CancelTrade = createRemoteEvent("CancelTrade")
 
+-- Visit base events
+local RequestVisitBase = createRemoteEvent("RequestVisitBase")
+
 -- UI data
 local GetOwnBaseData = createRemoteFunction("GetOwnBaseData")
 local GetPlayerResources = createRemoteFunction("GetPlayerResources")
@@ -981,6 +984,58 @@ connectEvent(CancelTrade, function(player, data)
 end)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
+-- STEP 7.10: Visit base handlers (teleports visitor to target's village)
+-- ═══════════════════════════════════════════════════════════════════════════════
+print("[OVERWORLD] Connecting visit base handlers...")
+
+local _visitRateLimit: {[number]: number} = {} -- [userId] = lastRequestTime
+local VISIT_RATE_LIMIT = 3 -- seconds between visit requests
+
+connectEvent(RequestVisitBase, function(player, data)
+    if typeof(data) ~= "table" then return end
+    if typeof(data.targetUserId) ~= "number" then return end
+
+    -- Rate limit
+    local now = os.clock()
+    local lastRequest = _visitRateLimit[player.UserId] or 0
+    if now - lastRequest < VISIT_RATE_LIMIT then
+        ServerResponse:FireClient(player, "VisitBase", { success = false, error = "RATE_LIMITED" })
+        return
+    end
+    _visitRateLimit[player.UserId] = now
+
+    -- Check player is not in a battle
+    if BattleArenaService and BattleArenaService:IsPlayerInBattle(player) then
+        ServerResponse:FireClient(player, "VisitBase", { success = false, error = "ALREADY_IN_BATTLE" })
+        return
+    end
+
+    -- Can't visit yourself
+    if data.targetUserId == player.UserId then
+        ServerResponse:FireClient(player, "VisitBase", { success = false, error = "CANNOT_VISIT_SELF" })
+        return
+    end
+
+    -- Teleport to the target's village using TeleportManager
+    if TeleportManager and OverworldService then
+        local state = OverworldService:GetPlayerState(player)
+        local currentPos = state and state.position or Vector3.new(500, 0, 500)
+
+        local success, teleportErr = TeleportManager:TeleportToVillageAsVisitor(
+            player, data.targetUserId, currentPos
+        )
+
+        if not success then
+            ServerResponse:FireClient(player, "VisitBase", { success = false, error = teleportErr })
+        else
+            print(string.format("[OVERWORLD] %s teleporting to visit %d's village", player.Name, data.targetUserId))
+        end
+    else
+        ServerResponse:FireClient(player, "VisitBase", { success = false, error = "SERVICE_UNAVAILABLE" })
+    end
+end)
+
+-- ═══════════════════════════════════════════════════════════════════════════════
 -- STEP 8: Player connection handling
 -- ═══════════════════════════════════════════════════════════════════════════════
 print("[OVERWORLD] Setting up player handlers...")
@@ -1064,6 +1119,8 @@ end)
 
 Players.PlayerRemoving:Connect(function(player)
     print(string.format("[OVERWORLD] Player leaving: %s (%d)", player.Name, player.UserId))
+
+    _visitRateLimit[player.UserId] = nil
 
     if OverworldService then
         OverworldService:UnregisterPlayer(player)
