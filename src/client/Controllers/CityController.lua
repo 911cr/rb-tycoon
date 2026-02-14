@@ -243,7 +243,7 @@ function CityController:Init()
         -- Fire event when player enters gate zone
         if _atGate and not wasAtGate then
             CityController.GateReached:Fire()
-            print("[City] Player reached the gate - opening World Map")
+            print("[City] Player reached the gate - requesting overworld teleport")
         end
     end)
 

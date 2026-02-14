@@ -502,15 +502,149 @@ if Controllers then
         local CityController = require(cityControllerModule)
 
         local RequestTeleportToOverworld = Events:FindFirstChild("RequestTeleportToOverworld") :: RemoteEvent?
+        local _gatePromptVisible = false
 
-        -- When player reaches the gate, teleport to overworld
+        -- When player reaches the gate, show confirmation prompt
         CityController.GateReached:Connect(function()
-            if RequestTeleportToOverworld then
-                print("[CLIENT] Gate reached - requesting teleport to overworld")
-                RequestTeleportToOverworld:FireServer()
-            else
+            if _gatePromptVisible then return end
+            if not RequestTeleportToOverworld then
                 warn("[CLIENT] RequestTeleportToOverworld event not found")
+                return
             end
+
+            _gatePromptVisible = true
+            print("[CLIENT] Gate reached - showing overworld confirmation")
+
+            -- Create confirmation prompt
+            local player = game:GetService("Players").LocalPlayer
+            local playerGui = player:FindFirstChild("PlayerGui")
+            if not playerGui then
+                _gatePromptVisible = false
+                return
+            end
+
+            local TweenService = game:GetService("TweenService")
+
+            local screenGui = Instance.new("ScreenGui")
+            screenGui.Name = "GateConfirmUI"
+            screenGui.DisplayOrder = 100
+            screenGui.ResetOnSpawn = false
+
+            -- Dark backdrop
+            local backdrop = Instance.new("Frame")
+            backdrop.Size = UDim2.new(1, 0, 1, 0)
+            backdrop.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+            backdrop.BackgroundTransparency = 0.5
+            backdrop.BorderSizePixel = 0
+            backdrop.Parent = screenGui
+
+            -- Panel
+            local panel = Instance.new("Frame")
+            panel.Size = UDim2.new(0, 320, 0, 180)
+            panel.Position = UDim2.new(0.5, -160, 0.5, -90)
+            panel.BackgroundColor3 = Color3.fromRGB(30, 28, 25)
+            panel.BorderSizePixel = 0
+            panel.Parent = screenGui
+
+            local panelCorner = Instance.new("UICorner")
+            panelCorner.CornerRadius = UDim.new(0, 8)
+            panelCorner.Parent = panel
+
+            local panelStroke = Instance.new("UIStroke")
+            panelStroke.Color = Color3.fromRGB(120, 100, 60)
+            panelStroke.Thickness = 2
+            panelStroke.Parent = panel
+
+            -- Title
+            local title = Instance.new("TextLabel")
+            title.Size = UDim2.new(1, 0, 0, 40)
+            title.Position = UDim2.new(0, 0, 0, 15)
+            title.BackgroundTransparency = 1
+            title.Text = "LEAVE VILLAGE?"
+            title.TextColor3 = Color3.fromRGB(220, 195, 130)
+            title.TextSize = 22
+            title.Font = Enum.Font.GothamBold
+            title.Parent = panel
+
+            -- Description
+            local desc = Instance.new("TextLabel")
+            desc.Size = UDim2.new(1, -30, 0, 35)
+            desc.Position = UDim2.new(0, 15, 0, 55)
+            desc.BackgroundTransparency = 1
+            desc.Text = "Travel to the overworld to explore, find enemies, and attack other players."
+            desc.TextColor3 = Color3.fromRGB(180, 170, 150)
+            desc.TextSize = 14
+            desc.Font = Enum.Font.Gotham
+            desc.TextWrapped = true
+            desc.Parent = panel
+
+            -- Button container
+            local btnContainer = Instance.new("Frame")
+            btnContainer.Size = UDim2.new(1, -40, 0, 45)
+            btnContainer.Position = UDim2.new(0, 20, 1, -65)
+            btnContainer.BackgroundTransparency = 1
+            btnContainer.Parent = panel
+
+            local function createBtn(name, text, color, posX, width)
+                local btn = Instance.new("TextButton")
+                btn.Name = name
+                btn.Size = UDim2.new(0, width, 1, 0)
+                btn.Position = UDim2.new(0, posX, 0, 0)
+                btn.BackgroundColor3 = color
+                btn.Text = text
+                btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+                btn.TextSize = 16
+                btn.Font = Enum.Font.GothamBold
+                btn.BorderSizePixel = 0
+                btn.Parent = btnContainer
+
+                local corner = Instance.new("UICorner")
+                corner.CornerRadius = UDim.new(0, 6)
+                corner.Parent = btn
+
+                return btn
+            end
+
+            local goBtn = createBtn("GoBtn", "GO TO OVERWORLD", Color3.fromRGB(80, 150, 80), 0, 165)
+            local stayBtn = createBtn("StayBtn", "STAY", Color3.fromRGB(100, 90, 80), 175, 85)
+
+            -- Animate in
+            panel.Size = UDim2.new(0, 320, 0, 0)
+            screenGui.Parent = playerGui
+            TweenService:Create(panel, TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+                Size = UDim2.new(0, 320, 0, 180),
+            }):Play()
+
+            local function closePrompt()
+                _gatePromptVisible = false
+                TweenService:Create(panel, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+                    Size = UDim2.new(0, 320, 0, 0),
+                }):Play()
+                TweenService:Create(backdrop, TweenInfo.new(0.15), {
+                    BackgroundTransparency = 1,
+                }):Play()
+                task.delay(0.2, function()
+                    screenGui:Destroy()
+                end)
+            end
+
+            goBtn.MouseButton1Click:Connect(function()
+                closePrompt()
+                print("[CLIENT] Confirmed - teleporting to overworld")
+                RequestTeleportToOverworld:FireServer()
+            end)
+
+            stayBtn.MouseButton1Click:Connect(function()
+                closePrompt()
+                print("[CLIENT] Cancelled - staying in village")
+            end)
+
+            backdrop.InputBegan:Connect(function(input)
+                if input.UserInputType == Enum.UserInputType.MouseButton1
+                    or input.UserInputType == Enum.UserInputType.Touch then
+                    closePrompt()
+                end
+            end)
         end)
 
         print("[CLIENT] Gate -> Overworld teleport connection established")
