@@ -493,7 +493,7 @@ if Controllers then
 end
 
 -- ═══════════════════════════════════════════════════════════════════════════════
--- WIRE UP GATE -> WORLD MAP
+-- WIRE UP GATE -> TELEPORT TO OVERWORLD
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 if Controllers then
@@ -501,28 +501,19 @@ if Controllers then
     if cityControllerModule then
         local CityController = require(cityControllerModule)
 
-        -- When player reaches the gate, open the World Map
-        CityController.GateReached:Connect(function()
-            -- Find WorldMapUI in the UI folder
-            local uiFolder = script:FindFirstChild("UI")
-            if uiFolder then
-                local worldMapUIModule = uiFolder:FindFirstChild("WorldMapUI")
-                if worldMapUIModule then
-                    local WorldMapUI = require(worldMapUIModule)
+        local RequestTeleportToOverworld = Events:FindFirstChild("RequestTeleportToOverworld") :: RemoteEvent?
 
-                    -- Initialize if not already
-                    if not WorldMapUI:IsVisible() then
-                        if not WorldMapUI:IsInitialized() then
-                            WorldMapUI:Init()
-                        end
-                        WorldMapUI:Show()
-                        print("[CLIENT] Opened World Map from gate")
-                    end
-                end
+        -- When player reaches the gate, teleport to overworld
+        CityController.GateReached:Connect(function()
+            if RequestTeleportToOverworld then
+                print("[CLIENT] Gate reached - requesting teleport to overworld")
+                RequestTeleportToOverworld:FireServer()
+            else
+                warn("[CLIENT] RequestTeleportToOverworld event not found")
             end
         end)
 
-        print("[CLIENT] Gate -> World Map connection established")
+        print("[CLIENT] Gate -> Overworld teleport connection established")
     end
 end
 

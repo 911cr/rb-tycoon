@@ -134,6 +134,9 @@ local StartResearchRequest = createRemoteEvent("StartResearchRequest")
 local ResearchUpdate = createRemoteEvent("ResearchUpdate")
 local OpenResearchUI = createRemoteEvent("OpenResearchUI")
 
+-- Teleport events
+local RequestTeleportToOverworld = createRemoteEvent("RequestTeleportToOverworld")
+
 print("[SERVER] Events folder created with all RemoteEvents")
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -723,6 +726,61 @@ game:BindToClose(function()
     end
 
     task.wait(2) -- Give time for saves to complete
+end)
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- TELEPORT TO OVERWORLD
+-- ═══════════════════════════════════════════════════════════════════════════════
+local TeleportService = game:GetService("TeleportService")
+local OverworldConfig = nil
+pcall(function()
+    OverworldConfig = require(ReplicatedStorage.Shared.Constants.OverworldConfig)
+end)
+
+local _teleportRateLimit: {[number]: number} = {}
+
+connectEvent(RequestTeleportToOverworld, function(player)
+    -- Rate limit: 1 request per 3 seconds
+    local now = os.clock()
+    local last = _teleportRateLimit[player.UserId] or 0
+    if now - last < 3 then return end
+    _teleportRateLimit[player.UserId] = now
+
+    local overworldPlaceId = OverworldConfig and OverworldConfig.Teleport
+        and OverworldConfig.Teleport.OverworldPlaceId
+    if not overworldPlaceId or overworldPlaceId == 0 then
+        warn("[SERVER] OverworldPlaceId not configured")
+        ServerResponse:FireClient(player, "TeleportToOverworld", {
+            success = false, error = "Overworld not configured",
+        })
+        return
+    end
+
+    -- Save player data before teleport
+    if DataService and DataService.SavePlayerData then
+        pcall(function() DataService:SavePlayerData(player) end)
+    end
+    if DataService and DataService.PrepareForTeleport then
+        pcall(function() DataService:PrepareForTeleport(player) end)
+    end
+
+    -- Teleport to overworld
+    local success, err = pcall(function()
+        TeleportService:Teleport(overworldPlaceId, player)
+    end)
+
+    if success then
+        print(string.format("[SERVER] Teleporting %s to overworld", player.Name))
+    else
+        warn(string.format("[SERVER] Teleport failed for %s: %s", player.Name, tostring(err)))
+        ServerResponse:FireClient(player, "TeleportToOverworld", {
+            success = false, error = "Teleport failed",
+        })
+    end
+end)
+
+Players.PlayerRemoving:Connect(function(player)
+    _teleportRateLimit[player.UserId] = nil
 end)
 
 print("========================================")
