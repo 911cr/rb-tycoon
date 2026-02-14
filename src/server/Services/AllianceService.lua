@@ -48,8 +48,21 @@ AllianceService.RoleChanged = Signal.new()
 
 -- Private state
 local _alliances: {[string]: AllianceData} = {} -- Cache of loaded alliances
-local _allianceStore = DataStoreService:GetDataStore("BattleTycoon_Alliances_v1")
+local _allianceStore = nil
+local _useLocalData = false
 local _initialized = false
+
+-- Try to get DataStore, fall back to local-only mode if unavailable
+local storeSuccess, storeResult = pcall(function()
+    return DataStoreService:GetDataStore("BattleTycoon_Alliances_v1")
+end)
+
+if storeSuccess then
+    _allianceStore = storeResult
+else
+    _useLocalData = true
+    warn("[AllianceService] DataStore unavailable, using local-only mode")
+end
 
 -- Constants
 local MAX_ALLIANCE_NAME_LENGTH = 20

@@ -13,27 +13,73 @@ local player = Players.LocalPlayer
 
 print("Battle Tycoon: Conquest - Client Starting...")
 
+-- Village is built server-side in WorldSetup.server.lua for reliability
+
 -- Wait for shared modules
 repeat
     task.wait()
 until ReplicatedStorage:FindFirstChild("Shared")
 
--- Wait for server events to be ready
+-- Wait for server events to be ready (with timeout)
+local eventsWaitStart = tick()
 repeat
     task.wait()
-until ReplicatedStorage:FindFirstChild("Events")
+until ReplicatedStorage:FindFirstChild("Events") or (tick() - eventsWaitStart > 5)
 
-local Events = ReplicatedStorage.Events
-local ClientAPI = require(ReplicatedStorage.Shared.Modules.ClientAPI)
+local Events = ReplicatedStorage:FindFirstChild("Events")
+if not Events then
+    warn("[CLIENT] Events folder not found, waiting longer...")
+    -- Wait a bit longer for server to create events
+    local extendedWait = tick()
+    repeat
+        task.wait(0.5)
+        Events = ReplicatedStorage:FindFirstChild("Events")
+    until Events or (tick() - extendedWait > 10)
+
+    if not Events then
+        warn("[CLIENT] Events folder still not found after extended wait, game features will not work")
+        return -- Exit early, can't run without events
+    end
+end
+
+print("[CLIENT] Events folder found")
+
+local ClientAPI = nil
+local clientAPIModule = ReplicatedStorage:FindFirstChild("Shared") and ReplicatedStorage.Shared:FindFirstChild("Modules") and ReplicatedStorage.Shared.Modules:FindFirstChild("ClientAPI")
+if clientAPIModule then
+    ClientAPI = require(clientAPIModule)
+end
 
 -- Client state
 local PlayerData = nil
 
+-- Wait for specific events to exist
+local function waitForEvent(eventName: string): RemoteEvent?
+    local event = Events:FindFirstChild(eventName)
+    if not event then
+        local waitStart = tick()
+        repeat
+            task.wait(0.1)
+            event = Events:FindFirstChild(eventName)
+        until event or (tick() - waitStart > 5)
+    end
+    return event
+end
+
+-- Get required events
+local SyncPlayerData = waitForEvent("SyncPlayerData")
+local ServerResponse = waitForEvent("ServerResponse")
+
+if not SyncPlayerData or not ServerResponse then
+    warn("[CLIENT] Required events not found")
+    return
+end
+
 -- Request initial data sync
-Events.SyncPlayerData:FireServer()
+SyncPlayerData:FireServer()
 
 -- Handle data sync from server
-Events.SyncPlayerData.OnClientEvent:Connect(function(data)
+SyncPlayerData.OnClientEvent:Connect(function(data)
     PlayerData = data
     print("[CLIENT] Player data synced")
 
@@ -41,12 +87,12 @@ Events.SyncPlayerData.OnClientEvent:Connect(function(data)
 end)
 
 -- Handle server responses
-Events.ServerResponse.OnClientEvent:Connect(function(action: string, result: any)
-    if result.success then
+ServerResponse.OnClientEvent:Connect(function(action: string, result: any)
+    if result and result.success then
         print(string.format("[CLIENT] %s succeeded", action))
 
         -- Request data refresh after successful action
-        Events.SyncPlayerData:FireServer()
+        SyncPlayerData:FireServer()
     else
         warn(string.format("[CLIENT] %s failed: %s", action, result.error or "Unknown"))
 
@@ -187,7 +233,7 @@ ClientAPI.RegisterAction("GetPlayerData", function()
 end)
 
 ClientAPI.RegisterAction("RequestDataSync", function()
-    Events.SyncPlayerData:FireServer()
+    SyncPlayerData:FireServer()
 end)
 
 -- Mark API as ready
@@ -197,8 +243,8 @@ ClientAPI.SetReady()
 -- RENDERER INITIALIZATION
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-local Rendering = player:WaitForChild("PlayerScripts"):FindFirstChild("Rendering")
-    or script.Parent:FindFirstChild("Rendering")
+-- With Rojo init.client.lua pattern, child folders are direct children of script
+local Rendering = script:FindFirstChild("Rendering")
 
 local CityRenderer, BattleRenderer
 
@@ -235,9 +281,8 @@ end
 -- CONTROLLER INITIALIZATION
 -- ═══════════════════════════════════════════════════════════════════════════════
 
--- In runtime, scripts are in PlayerScripts (copied from StarterPlayerScripts)
-local Controllers = player:WaitForChild("PlayerScripts"):FindFirstChild("Controllers")
-    or script.Parent:FindFirstChild("Controllers")
+-- With Rojo init.client.lua pattern, Controllers folder is a child of script
+local Controllers = script:FindFirstChild("Controllers")
 
 if Controllers then
     local initOrder = {
@@ -274,8 +319,8 @@ end
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 -- Render buildings when player data is synced
-Events.SyncPlayerData.OnClientEvent:Connect(function(data)
-    if CityRenderer and data.buildings then
+SyncPlayerData.OnClientEvent:Connect(function(data)
+    if CityRenderer and data and data.buildings then
         CityRenderer:RenderAllBuildings(data.buildings)
     end
 end)
@@ -334,27 +379,30 @@ if BattleRenderer and Controllers then
     end
 
     -- Update battle visuals from server state
-    Events.BattleTick.OnClientEvent:Connect(function(state)
-        if not BattleRenderer then return end
+    local BattleTick = Events:FindFirstChild("BattleTick")
+    if BattleTick then
+        BattleTick.OnClientEvent:Connect(function(state)
+            if not BattleRenderer then return end
 
-        -- Update troop positions
-        if state.troops then
-            for id, troopData in state.troops do
-                if troopData.health and troopData.health <= 0 then
-                    BattleRenderer:RemoveTroop(id)
-                elseif troopData.position then
-                    -- Check if troop exists
-                    local existingTroop = BattleRenderer:UpdateTroopPosition(id, troopData.position)
-                    if not existingTroop then
-                        BattleRenderer:RenderTroop(id, troopData)
-                    end
-                    if troopData.healthPercent then
-                        BattleRenderer:UpdateTroopHealth(id, troopData.healthPercent)
+            -- Update troop positions
+            if state.troops then
+                for id, troopData in state.troops do
+                    if troopData.health and troopData.health <= 0 then
+                        BattleRenderer:RemoveTroop(id)
+                    elseif troopData.position then
+                        -- Check if troop exists
+                        local existingTroop = BattleRenderer:UpdateTroopPosition(id, troopData.position)
+                        if not existingTroop then
+                            BattleRenderer:RenderTroop(id, troopData)
+                        end
+                        if troopData.healthPercent then
+                            BattleRenderer:UpdateTroopHealth(id, troopData.healthPercent)
+                        end
                     end
                 end
             end
-        end
-    end)
+        end)
+    end
 end
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -401,11 +449,55 @@ if Controllers then
 end
 
 -- ═══════════════════════════════════════════════════════════════════════════════
+-- WIRE UP GATE -> WORLD MAP
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+if Controllers then
+    local cityControllerModule = Controllers:FindFirstChild("CityController")
+    if cityControllerModule then
+        local CityController = require(cityControllerModule)
+
+        -- When player reaches the gate, open the World Map
+        CityController.GateReached:Connect(function()
+            -- Find WorldMapUI in the UI folder
+            local uiFolder = script:FindFirstChild("UI")
+            if uiFolder then
+                local worldMapUIModule = uiFolder:FindFirstChild("WorldMapUI")
+                if worldMapUIModule then
+                    local WorldMapUI = require(worldMapUIModule)
+
+                    -- Initialize if not already
+                    if not WorldMapUI:IsVisible() then
+                        if not WorldMapUI:IsInitialized() then
+                            WorldMapUI:Init()
+                        end
+                        WorldMapUI:Show()
+                        print("[CLIENT] Opened World Map from gate")
+                    end
+                end
+            end
+        end)
+
+        print("[CLIENT] Gate -> World Map connection established")
+    end
+end
+
+-- ═══════════════════════════════════════════════════════════════════════════════
 -- WIRE UP MATCHMAKING
 -- ═══════════════════════════════════════════════════════════════════════════════
 
+-- Helper to safely connect to events
+local function safeConnect(eventName: string, handler: (...any) -> ())
+    local event = Events:FindFirstChild(eventName)
+    if event then
+        event.OnClientEvent:Connect(handler)
+    else
+        warn("[CLIENT] Event not found: " .. eventName)
+    end
+end
+
 -- Listen for opponent found from server
-Events.OpponentFound.OnClientEvent:Connect(function(opponent, skipCost)
+safeConnect("OpponentFound", function(opponent, skipCost)
     -- Notify WorldMapUI with real opponent data
     local uiControllerModule = Controllers and Controllers:FindFirstChild("UIController")
     if uiControllerModule then
@@ -421,7 +513,7 @@ end)
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 -- Listen for quest completion
-Events.QuestCompleted.OnClientEvent:Connect(function(data)
+safeConnect("QuestCompleted", function(data)
     local uiControllerModule = Controllers and Controllers:FindFirstChild("UIController")
     if uiControllerModule then
         local UIController = require(uiControllerModule)
@@ -435,21 +527,21 @@ Events.QuestCompleted.OnClientEvent:Connect(function(data)
 end)
 
 -- Listen for quest progress
-Events.QuestProgress.OnClientEvent:Connect(function(data)
+safeConnect("QuestProgress", function(data)
     print(string.format("[CLIENT] Quest progress: %s - %d/%d", data.questId, data.progress, data.target))
 end)
 
 -- Listen for daily reward claimed
-Events.DailyRewardClaimed.OnClientEvent:Connect(function(data)
+safeConnect("DailyRewardClaimed", function(data)
     local uiControllerModule = Controllers and Controllers:FindFirstChild("UIController")
     if uiControllerModule then
         local UIController = require(uiControllerModule)
         if UIController.ShowNotification then
             local rewardText = ""
-            if data.reward.gold then
+            if data.reward and data.reward.gold then
                 rewardText = rewardText .. data.reward.gold .. " Gold "
             end
-            if data.reward.gems then
+            if data.reward and data.reward.gems then
                 rewardText = rewardText .. data.reward.gems .. " Gems "
             end
             UIController:ShowNotification("Daily Reward: " .. rewardText, "success")
@@ -473,7 +565,7 @@ end)
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 -- Listen for spell brewing complete
-Events.SpellBrewingComplete.OnClientEvent:Connect(function(data)
+safeConnect("SpellBrewingComplete", function(data)
     local uiControllerModule = Controllers and Controllers:FindFirstChild("UIController")
     if uiControllerModule then
         local UIController = require(uiControllerModule)
@@ -486,7 +578,7 @@ Events.SpellBrewingComplete.OnClientEvent:Connect(function(data)
 end)
 
 -- Listen for league changes
-Events.LeagueChanged.OnClientEvent:Connect(function(data)
+safeConnect("LeagueChanged", function(data)
     local uiControllerModule = Controllers and Controllers:FindFirstChild("UIController")
     if uiControllerModule then
         local UIController = require(uiControllerModule)

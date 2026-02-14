@@ -1,116 +1,119 @@
---!strict
 --[[
     WorldSetup.server.lua
 
-    Creates the basic world environment when the game starts.
-    Adds baseplate, spawn location, and lighting.
+    Server-side world initialization.
+    Sets up lighting, atmosphere, and ambient environment.
+
+    NOTE: Village building is handled by SimpleTest.server.lua
 ]]
 
-local Workspace = game:GetService("Workspace")
 local Lighting = game:GetService("Lighting")
+local SoundService = game:GetService("SoundService")
 
-print("Setting up world...")
+print("Initializing world environment...")
 
--- Create baseplate (grass-like ground)
-local baseplate = Instance.new("Part")
-baseplate.Name = "Baseplate"
-baseplate.Size = Vector3.new(512, 4, 512)
-baseplate.Position = Vector3.new(0, -2, 0)
-baseplate.Anchored = true
-baseplate.BrickColor = BrickColor.new("Bright green")
-baseplate.Material = Enum.Material.Grass
-baseplate.TopSurface = Enum.SurfaceType.Smooth
-baseplate.BottomSurface = Enum.SurfaceType.Smooth
-baseplate.Parent = Workspace
+-- ============================================================================
+-- CLEAR EXISTING LIGHTING EFFECTS
+-- ============================================================================
 
--- Create spawn location
-local spawn = Instance.new("SpawnLocation")
-spawn.Name = "SpawnLocation"
-spawn.Size = Vector3.new(6, 1, 6)
-spawn.Position = Vector3.new(0, 0.5, 0)
-spawn.Anchored = true
-spawn.BrickColor = BrickColor.new("Medium stone grey")
-spawn.Material = Enum.Material.Concrete
-spawn.TopSurface = Enum.SurfaceType.Smooth
-spawn.BottomSurface = Enum.SurfaceType.Smooth
-spawn.Parent = Workspace
-
--- Create a simple Town Hall placeholder at start
-local townHall = Instance.new("Part")
-townHall.Name = "TownHall_Preview"
-townHall.Size = Vector3.new(16, 20, 16)
-townHall.Position = Vector3.new(30, 10, 0)
-townHall.Anchored = true
-townHall.BrickColor = BrickColor.new("Nougat")
-townHall.Material = Enum.Material.Brick
-townHall.Parent = Workspace
-
-local townHallLabel = Instance.new("BillboardGui")
-townHallLabel.Name = "Label"
-townHallLabel.Size = UDim2.new(0, 200, 0, 50)
-townHallLabel.StudsOffset = Vector3.new(0, 12, 0)
-townHallLabel.Parent = townHall
-
-local labelText = Instance.new("TextLabel")
-labelText.Size = UDim2.new(1, 0, 1, 0)
-labelText.BackgroundTransparency = 1
-labelText.TextColor3 = Color3.new(1, 1, 1)
-labelText.TextStrokeTransparency = 0
-labelText.TextScaled = true
-labelText.Text = "Town Hall"
-labelText.Font = Enum.Font.GothamBold
-labelText.Parent = townHallLabel
-
--- Create some placeholder resource buildings
-local function createPlaceholderBuilding(name: string, color: BrickColor, position: Vector3)
-    local building = Instance.new("Part")
-    building.Name = name .. "_Preview"
-    building.Size = Vector3.new(8, 10, 8)
-    building.Position = position
-    building.Anchored = true
-    building.BrickColor = color
-    building.Material = Enum.Material.SmoothPlastic
-    building.Parent = Workspace
-
-    local label = Instance.new("BillboardGui")
-    label.Name = "Label"
-    label.Size = UDim2.new(0, 150, 0, 40)
-    label.StudsOffset = Vector3.new(0, 7, 0)
-    label.Parent = building
-
-    local text = Instance.new("TextLabel")
-    text.Size = UDim2.new(1, 0, 1, 0)
-    text.BackgroundTransparency = 1
-    text.TextColor3 = Color3.new(1, 1, 1)
-    text.TextStrokeTransparency = 0
-    text.TextScaled = true
-    text.Text = name
-    text.Font = Enum.Font.GothamBold
-    text.Parent = label
+for _, child in Lighting:GetChildren() do
+    if child:IsA("Atmosphere") or child:IsA("Sky") or child:IsA("BloomEffect")
+       or child:IsA("ColorCorrectionEffect") or child:IsA("SunRaysEffect") then
+        child:Destroy()
+    end
 end
 
-createPlaceholderBuilding("Gold Mine", BrickColor.new("Bright yellow"), Vector3.new(-20, 5, 20))
-createPlaceholderBuilding("Barracks", BrickColor.new("Bright red"), Vector3.new(-20, 5, -20))
-createPlaceholderBuilding("Spell Factory", BrickColor.new("Bright violet"), Vector3.new(20, 5, -30))
+-- ============================================================================
+-- MEDIEVAL FANTASY ATMOSPHERE
+-- ============================================================================
 
--- Set up atmosphere
+-- Atmosphere (distant haze for depth)
 local atmosphere = Instance.new("Atmosphere")
 atmosphere.Density = 0.3
-atmosphere.Color = Color3.fromRGB(199, 199, 199)
-atmosphere.Decay = Color3.fromRGB(92, 60, 13)
-atmosphere.Glare = 0
-atmosphere.Haze = 1
+atmosphere.Color = Color3.fromRGB(200, 210, 230)
+atmosphere.Decay = Color3.fromRGB(160, 140, 110)
+atmosphere.Glare = 0.15
+atmosphere.Haze = 1.5
+atmosphere.Offset = 0.1
 atmosphere.Parent = Lighting
 
--- Set up sky
+-- Sky
 local sky = Instance.new("Sky")
-sky.SunAngularSize = 11
-sky.MoonAngularSize = 11
+sky.SunAngularSize = 14
+sky.MoonAngularSize = 10
+sky.StarCount = 2500
 sky.Parent = Lighting
 
--- Add some ambient lighting
-Lighting.Ambient = Color3.fromRGB(100, 100, 100)
-Lighting.OutdoorAmbient = Color3.fromRGB(150, 150, 150)
-Lighting.ClockTime = 12 -- Noon
+-- Bloom (subtle glow)
+local bloom = Instance.new("BloomEffect")
+bloom.Intensity = 0.4
+bloom.Size = 20
+bloom.Threshold = 0.92
+bloom.Parent = Lighting
 
-print("World setup complete!")
+-- Color correction (warm medieval feel)
+local colorCorrection = Instance.new("ColorCorrectionEffect")
+colorCorrection.Brightness = 0.03
+colorCorrection.Contrast = 0.08
+colorCorrection.Saturation = 0.12
+colorCorrection.TintColor = Color3.fromRGB(255, 250, 242)
+colorCorrection.Parent = Lighting
+
+-- Sun rays
+local sunRays = Instance.new("SunRaysEffect")
+sunRays.Intensity = 0.08
+sunRays.Spread = 0.6
+sunRays.Parent = Lighting
+
+-- ============================================================================
+-- LIGHTING CONFIGURATION
+-- ============================================================================
+
+Lighting.Ambient = Color3.fromRGB(70, 70, 85)
+Lighting.OutdoorAmbient = Color3.fromRGB(120, 120, 135)
+Lighting.Brightness = 2.2
+Lighting.ClockTime = 10.5  -- Mid-morning
+Lighting.GeographicLatitude = 40
+Lighting.GlobalShadows = true
+Lighting.EnvironmentDiffuseScale = 0.6
+Lighting.EnvironmentSpecularScale = 0.4
+Lighting.ShadowSoftness = 0.25
+Lighting.Technology = Enum.Technology.Future
+Lighting.ColorShift_Bottom = Color3.fromRGB(20, 15, 10)
+Lighting.ColorShift_Top = Color3.fromRGB(255, 245, 230)
+
+-- ============================================================================
+-- AMBIENT SOUNDS
+-- ============================================================================
+
+-- Create sound group for ambient audio
+local ambientGroup = Instance.new("SoundGroup")
+ambientGroup.Name = "AmbientSounds"
+ambientGroup.Volume = 0.5
+ambientGroup.Parent = SoundService
+
+-- Village ambience (will play when near buildings)
+local villageAmbience = Instance.new("Sound")
+villageAmbience.Name = "VillageAmbience"
+villageAmbience.SoundId = "rbxassetid://9120349113"  -- Birds/nature
+villageAmbience.Volume = 0.15
+villageAmbience.Looped = true
+villageAmbience.SoundGroup = ambientGroup
+villageAmbience.Parent = SoundService
+villageAmbience:Play()
+
+-- Wind
+local windSound = Instance.new("Sound")
+windSound.Name = "Wind"
+windSound.SoundId = "rbxassetid://9120355676"
+windSound.Volume = 0.08
+windSound.Looped = true
+windSound.SoundGroup = ambientGroup
+windSound.Parent = SoundService
+windSound:Play()
+
+print("World environment initialized")
+print("  - Medieval fantasy lighting configured")
+print("  - Atmospheric effects enabled")
+print("  - Ambient sounds playing")
+print("  - Village will be built by SimpleTest.server.lua")

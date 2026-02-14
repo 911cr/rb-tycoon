@@ -12,6 +12,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Signal = require(ReplicatedStorage.Shared.Modules.Signal)
 local BuildingData = require(ReplicatedStorage.Shared.Constants.BuildingData)
+local VillageLayout = require(ReplicatedStorage.Shared.Constants.VillageLayout)
 local ClientAPI = require(ReplicatedStorage.Shared.Modules.ClientAPI)
 
 local CityController = {}
@@ -22,6 +23,7 @@ CityController.BuildingSelected = Signal.new()
 CityController.BuildingDeselected = Signal.new()
 CityController.PlacementModeEntered = Signal.new()
 CityController.PlacementModeExited = Signal.new()
+CityController.GateReached = Signal.new() -- Fired when player walks to the gate
 
 -- Private state
 local _initialized = false
@@ -31,6 +33,9 @@ local _placementMode = false
 local _placementBuildingType: string? = nil
 local _gridSize = 40
 local _cellSize = 3 -- studs per grid cell
+local _lastGateCheck = 0
+local _atGate = false
+local GATE_CHECK_INTERVAL = 0.2 -- Check every 0.2 seconds
 
 --[[
     Enters building placement mode.
@@ -219,8 +224,45 @@ function CityController:Init()
     -- TODO: Setup camera controls for city view
     -- TODO: Create building preview ghost for placement mode
 
+    -- Gate detection - check if player walks to the gate
+    local RunService = game:GetService("RunService")
+    RunService.Heartbeat:Connect(function()
+        local now = os.clock()
+        if now - _lastGateCheck < GATE_CHECK_INTERVAL then return end
+        _lastGateCheck = now
+
+        local character = _player.Character
+        if not character then return end
+
+        local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+        if not humanoidRootPart then return end
+
+        local wasAtGate = _atGate
+        _atGate = VillageLayout.IsAtGate(humanoidRootPart.Position)
+
+        -- Fire event when player enters gate zone
+        if _atGate and not wasAtGate then
+            CityController.GateReached:Fire()
+            print("[City] Player reached the gate - opening World Map")
+        end
+    end)
+
     _initialized = true
     print("CityController initialized")
+end
+
+--[[
+    Checks if player is currently at the gate.
+]]
+function CityController:IsAtGate(): boolean
+    return _atGate
+end
+
+--[[
+    Gets the gate world position.
+]]
+function CityController:GetGatePosition(): Vector3
+    return VillageLayout.GetGateWorldPosition()
 end
 
 return CityController

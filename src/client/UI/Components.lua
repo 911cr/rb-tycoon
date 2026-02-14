@@ -2,8 +2,8 @@
 --[[
     Components.lua
 
-    Reusable UI component factory.
-    Creates consistent UI elements with proper styling.
+    Fantasy-Medieval themed UI component factory.
+    Creates immersive, polished UI elements with proper styling.
 ]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -11,47 +11,62 @@ local TweenService = game:GetService("TweenService")
 
 local Components = {}
 
--- Color palette
+-- ============================================================================
+-- FANTASY-MEDIEVAL COLOR PALETTE
+-- ============================================================================
+
 Components.Colors = {
-    -- Primary colors
-    Primary = Color3.fromRGB(59, 130, 246),      -- Blue
-    PrimaryDark = Color3.fromRGB(37, 99, 235),
-    Secondary = Color3.fromRGB(34, 197, 94),     -- Green
-    SecondaryDark = Color3.fromRGB(22, 163, 74),
+    -- Primary UI colors (parchment/leather theme)
+    Background = Color3.fromRGB(35, 30, 25),           -- Dark leather
+    BackgroundLight = Color3.fromRGB(50, 45, 38),      -- Light leather
+    Panel = Color3.fromRGB(45, 40, 32),                -- Panel background
+    PanelBorder = Color3.fromRGB(139, 115, 85),        -- Wood/leather border
+    Parchment = Color3.fromRGB(215, 200, 170),         -- Parchment color
 
-    -- Resource colors
-    Gold = Color3.fromRGB(234, 179, 8),
-    Wood = Color3.fromRGB(139, 90, 43),
-    Food = Color3.fromRGB(34, 197, 94),
-    Gems = Color3.fromRGB(168, 85, 247),
+    -- Accent colors
+    Primary = Color3.fromRGB(65, 105, 160),            -- Steel blue
+    PrimaryDark = Color3.fromRGB(45, 75, 120),
+    Secondary = Color3.fromRGB(76, 142, 76),           -- Forest green
+    SecondaryDark = Color3.fromRGB(55, 110, 55),
 
-    -- UI colors
-    Background = Color3.fromRGB(30, 30, 40),
-    BackgroundLight = Color3.fromRGB(45, 45, 60),
-    Panel = Color3.fromRGB(40, 40, 55),
-    PanelBorder = Color3.fromRGB(70, 70, 90),
+    -- Resource colors (rich fantasy tones)
+    Gold = Color3.fromRGB(255, 200, 50),               -- Bright gold
+    GoldDark = Color3.fromRGB(184, 134, 11),           -- Dark gold
+    Wood = Color3.fromRGB(139, 90, 43),                -- Rich wood brown
+    Food = Color3.fromRGB(100, 180, 70),               -- Fresh green
+    Gems = Color3.fromRGB(148, 80, 210),               -- Purple crystal
 
     -- Text colors
-    TextPrimary = Color3.fromRGB(255, 255, 255),
-    TextSecondary = Color3.fromRGB(180, 180, 200),
-    TextMuted = Color3.fromRGB(120, 120, 140),
+    TextPrimary = Color3.fromRGB(245, 235, 215),       -- Warm white
+    TextSecondary = Color3.fromRGB(180, 170, 150),     -- Muted parchment
+    TextMuted = Color3.fromRGB(120, 115, 100),         -- Faded text
+    TextGold = Color3.fromRGB(255, 215, 0),            -- Gold text
+    TextDark = Color3.fromRGB(40, 35, 30),             -- Dark text for light backgrounds
 
     -- Status colors
-    Success = Color3.fromRGB(34, 197, 94),
-    Warning = Color3.fromRGB(234, 179, 8),
-    Danger = Color3.fromRGB(239, 68, 68),
+    Success = Color3.fromRGB(76, 175, 80),             -- Verdant green
+    Warning = Color3.fromRGB(255, 183, 77),            -- Amber warning
+    Danger = Color3.fromRGB(183, 65, 65),              -- Blood red
 
     -- Button states
-    ButtonHover = Color3.fromRGB(70, 70, 90),
-    ButtonPressed = Color3.fromRGB(50, 50, 70),
-    ButtonDisabled = Color3.fromRGB(60, 60, 75),
+    ButtonHover = Color3.fromRGB(70, 65, 55),
+    ButtonPressed = Color3.fromRGB(55, 50, 42),
+    ButtonDisabled = Color3.fromRGB(60, 55, 48),
+
+    -- Decorative
+    MetalTrim = Color3.fromRGB(140, 135, 130),         -- Iron/steel
+    GoldTrim = Color3.fromRGB(218, 165, 32),           -- Gold trim
+    WoodFrame = Color3.fromRGB(101, 67, 33),           -- Dark wood
 }
 
--- Standard sizes
+-- ============================================================================
+-- STANDARD SIZES
+-- ============================================================================
+
 Components.Sizes = {
-    CornerRadius = UDim.new(0, 8),
-    CornerRadiusSmall = UDim.new(0, 4),
-    CornerRadiusLarge = UDim.new(0, 12),
+    CornerRadius = UDim.new(0, 6),
+    CornerRadiusSmall = UDim.new(0, 3),
+    CornerRadiusLarge = UDim.new(0, 10),
 
     PaddingSmall = UDim.new(0, 4),
     PaddingMedium = UDim.new(0, 8),
@@ -61,17 +76,99 @@ Components.Sizes = {
     FontSizeMedium = 14,
     FontSizeLarge = 18,
     FontSizeXLarge = 24,
-    FontSizeTitle = 32,
+    FontSizeTitle = 28,
+
+    BorderThickness = 2,
+    BorderThicknessThick = 3,
 }
 
--- Animation presets
-local TWEEN_FAST = TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+-- ============================================================================
+-- ANIMATION PRESETS
+-- ============================================================================
+
+local TWEEN_FAST = TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local TWEEN_MEDIUM = TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local TWEEN_SLOW = TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+local TWEEN_BOUNCE = TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+
+-- ============================================================================
+-- HELPER FUNCTIONS
+-- ============================================================================
 
 --[[
-    Creates a basic frame with optional corner radius.
+    Creates ornate border decoration for a frame.
 ]]
+local function addOrnateBorder(parent: GuiObject, borderColor: Color3?, thickness: number?)
+    local color = borderColor or Components.Colors.GoldTrim
+    local thick = thickness or Components.Sizes.BorderThickness
+
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = color
+    stroke.Thickness = thick
+    stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    stroke.Parent = parent
+
+    return stroke
+end
+
+--[[
+    Creates a subtle inner glow effect.
+]]
+local function addInnerGlow(parent: Frame, glowColor: Color3?)
+    local color = glowColor or Components.Colors.GoldTrim
+
+    local glow = Instance.new("Frame")
+    glow.Name = "InnerGlow"
+    glow.Size = UDim2.new(1, -4, 1, -4)
+    glow.Position = UDim2.new(0, 2, 0, 2)
+    glow.BackgroundTransparency = 0.95
+    glow.BackgroundColor3 = color
+    glow.BorderSizePixel = 0
+    glow.ZIndex = parent.ZIndex
+    glow.Parent = parent
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = Components.Sizes.CornerRadiusSmall
+    corner.Parent = glow
+
+    return glow
+end
+
+--[[
+    Creates decorative corner pieces.
+]]
+local function addCornerDecorations(parent: Frame, cornerColor: Color3?)
+    local color = cornerColor or Components.Colors.GoldTrim
+
+    local corners = {"TopLeft", "TopRight", "BottomLeft", "BottomRight"}
+    local positions = {
+        TopLeft = {UDim2.new(0, 0, 0, 0), Vector2.new(0, 0)},
+        TopRight = {UDim2.new(1, 0, 0, 0), Vector2.new(1, 0)},
+        BottomLeft = {UDim2.new(0, 0, 1, 0), Vector2.new(0, 1)},
+        BottomRight = {UDim2.new(1, 0, 1, 0), Vector2.new(1, 1)},
+    }
+
+    for _, cornerName in corners do
+        local cornerPiece = Instance.new("Frame")
+        cornerPiece.Name = "Corner_" .. cornerName
+        cornerPiece.Size = UDim2.new(0, 12, 0, 12)
+        cornerPiece.Position = positions[cornerName][1]
+        cornerPiece.AnchorPoint = positions[cornerName][2]
+        cornerPiece.BackgroundColor3 = color
+        cornerPiece.BorderSizePixel = 0
+        cornerPiece.ZIndex = parent.ZIndex + 1
+        cornerPiece.Parent = parent
+
+        local corner = Instance.new("UICorner")
+        corner.CornerRadius = UDim.new(0, 3)
+        corner.Parent = cornerPiece
+    end
+end
+
+-- ============================================================================
+-- BASIC FRAME COMPONENT
+-- ============================================================================
+
 function Components.CreateFrame(props: {
     Name: string?,
     Size: UDim2?,
@@ -99,10 +196,7 @@ function Components.CreateFrame(props: {
     end
 
     if props.BorderColor then
-        local stroke = Instance.new("UIStroke")
-        stroke.Color = props.BorderColor
-        stroke.Thickness = 1
-        stroke.Parent = frame
+        addOrnateBorder(frame, props.BorderColor)
     end
 
     if props.Parent then
@@ -112,9 +206,10 @@ function Components.CreateFrame(props: {
     return frame
 end
 
---[[
-    Creates a text label with consistent styling.
-]]
+-- ============================================================================
+-- TEXT LABEL COMPONENT
+-- ============================================================================
+
 function Components.CreateLabel(props: {
     Name: string?,
     Text: string?,
@@ -126,6 +221,7 @@ function Components.CreateLabel(props: {
     Font: Enum.Font?,
     TextXAlignment: Enum.TextXAlignment?,
     TextYAlignment: Enum.TextYAlignment?,
+    TextShadow: boolean?,
     Parent: GuiObject?,
 }): TextLabel
     local label = Instance.new("TextLabel")
@@ -142,6 +238,12 @@ function Components.CreateLabel(props: {
     label.BackgroundTransparency = 1
     label.TextScaled = false
 
+    -- Add text shadow for better readability
+    if props.TextShadow ~= false then
+        label.TextStrokeTransparency = 0.7
+        label.TextStrokeColor3 = Color3.new(0, 0, 0)
+    end
+
     if props.Parent then
         label.Parent = props.Parent
     end
@@ -149,9 +251,10 @@ function Components.CreateLabel(props: {
     return label
 end
 
---[[
-    Creates a button with hover and press effects.
-]]
+-- ============================================================================
+-- BUTTON COMPONENT (Fantasy Styled)
+-- ============================================================================
+
 function Components.CreateButton(props: {
     Name: string?,
     Text: string?,
@@ -162,32 +265,68 @@ function Components.CreateButton(props: {
     TextColor: Color3?,
     TextSize: number?,
     CornerRadius: UDim?,
+    Style: string?, -- "primary" | "secondary" | "danger" | "gold" | "wood"
     Parent: GuiObject?,
     OnClick: (() -> ())?,
 }): TextButton
+    local style = props.Style or "primary"
+
+    -- Style presets
+    local stylePresets = {
+        primary = {bg = Components.Colors.Primary, text = Components.Colors.TextPrimary, border = Components.Colors.PrimaryDark},
+        secondary = {bg = Components.Colors.Secondary, text = Components.Colors.TextPrimary, border = Components.Colors.SecondaryDark},
+        danger = {bg = Components.Colors.Danger, text = Components.Colors.TextPrimary, border = Color3.fromRGB(140, 50, 50)},
+        gold = {bg = Components.Colors.GoldDark, text = Components.Colors.TextDark, border = Components.Colors.Gold},
+        wood = {bg = Components.Colors.WoodFrame, text = Components.Colors.TextPrimary, border = Color3.fromRGB(70, 45, 20)},
+    }
+
+    local preset = stylePresets[style] or stylePresets.primary
+
     local button = Instance.new("TextButton")
     button.Name = props.Name or "Button"
     button.Text = props.Text or "Button"
     button.Size = props.Size or UDim2.new(0, 120, 0, 40)
     button.Position = props.Position or UDim2.new(0, 0, 0, 0)
     button.AnchorPoint = props.AnchorPoint or Vector2.new(0, 0)
-    button.BackgroundColor3 = props.BackgroundColor or Components.Colors.Primary
-    button.TextColor3 = props.TextColor or Components.Colors.TextPrimary
+    button.BackgroundColor3 = props.BackgroundColor or preset.bg
+    button.TextColor3 = props.TextColor or preset.text
     button.TextSize = props.TextSize or Components.Sizes.FontSizeMedium
     button.Font = Enum.Font.GothamBold
     button.BorderSizePixel = 0
     button.AutoButtonColor = false
+    button.TextStrokeTransparency = 0.7
+    button.TextStrokeColor3 = Color3.new(0, 0, 0)
 
     local corner = Instance.new("UICorner")
     corner.CornerRadius = props.CornerRadius or Components.Sizes.CornerRadius
     corner.Parent = button
+
+    -- Add border
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = preset.border
+    stroke.Thickness = 2
+    stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    stroke.Parent = button
+
+    -- Gradient for depth
+    local gradient = Instance.new("UIGradient")
+    gradient.Rotation = 90
+    gradient.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.new(1, 1, 1)),
+        ColorSequenceKeypoint.new(0.5, Color3.new(0.9, 0.9, 0.9)),
+        ColorSequenceKeypoint.new(1, Color3.new(0.7, 0.7, 0.7)),
+    })
+    gradient.Parent = button
 
     -- Hover effects
     local originalColor = button.BackgroundColor3
 
     button.MouseEnter:Connect(function()
         TweenService:Create(button, TWEEN_FAST, {
-            BackgroundColor3 = originalColor:Lerp(Color3.new(1, 1, 1), 0.1)
+            BackgroundColor3 = originalColor:Lerp(Color3.new(1, 1, 1), 0.15)
+        }):Play()
+        TweenService:Create(stroke, TWEEN_FAST, {
+            Thickness = 3
         }):Play()
     end)
 
@@ -195,11 +334,14 @@ function Components.CreateButton(props: {
         TweenService:Create(button, TWEEN_FAST, {
             BackgroundColor3 = originalColor
         }):Play()
+        TweenService:Create(stroke, TWEEN_FAST, {
+            Thickness = 2
+        }):Play()
     end)
 
     button.MouseButton1Down:Connect(function()
         TweenService:Create(button, TWEEN_FAST, {
-            BackgroundColor3 = originalColor:Lerp(Color3.new(0, 0, 0), 0.1)
+            BackgroundColor3 = originalColor:Lerp(Color3.new(0, 0, 0), 0.15)
         }):Play()
     end)
 
@@ -220,9 +362,10 @@ function Components.CreateButton(props: {
     return button
 end
 
---[[
-    Creates a resource display (icon + amount).
-]]
+-- ============================================================================
+-- RESOURCE DISPLAY COMPONENT (Fantasy Styled)
+-- ============================================================================
+
 function Components.CreateResourceDisplay(props: {
     Name: string?,
     ResourceType: string, -- "Gold" | "Wood" | "Food" | "Gems"
@@ -232,55 +375,100 @@ function Components.CreateResourceDisplay(props: {
     ShowCapacity: boolean?,
     Parent: GuiObject?,
 }): Frame
-    local colors = {
-        Gold = Components.Colors.Gold,
-        Wood = Components.Colors.Wood,
-        Food = Components.Colors.Food,
-        Gems = Components.Colors.Gems,
+    -- Resource configurations with image asset IDs
+    -- Using free Roblox asset images that represent each resource
+    local resourceConfigs = {
+        Gold = {
+            color = Components.Colors.Gold,
+            darkColor = Components.Colors.GoldDark,
+            -- Gold bar/ingot image
+            imageId = "rbxassetid://7072725342", -- Gold bar icon
+            fallbackText = "🪙",
+        },
+        Wood = {
+            color = Components.Colors.Wood,
+            darkColor = Color3.fromRGB(100, 65, 30),
+            -- Tree image
+            imageId = "rbxassetid://6031763426", -- Tree icon
+            fallbackText = "🌲",
+        },
+        Food = {
+            color = Components.Colors.Food,
+            darkColor = Color3.fromRGB(70, 130, 50),
+            -- Cooked turkey/meat plate image
+            imageId = "rbxassetid://6031094678", -- Turkey/meat icon
+            fallbackText = "🍗",
+        },
+        Gems = {
+            color = Components.Colors.Gems,
+            darkColor = Color3.fromRGB(110, 60, 160),
+            -- Gem/crystal image (keeping for backwards compatibility)
+            imageId = "rbxassetid://6034684930", -- Gem/diamond icon
+            fallbackText = "💎",
+        },
     }
 
-    local color = colors[props.ResourceType] or Components.Colors.Gold
+    local config = resourceConfigs[props.ResourceType] or resourceConfigs.Gold
 
     local container = Components.CreateFrame({
         Name = props.Name or (props.ResourceType .. "Display"),
-        Size = props.Size or UDim2.new(0, 120, 0, 36),
+        Size = props.Size or UDim2.new(0, 110, 0, 36),
         Position = props.Position,
         AnchorPoint = props.AnchorPoint,
         BackgroundColor = Components.Colors.BackgroundLight,
         CornerRadius = Components.Sizes.CornerRadius,
-        BorderColor = color,
+        BorderColor = config.color,
         Parent = props.Parent,
     })
 
-    -- Icon background
+    -- Inner gradient for depth
+    local gradient = Instance.new("UIGradient")
+    gradient.Rotation = 90
+    gradient.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.new(1, 1, 1)),
+        ColorSequenceKeypoint.new(1, Color3.new(0.85, 0.85, 0.85)),
+    })
+    gradient.Parent = container
+
+    -- Icon background (circular for coin/gem look)
     local iconBg = Components.CreateFrame({
         Name = "IconBg",
-        Size = UDim2.new(0, 28, 0, 28),
-        Position = UDim2.new(0, 4, 0.5, 0),
+        Size = UDim2.new(0, 30, 0, 30),
+        Position = UDim2.new(0, 3, 0.5, 0),
         AnchorPoint = Vector2.new(0, 0.5),
-        BackgroundColor = color,
-        CornerRadius = Components.Sizes.CornerRadiusSmall,
+        BackgroundColor = config.color,
+        CornerRadius = UDim.new(0.5, 0),
         Parent = container,
     })
 
-    -- Icon label (placeholder - would be ImageLabel in production)
-    local iconLabel = Components.CreateLabel({
-        Name = "Icon",
-        Text = string.sub(props.ResourceType, 1, 1),
-        Size = UDim2.new(1, 0, 1, 0),
-        TextColor = Components.Colors.TextPrimary,
-        TextSize = Components.Sizes.FontSizeMedium,
-        Font = Enum.Font.GothamBold,
-        TextXAlignment = Enum.TextXAlignment.Center,
-        Parent = iconBg,
+    -- Icon gradient for 3D effect
+    local iconGradient = Instance.new("UIGradient")
+    iconGradient.Rotation = -45
+    iconGradient.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.new(1, 1, 1)),
+        ColorSequenceKeypoint.new(0.5, Color3.new(0.95, 0.95, 0.95)),
+        ColorSequenceKeypoint.new(1, Color3.new(0.7, 0.7, 0.7)),
     })
+    iconGradient.Parent = iconBg
+
+    -- Resource icon image
+    local iconImage = Instance.new("ImageLabel")
+    iconImage.Name = "IconImage"
+    iconImage.Size = UDim2.new(0, 24, 0, 24)
+    iconImage.Position = UDim2.new(0.5, 0, 0.5, 0)
+    iconImage.AnchorPoint = Vector2.new(0.5, 0.5)
+    iconImage.BackgroundTransparency = 1
+    iconImage.Image = config.imageId
+    iconImage.ImageColor3 = Color3.new(1, 1, 1)
+    iconImage.ScaleType = Enum.ScaleType.Fit
+    iconImage.Parent = iconBg
 
     -- Amount label
     local amountLabel = Components.CreateLabel({
         Name = "Amount",
         Text = "0",
-        Size = UDim2.new(1, -40, 1, 0),
-        Position = UDim2.new(0, 36, 0, 0),
+        Size = UDim2.new(1, -42, 1, 0),
+        Position = UDim2.new(0, 38, 0, 0),
         TextColor = Components.Colors.TextPrimary,
         TextSize = Components.Sizes.FontSizeMedium,
         Font = Enum.Font.GothamBold,
@@ -291,9 +479,10 @@ function Components.CreateResourceDisplay(props: {
     return container
 end
 
---[[
-    Creates a progress bar.
-]]
+-- ============================================================================
+-- PROGRESS BAR COMPONENT
+-- ============================================================================
+
 function Components.CreateProgressBar(props: {
     Name: string?,
     Size: UDim2?,
@@ -301,33 +490,63 @@ function Components.CreateProgressBar(props: {
     AnchorPoint: Vector2?,
     FillColor: Color3?,
     BackgroundColor: Color3?,
-    Progress: number?, -- 0 to 1
+    Progress: number?,
+    ShowLabel: boolean?,
     Parent: GuiObject?,
 }): Frame
     local container = Components.CreateFrame({
         Name = props.Name or "ProgressBar",
-        Size = props.Size or UDim2.new(1, 0, 0, 8),
+        Size = props.Size or UDim2.new(1, 0, 0, 12),
         Position = props.Position,
         AnchorPoint = props.AnchorPoint,
-        BackgroundColor = props.BackgroundColor or Components.Colors.BackgroundLight,
+        BackgroundColor = props.BackgroundColor or Components.Colors.Background,
         CornerRadius = Components.Sizes.CornerRadiusSmall,
+        BorderColor = Components.Colors.PanelBorder,
         Parent = props.Parent,
     })
 
     local fill = Components.CreateFrame({
         Name = "Fill",
-        Size = UDim2.new(props.Progress or 0, 0, 1, 0),
+        Size = UDim2.new(props.Progress or 0, 0, 1, -4),
+        Position = UDim2.new(0, 2, 0, 2),
         BackgroundColor = props.FillColor or Components.Colors.Primary,
         CornerRadius = Components.Sizes.CornerRadiusSmall,
         Parent = container,
     })
 
+    -- Shine effect on fill
+    local shine = Instance.new("Frame")
+    shine.Name = "Shine"
+    shine.Size = UDim2.new(1, 0, 0.4, 0)
+    shine.BackgroundColor3 = Color3.new(1, 1, 1)
+    shine.BackgroundTransparency = 0.7
+    shine.BorderSizePixel = 0
+    shine.Parent = fill
+
+    local shineCorner = Instance.new("UICorner")
+    shineCorner.CornerRadius = Components.Sizes.CornerRadiusSmall
+    shineCorner.Parent = shine
+
+    if props.ShowLabel then
+        local label = Components.CreateLabel({
+            Name = "Label",
+            Text = math.floor((props.Progress or 0) * 100) .. "%",
+            Size = UDim2.new(1, 0, 1, 0),
+            TextColor = Components.Colors.TextPrimary,
+            TextSize = 10,
+            Font = Enum.Font.GothamBold,
+            TextXAlignment = Enum.TextXAlignment.Center,
+            Parent = container,
+        })
+    end
+
     return container
 end
 
---[[
-    Creates a panel with title bar.
-]]
+-- ============================================================================
+-- PANEL COMPONENT (Ornate Fantasy Style)
+-- ============================================================================
+
 function Components.CreatePanel(props: {
     Name: string?,
     Title: string?,
@@ -335,37 +554,63 @@ function Components.CreatePanel(props: {
     Position: UDim2?,
     AnchorPoint: Vector2?,
     ShowCloseButton: boolean?,
+    ShowCornerDecorations: boolean?,
     OnClose: (() -> ())?,
     Parent: GuiObject?,
 }): Frame
     local panel = Components.CreateFrame({
         Name = props.Name or "Panel",
-        Size = props.Size or UDim2.new(0, 300, 0, 400),
+        Size = props.Size or UDim2.new(0, 320, 0, 420),
         Position = props.Position or UDim2.new(0.5, 0, 0.5, 0),
         AnchorPoint = props.AnchorPoint or Vector2.new(0.5, 0.5),
         BackgroundColor = Components.Colors.Panel,
         CornerRadius = Components.Sizes.CornerRadiusLarge,
-        BorderColor = Components.Colors.PanelBorder,
+        BorderColor = Components.Colors.GoldTrim,
         Parent = props.Parent,
     })
+
+    -- Outer frame effect
+    local outerStroke = Instance.new("UIStroke")
+    outerStroke.Color = Components.Colors.WoodFrame
+    outerStroke.Thickness = 4
+    outerStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    outerStroke.Parent = panel
+
+    -- Add corner decorations
+    if props.ShowCornerDecorations ~= false then
+        addCornerDecorations(panel, Components.Colors.GoldTrim)
+    end
 
     -- Title bar
     local titleBar = Components.CreateFrame({
         Name = "TitleBar",
-        Size = UDim2.new(1, 0, 0, 44),
+        Size = UDim2.new(1, -20, 0, 48),
+        Position = UDim2.new(0.5, 0, 0, 10),
+        AnchorPoint = Vector2.new(0.5, 0),
         BackgroundColor = Components.Colors.BackgroundLight,
-        BackgroundTransparency = 1,
+        CornerRadius = Components.Sizes.CornerRadius,
+        BorderColor = Components.Colors.GoldDark,
         Parent = panel,
     })
+
+    -- Title gradient
+    local titleGradient = Instance.new("UIGradient")
+    titleGradient.Rotation = 90
+    titleGradient.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.new(1, 1, 1)),
+        ColorSequenceKeypoint.new(1, Color3.new(0.9, 0.9, 0.9)),
+    })
+    titleGradient.Parent = titleBar
 
     local titleLabel = Components.CreateLabel({
         Name = "Title",
         Text = props.Title or "Panel",
         Size = UDim2.new(1, -60, 1, 0),
         Position = UDim2.new(0, 16, 0, 0),
-        TextColor = Components.Colors.TextPrimary,
+        TextColor = Components.Colors.TextGold,
         TextSize = Components.Sizes.FontSizeLarge,
         Font = Enum.Font.GothamBold,
+        TextXAlignment = Enum.TextXAlignment.Left,
         Parent = titleBar,
     })
 
@@ -373,11 +618,10 @@ function Components.CreatePanel(props: {
         local closeButton = Components.CreateButton({
             Name = "CloseButton",
             Text = "X",
-            Size = UDim2.new(0, 32, 0, 32),
-            Position = UDim2.new(1, -8, 0.5, 0),
+            Size = UDim2.new(0, 36, 0, 36),
+            Position = UDim2.new(1, -6, 0.5, 0),
             AnchorPoint = Vector2.new(1, 0.5),
-            BackgroundColor = Components.Colors.Danger,
-            TextSize = Components.Sizes.FontSizeMedium,
+            Style = "danger",
             OnClick = props.OnClose,
             Parent = titleBar,
         })
@@ -386,8 +630,9 @@ function Components.CreatePanel(props: {
     -- Content area
     local content = Components.CreateFrame({
         Name = "Content",
-        Size = UDim2.new(1, -32, 1, -60),
-        Position = UDim2.new(0, 16, 0, 52),
+        Size = UDim2.new(1, -32, 1, -80),
+        Position = UDim2.new(0.5, 0, 0, 66),
+        AnchorPoint = Vector2.new(0.5, 0),
         BackgroundTransparency = 1,
         Parent = panel,
     })
@@ -395,9 +640,10 @@ function Components.CreatePanel(props: {
     return panel
 end
 
---[[
-    Creates a scrolling frame.
-]]
+-- ============================================================================
+-- SCROLLING FRAME COMPONENT
+-- ============================================================================
+
 function Components.CreateScrollFrame(props: {
     Name: string?,
     Size: UDim2?,
@@ -412,9 +658,13 @@ function Components.CreateScrollFrame(props: {
     scroll.CanvasSize = props.CanvasSize or UDim2.new(0, 0, 0, 0)
     scroll.BackgroundTransparency = 1
     scroll.BorderSizePixel = 0
-    scroll.ScrollBarThickness = 4
-    scroll.ScrollBarImageColor3 = Components.Colors.TextMuted
+    scroll.ScrollBarThickness = 6
+    scroll.ScrollBarImageColor3 = Components.Colors.GoldDark
+    scroll.ScrollBarImageTransparency = 0.3
     scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+    scroll.TopImage = "rbxasset://textures/ui/Scroll/scroll-middle.png"
+    scroll.MidImage = "rbxasset://textures/ui/Scroll/scroll-middle.png"
+    scroll.BottomImage = "rbxasset://textures/ui/Scroll/scroll-middle.png"
 
     if props.Parent then
         scroll.Parent = props.Parent
@@ -423,9 +673,10 @@ function Components.CreateScrollFrame(props: {
     return scroll
 end
 
---[[
-    Creates a grid/list layout.
-]]
+-- ============================================================================
+-- LAYOUT COMPONENTS
+-- ============================================================================
+
 function Components.CreateGridLayout(props: {
     CellSize: UDim2?,
     CellPadding: UDim2?,
@@ -445,9 +696,6 @@ function Components.CreateGridLayout(props: {
     return grid
 end
 
---[[
-    Creates a list layout.
-]]
 function Components.CreateListLayout(props: {
     Padding: UDim?,
     FillDirection: Enum.FillDirection?,
@@ -470,12 +718,13 @@ function Components.CreateListLayout(props: {
     return list
 end
 
---[[
-    Animates a frame sliding in.
-]]
+-- ============================================================================
+-- ANIMATION UTILITIES
+-- ============================================================================
+
 function Components.SlideIn(frame: GuiObject, direction: string?, duration: number?)
     direction = direction or "bottom"
-    duration = duration or 0.3
+    duration = duration or 0.35
 
     local startPos
     local endPos = frame.Position
@@ -503,9 +752,6 @@ function Components.SlideIn(frame: GuiObject, direction: string?, duration: numb
     return tween
 end
 
---[[
-    Animates a frame sliding out.
-]]
 function Components.SlideOut(frame: GuiObject, direction: string?, duration: number?)
     direction = direction or "bottom"
     duration = duration or 0.25
@@ -538,32 +784,168 @@ function Components.SlideOut(frame: GuiObject, direction: string?, duration: num
     return tween
 end
 
---[[
-    Animates a frame fading in.
-]]
-function Components.FadeIn(frame: GuiObject, duration: number?)
-    duration = duration or 0.2
+function Components.ScaleIn(frame: GuiObject, duration: number?)
+    duration = duration or 0.3
 
+    frame.Size = UDim2.new(0, 0, 0, 0)
     frame.Visible = true
 
-    -- Find all descendants and fade them
-    local function setTransparency(obj, value)
-        if obj:IsA("Frame") or obj:IsA("TextLabel") or obj:IsA("TextButton") or obj:IsA("ImageLabel") then
-            if obj:IsA("Frame") then
-                TweenService:Create(obj, TweenInfo.new(duration), {
-                    BackgroundTransparency = value
-                }):Play()
-            end
-            if obj:IsA("TextLabel") or obj:IsA("TextButton") then
-                TweenService:Create(obj, TweenInfo.new(duration), {
-                    TextTransparency = value
-                }):Play()
-            end
-        end
+    local targetSize = frame:GetAttribute("TargetSize") or UDim2.new(0, 200, 0, 200)
+
+    local tween = TweenService:Create(
+        frame,
+        TweenInfo.new(duration, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+        { Size = targetSize }
+    )
+    tween:Play()
+
+    return tween
+end
+
+function Components.PulseGlow(frame: GuiObject, glowColor: Color3?, duration: number?)
+    glowColor = glowColor or Components.Colors.Gold
+    duration = duration or 1
+
+    -- Find or create glow frame
+    local glow = frame:FindFirstChild("PulseGlow")
+    if not glow then
+        glow = Instance.new("Frame")
+        glow.Name = "PulseGlow"
+        glow.Size = UDim2.new(1, 8, 1, 8)
+        glow.Position = UDim2.new(0.5, 0, 0.5, 0)
+        glow.AnchorPoint = Vector2.new(0.5, 0.5)
+        glow.BackgroundColor3 = glowColor
+        glow.BackgroundTransparency = 0.9
+        glow.BorderSizePixel = 0
+        glow.ZIndex = frame.ZIndex - 1
+        glow.Parent = frame
+
+        local corner = Instance.new("UICorner")
+        corner.CornerRadius = UDim.new(0, 10)
+        corner.Parent = glow
     end
 
-    -- Simple approach: just make visible
-    return nil
+    -- Pulse animation
+    local pulseIn = TweenService:Create(
+        glow,
+        TweenInfo.new(duration / 2, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut),
+        { BackgroundTransparency = 0.6, Size = UDim2.new(1, 12, 1, 12) }
+    )
+
+    local pulseOut = TweenService:Create(
+        glow,
+        TweenInfo.new(duration / 2, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut),
+        { BackgroundTransparency = 0.9, Size = UDim2.new(1, 8, 1, 8) }
+    )
+
+    pulseIn:Play()
+    pulseIn.Completed:Connect(function()
+        pulseOut:Play()
+    end)
+
+    return pulseIn
+end
+
+-- ============================================================================
+-- TOOLTIP COMPONENT
+-- ============================================================================
+
+function Components.CreateTooltip(props: {
+    Text: string,
+    Target: GuiObject,
+    Parent: GuiObject?,
+}): Frame
+    local tooltip = Components.CreateFrame({
+        Name = "Tooltip",
+        Size = UDim2.new(0, 0, 0, 32),
+        Position = UDim2.new(0.5, 0, 0, -40),
+        AnchorPoint = Vector2.new(0.5, 1),
+        BackgroundColor = Components.Colors.Background,
+        CornerRadius = Components.Sizes.CornerRadius,
+        BorderColor = Components.Colors.GoldDark,
+        Parent = props.Parent or props.Target.Parent,
+    })
+    tooltip.Visible = false
+    tooltip.AutomaticSize = Enum.AutomaticSize.X
+
+    local padding = Instance.new("UIPadding")
+    padding.PaddingLeft = UDim.new(0, 12)
+    padding.PaddingRight = UDim.new(0, 12)
+    padding.Parent = tooltip
+
+    local label = Components.CreateLabel({
+        Name = "Text",
+        Text = props.Text,
+        Size = UDim2.new(0, 0, 1, 0),
+        TextColor = Components.Colors.TextPrimary,
+        TextSize = Components.Sizes.FontSizeSmall,
+        Font = Enum.Font.Gotham,
+        TextXAlignment = Enum.TextXAlignment.Center,
+        Parent = tooltip,
+    })
+    label.AutomaticSize = Enum.AutomaticSize.X
+
+    -- Show/hide on hover
+    props.Target.MouseEnter:Connect(function()
+        tooltip.Visible = true
+        TweenService:Create(tooltip, TWEEN_FAST, {
+            BackgroundTransparency = 0
+        }):Play()
+    end)
+
+    props.Target.MouseLeave:Connect(function()
+        TweenService:Create(tooltip, TWEEN_FAST, {
+            BackgroundTransparency = 1
+        }):Play()
+        task.delay(0.15, function()
+            if tooltip then
+                tooltip.Visible = false
+            end
+        end)
+    end)
+
+    return tooltip
+end
+
+-- ============================================================================
+-- DIVIDER COMPONENT
+-- ============================================================================
+
+function Components.CreateDivider(props: {
+    Size: UDim2?,
+    Position: UDim2?,
+    Color: Color3?,
+    Parent: GuiObject?,
+}): Frame
+    local divider = Instance.new("Frame")
+    divider.Name = "Divider"
+    divider.Size = props.Size or UDim2.new(1, -16, 0, 2)
+    divider.Position = props.Position or UDim2.new(0.5, 0, 0, 0)
+    divider.AnchorPoint = Vector2.new(0.5, 0)
+    divider.BackgroundColor3 = props.Color or Components.Colors.PanelBorder
+    divider.BorderSizePixel = 0
+
+    -- Gradient fade on edges
+    local gradient = Instance.new("UIGradient")
+    gradient.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.new(1, 1, 1)),
+        ColorSequenceKeypoint.new(0.1, Color3.new(1, 1, 1)),
+        ColorSequenceKeypoint.new(0.9, Color3.new(1, 1, 1)),
+        ColorSequenceKeypoint.new(1, Color3.new(1, 1, 1)),
+    })
+    gradient.Transparency = NumberSequence.new({
+        NumberSequenceKeypoint.new(0, 1),
+        NumberSequenceKeypoint.new(0.1, 0),
+        NumberSequenceKeypoint.new(0.9, 0),
+        NumberSequenceKeypoint.new(1, 1),
+    })
+    gradient.Parent = divider
+
+    if props.Parent then
+        divider.Parent = props.Parent
+    end
+
+    return divider
 end
 
 return Components

@@ -36,11 +36,11 @@ export type Quest = {
     title: string,
     description: string,
     target: number,
-    reward: { gold: number?, gems: number?, xp: number? },
+    reward: { gold: number?, wood: number?, food: number?, xp: number? },
     trackingEvent: string, -- Event name to track
 }
 
--- Daily Quest Templates
+-- Daily Quest Templates (all gold rewards)
 local DailyQuestTemplates: {Quest} = {
     {
         id = "daily_attack_3",
@@ -48,7 +48,7 @@ local DailyQuestTemplates: {Quest} = {
         title = "Battle Ready",
         description = "Attack 3 enemy bases",
         target = 3,
-        reward = { gold = 5000, gems = 5 },
+        reward = { gold = 3000 },
         trackingEvent = "battle_completed",
     },
     {
@@ -57,7 +57,7 @@ local DailyQuestTemplates: {Quest} = {
         title = "Victorious",
         description = "Win 1 battle with at least 1 star",
         target = 1,
-        reward = { gold = 3000, gems = 3 },
+        reward = { gold = 2000 },
         trackingEvent = "battle_won",
     },
     {
@@ -66,7 +66,7 @@ local DailyQuestTemplates: {Quest} = {
         title = "Gold Collector",
         description = "Collect 10,000 gold from mines",
         target = 10000,
-        reward = { gold = 2000, gems = 2 },
+        reward = { gold = 1500 },
         trackingEvent = "gold_collected",
     },
     {
@@ -75,7 +75,7 @@ local DailyQuestTemplates: {Quest} = {
         title = "Army Builder",
         description = "Train 20 troops",
         target = 20,
-        reward = { gold = 3000, gems = 3 },
+        reward = { gold = 2000 },
         trackingEvent = "troop_trained",
     },
     {
@@ -84,7 +84,7 @@ local DailyQuestTemplates: {Quest} = {
         title = "Builder's Work",
         description = "Start 1 building upgrade",
         target = 1,
-        reward = { gold = 2000, gems = 2 },
+        reward = { gold = 1500 },
         trackingEvent = "upgrade_started",
     },
     {
@@ -93,7 +93,7 @@ local DailyQuestTemplates: {Quest} = {
         title = "Generous Ally",
         description = "Donate 5 troops to alliance members",
         target = 5,
-        reward = { gold = 1000, gems = 5 },
+        reward = { gold = 1000 },
         trackingEvent = "troop_donated",
     },
     {
@@ -102,7 +102,7 @@ local DailyQuestTemplates: {Quest} = {
         title = "Perfect Attack",
         description = "Get a 3-star victory",
         target = 1,
-        reward = { gold = 5000, gems = 10 },
+        reward = { gold = 5000 },
         trackingEvent = "three_star_win",
     },
     {
@@ -111,12 +111,12 @@ local DailyQuestTemplates: {Quest} = {
         title = "Defense Crusher",
         description = "Destroy 10 defensive buildings",
         target = 10,
-        reward = { gold = 4000, gems = 4 },
+        reward = { gold = 2500 },
         trackingEvent = "defense_destroyed",
     },
 }
 
--- Achievement Templates (permanent)
+-- Achievement Templates (permanent) - All gold rewards
 local AchievementTemplates: {Quest} = {
     -- Building achievements
     {
@@ -125,7 +125,7 @@ local AchievementTemplates: {Quest} = {
         title = "Town Builder",
         description = "Upgrade Town Hall to level 5",
         target = 5,
-        reward = { gems = 50 },
+        reward = { gold = 10000 },
         trackingEvent = "townhall_level",
     },
     {
@@ -134,7 +134,7 @@ local AchievementTemplates: {Quest} = {
         title = "City Architect",
         description = "Upgrade Town Hall to level 10",
         target = 10,
-        reward = { gems = 100 },
+        reward = { gold = 50000 },
         trackingEvent = "townhall_level",
     },
     -- Combat achievements
@@ -144,7 +144,7 @@ local AchievementTemplates: {Quest} = {
         title = "Warrior",
         description = "Win 50 battles",
         target = 50,
-        reward = { gems = 25 },
+        reward = { gold = 5000 },
         trackingEvent = "total_wins",
     },
     {
@@ -153,7 +153,7 @@ local AchievementTemplates: {Quest} = {
         title = "Conqueror",
         description = "Win 500 battles",
         target = 500,
-        reward = { gems = 100 },
+        reward = { gold = 25000 },
         trackingEvent = "total_wins",
     },
     {
@@ -162,7 +162,7 @@ local AchievementTemplates: {Quest} = {
         title = "Perfect Commander",
         description = "Get 100 three-star victories",
         target = 100,
-        reward = { gems = 75 },
+        reward = { gold = 15000 },
         trackingEvent = "total_three_stars",
     },
     -- Trophy achievements
@@ -172,7 +172,7 @@ local AchievementTemplates: {Quest} = {
         title = "Rising Champion",
         description = "Reach 1,000 trophies",
         target = 1000,
-        reward = { gems = 50 },
+        reward = { gold = 10000 },
         trackingEvent = "trophies",
     },
     {
@@ -181,7 +181,7 @@ local AchievementTemplates: {Quest} = {
         title = "Elite Champion",
         description = "Reach 3,000 trophies",
         target = 3000,
-        reward = { gems = 150 },
+        reward = { gold = 50000 },
         trackingEvent = "trophies",
     },
     -- Collection achievements
@@ -191,7 +191,7 @@ local AchievementTemplates: {Quest} = {
         title = "Treasure Hunter",
         description = "Loot 1,000,000 gold total",
         target = 1000000,
-        reward = { gems = 50 },
+        reward = { gold = 25000 },
         trackingEvent = "total_gold_looted",
     },
     -- Alliance achievements
@@ -201,7 +201,7 @@ local AchievementTemplates: {Quest} = {
         title = "Team Player",
         description = "Donate 100 troops",
         target = 100,
-        reward = { gems = 25 },
+        reward = { gold = 5000 },
         trackingEvent = "total_donations",
     },
 }

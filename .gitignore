@@ -20,5 +20,12 @@ Thumbs.db
 # Logs
 *.log
 
+# Binaries
+rojo
+*.zip
+
+# Backups
+*.bak
+
 # Local settings
 .claude/settings.local.json

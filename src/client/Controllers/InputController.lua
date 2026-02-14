@@ -133,7 +133,7 @@ end
 --[[
     Gets the grid position under the cursor.
 ]]
-function InputController:GetGridPositionUnderCursor(): (number, number)?
+function InputController:GetGridPositionUnderCursor(): (number?, number?)
     local worldPos = self:GetWorldPositionUnderCursor()
     if worldPos then
         return self:WorldToGrid(worldPos)

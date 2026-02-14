@@ -19,12 +19,20 @@ local _initialized = false
 local _player = Players.LocalPlayer
 local _camera = workspace.CurrentCamera
 
--- Camera mode: "city" | "battle" | "free"
-local _mode = "city"
+-- Camera mode: "explore" | "city" | "battle"
+-- "explore" = third-person character following (default for walking around)
+-- "city" = top-down RTS view for building management
+-- "battle" = top-down RTS view for battles
+local _mode = "explore"
 
 -- Camera settings by mode
 local ModeSettings = {
+    explore = {
+        -- Uses Roblox default camera (third-person follow)
+        cameraType = Enum.CameraType.Custom,
+    },
     city = {
+        cameraType = Enum.CameraType.Scriptable,
         minZoom = 20,
         maxZoom = 80,
         defaultZoom = 50,
@@ -34,6 +42,7 @@ local ModeSettings = {
         bounds = { minX = -50, maxX = 150, minZ = -50, maxZ = 150 },
     },
     battle = {
+        cameraType = Enum.CameraType.Scriptable,
         minZoom = 30,
         maxZoom = 100,
         defaultZoom = 60,
@@ -70,7 +79,19 @@ function CameraController:SetMode(mode: string)
     end
 
     _mode = mode
-    _currentZoom = settings.defaultZoom
+
+    -- Set appropriate camera type
+    _camera.CameraType = settings.cameraType
+
+    if mode == "explore" then
+        -- Let Roblox handle the camera for third-person exploration
+        -- Set subject to player character
+        local character = _player.Character or _player.CharacterAdded:Wait()
+        _camera.CameraSubject = character:FindFirstChildOfClass("Humanoid")
+    else
+        -- RTS mode - use zoom settings
+        _currentZoom = settings.defaultZoom
+    end
 
     print("[Camera] Mode set to:", mode)
 end
@@ -118,6 +139,9 @@ function CameraController:Zoom(delta: number)
     local settings = ModeSettings[_mode]
     if not settings then return end
 
+    -- Explore mode uses Roblox default camera, no manual zoom
+    if not settings.zoomSpeed then return end
+
     _currentZoom = math.clamp(_currentZoom - delta * settings.zoomSpeed, settings.minZoom, settings.maxZoom)
 end
 
@@ -160,7 +184,12 @@ local function updateCamera()
     local settings = ModeSettings[_mode]
     if not settings then return end
 
-    -- Calculate camera position based on target, zoom, and angle
+    -- In explore mode, let Roblox handle the camera
+    if _mode == "explore" then
+        return
+    end
+
+    -- RTS modes: Calculate camera position based on target, zoom, and angle
     local angleRad = math.rad(settings.angle)
     local height = _currentZoom * math.sin(angleRad)
     local distance = _currentZoom * math.cos(angleRad)
@@ -277,12 +306,17 @@ function CameraController:Init()
         return
     end
 
-    -- Set default mode
-    _mode = "city"
-    local settings = ModeSettings[_mode]
-    _currentZoom = settings.defaultZoom
+    -- Set default mode to explore (third-person walkthrough)
+    _mode = "explore"
 
-    -- Connect input handlers
+    -- Wait for character and set up third-person camera
+    local character = _player.Character or _player.CharacterAdded:Wait()
+    local humanoid = character:WaitForChild("Humanoid")
+
+    _camera.CameraType = Enum.CameraType.Custom
+    _camera.CameraSubject = humanoid
+
+    -- Connect input handlers (for RTS modes when activated)
     UserInputService.InputBegan:Connect(handleMouseButton)
     UserInputService.InputEnded:Connect(handleMouseButtonRelease)
     UserInputService.InputChanged:Connect(function(input)
@@ -293,11 +327,20 @@ function CameraController:Init()
     UserInputService.TouchMoved:Connect(handleTouchInput)
     UserInputService.TouchEnded:Connect(handleTouchInput)
 
-    -- Update camera every frame
+    -- Handle character respawns
+    _player.CharacterAdded:Connect(function(newCharacter)
+        local newHumanoid = newCharacter:WaitForChild("Humanoid")
+        if _mode == "explore" then
+            _camera.CameraType = Enum.CameraType.Custom
+            _camera.CameraSubject = newHumanoid
+        end
+    end)
+
+    -- Update camera every frame (only affects RTS modes)
     RunService.RenderStepped:Connect(updateCamera)
 
     _initialized = true
-    print("CameraController initialized")
+    print("CameraController initialized - Explore mode (third-person)")
 end
 
 return CameraController

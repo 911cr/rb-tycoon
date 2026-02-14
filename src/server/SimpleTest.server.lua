@@ -5388,7 +5388,7 @@ local function createLumberMill()
         storageChest = Vector3.new(baseX + 12, GROUND_Y, baseZ - 18),-- Storage chest (right of sawmill)
         hireLogger = Vector3.new(baseX - 20, GROUND_Y, baseZ + 25), -- LEFT of portal (like gold mine)
         hireHauler = Vector3.new(baseX + 20, GROUND_Y, baseZ + 25), -- RIGHT of portal (like gold mine)
-        upgradeKiosk = Vector3.new(baseX, GROUND_Y, baseZ + 10),    -- Center, behind spawn
+        upgradeKiosk = Vector3.new(baseX + 40, GROUND_Y, baseZ + 28), -- Front-right: near wall, out of the way
         workerSpawn = Vector3.new(baseX, GROUND_Y, baseZ - 10),     -- Near sawmill
     }
 
@@ -6682,239 +6682,266 @@ local function createLumberMill()
         print(string.format("[LumberMill] Hauler #%d will take planks from output → deliver to YOUR storage!", haulerId))
     end)
 
-    -- ========== STEP 6: UPGRADE KIOSK (RIGHT SIDE - not blocking entrance) ==========
-    local upgradeArea = LumberMillState.positions.upgradeKiosk
+    -- ========== STEP 6: SINGLE UPGRADE KIOSK (like Gold Mine) ==========
+    local upgradeKioskPos = LumberMillState.positions.upgradeKiosk
 
-    -- Main upgrade station structure
-    local upgradeBench = Instance.new("Part")
-    upgradeBench.Name = "UpgradeBench"
-    upgradeBench.Size = Vector3.new(12, 3, 6)
-    upgradeBench.Position = upgradeArea + Vector3.new(0, 1.5, 0)
-    upgradeBench.Anchored = true
-    upgradeBench.Material = Enum.Material.Wood
-    upgradeBench.Color = Color3.fromRGB(85, 60, 40)
-    upgradeBench.Parent = millModel
+    -- Kiosk pedestal/terminal
+    local upgradeKiosk = Instance.new("Part")
+    upgradeKiosk.Name = "UpgradeKiosk"
+    upgradeKiosk.Size = Vector3.new(3, 4, 2)
+    upgradeKiosk.Anchored = true
+    upgradeKiosk.Material = Enum.Material.Metal
+    upgradeKiosk.Color = Color3.fromRGB(70, 80, 70)  -- Greenish metal for lumber theme
+    local kioskCenterPos = upgradeKioskPos + Vector3.new(0, 2, 0)
+    upgradeKiosk.Position = kioskCenterPos
+    upgradeKiosk.Parent = millModel
 
-    local grindWheel = Instance.new("Part")
-    grindWheel.Name = "GrindingWheel"
-    grindWheel.Shape = Enum.PartType.Cylinder
-    grindWheel.Size = Vector3.new(1, 3, 3)
-    grindWheel.Position = upgradeArea + Vector3.new(-4, 3.5, 0)
-    grindWheel.Orientation = Vector3.new(0, 0, 90)
-    grindWheel.Anchored = true
-    grindWheel.Material = Enum.Material.Cobblestone
-    grindWheel.Color = Color3.fromRGB(130, 125, 120)
-    grindWheel.Parent = millModel
+    -- Kiosk screen (decorative)
+    local kioskScreen = Instance.new("Part")
+    kioskScreen.Name = "KioskScreen"
+    kioskScreen.Size = Vector3.new(2.5, 2, 0.2)
+    kioskScreen.Anchored = true
+    kioskScreen.Material = Enum.Material.Neon
+    kioskScreen.Color = Color3.fromRGB(100, 200, 100)  -- Green glow for lumber
+    kioskScreen.Position = kioskCenterPos + Vector3.new(0, 1, -1.1)
+    kioskScreen.Parent = millModel
 
-    local toolRack = Instance.new("Part")
-    toolRack.Name = "ToolRack"
-    toolRack.Size = Vector3.new(4, 4, 0.5)
-    toolRack.Position = upgradeArea + Vector3.new(4, 3.5, -2)
-    toolRack.Anchored = true
-    toolRack.Material = Enum.Material.Wood
-    toolRack.Color = Color3.fromRGB(90, 65, 45)
-    toolRack.Parent = millModel
+    -- Glow effect
+    local kioskGlow = Instance.new("PointLight")
+    kioskGlow.Color = Color3.fromRGB(100, 200, 100)
+    kioskGlow.Brightness = 1.5
+    kioskGlow.Range = 8
+    kioskGlow.Parent = kioskScreen
 
-    createSign(millModel, "UPGRADE SHOP", upgradeArea + Vector3.new(0, 6, 3), Vector3.new(8, 1.5, 0.3))
+    -- Sign above kiosk
+    local kioskSign = Instance.new("Part")
+    kioskSign.Name = "UpgradeKioskSign"
+    kioskSign.Size = Vector3.new(6, 1.2, 0.3)
+    kioskSign.Position = upgradeKioskPos + Vector3.new(0, 5, 0)
+    kioskSign.Anchored = true
+    kioskSign.Material = Enum.Material.Wood
+    kioskSign.Color = Color3.fromRGB(100, 70, 45)
+    kioskSign.Parent = millModel
 
-    -- Upgrade status billboard
-    local upgradeBillboard = Instance.new("BillboardGui")
-    upgradeBillboard.Name = "UpgradeStatus"
-    upgradeBillboard.Size = UDim2.new(14, 0, 8, 0)
-    upgradeBillboard.StudsOffset = Vector3.new(0, 8, 0)
-    upgradeBillboard.AlwaysOnTop = true
-    upgradeBillboard.Parent = upgradeBench
+    local kioskSignGui = Instance.new("SurfaceGui")
+    kioskSignGui.Face = Enum.NormalId.Front
+    kioskSignGui.Parent = kioskSign
 
-    local upgradeFrame = Instance.new("Frame")
-    upgradeFrame.Size = UDim2.new(1, 0, 1, 0)
-    upgradeFrame.BackgroundColor3 = Color3.fromRGB(40, 30, 20)
-    upgradeFrame.BackgroundTransparency = 0.2
-    upgradeFrame.BorderSizePixel = 0
-    upgradeFrame.Parent = upgradeBillboard
+    local kioskSignLabel = Instance.new("TextLabel")
+    kioskSignLabel.Size = UDim2.new(1, 0, 1, 0)
+    kioskSignLabel.BackgroundTransparency = 1
+    kioskSignLabel.Text = "UPGRADE KIOSK"
+    kioskSignLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    kioskSignLabel.TextScaled = true
+    kioskSignLabel.Font = Enum.Font.GothamBold
+    kioskSignLabel.Parent = kioskSignGui
 
-    local upgradeTitle = Instance.new("TextLabel")
-    upgradeTitle.Size = UDim2.new(1, 0, 0.15, 0)
-    upgradeTitle.Position = UDim2.new(0, 0, 0, 0)
-    upgradeTitle.BackgroundTransparency = 1
-    upgradeTitle.Text = "UPGRADE SHOP"
-    upgradeTitle.TextColor3 = Color3.fromRGB(180, 140, 90)
-    upgradeTitle.TextScaled = true
-    upgradeTitle.Font = Enum.Font.GothamBold
-    upgradeTitle.Parent = upgradeFrame
+    -- Billboard showing "Press E to Open Upgrades"
+    local kioskBillboard = Instance.new("BillboardGui")
+    kioskBillboard.Name = "KioskPreview"
+    kioskBillboard.Size = UDim2.new(6, 0, 2, 0)
+    kioskBillboard.StudsOffset = Vector3.new(0, 3, 0)
+    kioskBillboard.AlwaysOnTop = true
+    kioskBillboard.Parent = upgradeKiosk
 
-    -- Function to update the upgrade display (LEVEL-BASED, UNLIMITED)
-    local function updateLumberUpgradeDisplay()
-        -- Clear existing upgrade labels (except title)
-        for _, child in upgradeFrame:GetChildren() do
-            if child.Name:match("^Upgrade") then
-                child:Destroy()
-            end
+    local previewLabel = Instance.new("TextLabel")
+    previewLabel.Size = UDim2.new(1, 0, 1, 0)
+    previewLabel.BackgroundTransparency = 1
+    previewLabel.Text = "Press E to Open Upgrades"
+    previewLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+    previewLabel.TextStrokeTransparency = 0.3
+    previewLabel.TextScaled = true
+    previewLabel.Font = Enum.Font.Gotham
+    previewLabel.Parent = kioskBillboard
+
+    -- Track active upgrade GUIs per player
+    local activeLumberUpgradeGuis = {}
+
+    -- Function to create the upgrade GUI for a player
+    local function createLumberUpgradeGui(player)
+        -- Remove existing GUI if any
+        if activeLumberUpgradeGuis[player.UserId] then
+            activeLumberUpgradeGuis[player.UserId]:Destroy()
+            activeLumberUpgradeGuis[player.UserId] = nil
         end
 
-        local yPos = 0.18
+        local playerGui = player:FindFirstChild("PlayerGui")
+        if not playerGui then return end
 
-        -- 1. Axe upgrade
-        local axeLevel = LumberMillState.equipment.axeLevel
-        local axeStats = getAxeStats(axeLevel)
-        local axeNextStats = getAxeStats(axeLevel + 1)
-        local axeLabel = Instance.new("TextLabel")
-        axeLabel.Name = "Upgrade1"
-        axeLabel.Size = UDim2.new(1, 0, 0.18, 0)
-        axeLabel.Position = UDim2.new(0, 0, yPos, 0)
-        axeLabel.BackgroundTransparency = 1
-        axeLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-        axeLabel.TextScaled = true
-        axeLabel.Font = Enum.Font.Gotham
-        axeLabel.Text = string.format("1. AXE Lv%d→%d | %d→%d logs | Cost: %d",
-            axeLevel, axeLevel + 1, axeStats.logsPerChop, axeNextStats.logsPerChop, axeNextStats.upgradeCost)
-        axeLabel.Parent = upgradeFrame
-        yPos = yPos + 0.19
+        -- Create ScreenGui
+        local screenGui = Instance.new("ScreenGui")
+        screenGui.Name = "LumberMillUpgradeMenu"
+        screenGui.ResetOnSpawn = false
+        screenGui.Parent = playerGui
+        activeLumberUpgradeGuis[player.UserId] = screenGui
 
-        -- 2. Sawmill upgrade
-        local sawmillLevel = LumberMillState.equipment.sawmillLevel
-        local sawmillStats = getSawmillStats(sawmillLevel)
-        local sawmillNextStats = getSawmillStats(sawmillLevel + 1)
-        local sawmillLabel = Instance.new("TextLabel")
-        sawmillLabel.Name = "Upgrade2"
-        sawmillLabel.Size = UDim2.new(1, 0, 0.18, 0)
-        sawmillLabel.Position = UDim2.new(0, 0, yPos, 0)
-        sawmillLabel.BackgroundTransparency = 1
-        sawmillLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-        sawmillLabel.TextScaled = true
-        sawmillLabel.Font = Enum.Font.Gotham
-        sawmillLabel.Text = string.format("2. SAWMILL Lv%d→%d | %dp/log, %.1fs | Cost: %d",
-            sawmillLevel, sawmillLevel + 1, sawmillNextStats.planksPerLog, sawmillNextStats.processTime, sawmillNextStats.upgradeCost)
-        sawmillLabel.Parent = upgradeFrame
-        yPos = yPos + 0.19
+        -- Main frame
+        local mainFrame = Instance.new("Frame")
+        mainFrame.Name = "MainFrame"
+        mainFrame.Size = UDim2.new(0, 450, 0, 550)
+        mainFrame.Position = UDim2.new(0.5, -225, 0.5, -275)
+        mainFrame.BackgroundColor3 = Color3.fromRGB(30, 35, 25)  -- Dark green tint
+        mainFrame.BorderSizePixel = 3
+        mainFrame.BorderColor3 = Color3.fromRGB(100, 200, 100)
+        mainFrame.Parent = screenGui
 
-        -- 3. Logger upgrade
-        local loggerLevel = LumberMillState.equipment.loggerLevel
-        local loggerStats = getLoggerStats(loggerLevel)
-        local loggerNextStats = getLoggerStats(loggerLevel + 1)
-        local loggerLabel = Instance.new("TextLabel")
-        loggerLabel.Name = "Upgrade3"
-        loggerLabel.Size = UDim2.new(1, 0, 0.18, 0)
-        loggerLabel.Position = UDim2.new(0, 0, yPos, 0)
-        loggerLabel.BackgroundTransparency = 1
-        loggerLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-        loggerLabel.TextScaled = true
-        loggerLabel.Font = Enum.Font.Gotham
-        loggerLabel.Text = string.format("3. LOGGERS Lv%d→%d | %d→%d log cap | Cost: %d",
-            loggerLevel, loggerLevel + 1, loggerStats.logCapacity, loggerNextStats.logCapacity, loggerNextStats.upgradeCost)
-        loggerLabel.Parent = upgradeFrame
-        yPos = yPos + 0.19
+        -- Title
+        local title = Instance.new("TextLabel")
+        title.Name = "Title"
+        title.Size = UDim2.new(1, 0, 0, 50)
+        title.Position = UDim2.new(0, 0, 0, 0)
+        title.BackgroundColor3 = Color3.fromRGB(40, 50, 30)
+        title.BorderSizePixel = 0
+        title.Text = "LUMBER YARD UPGRADES"
+        title.TextColor3 = Color3.fromRGB(150, 255, 150)
+        title.TextScaled = true
+        title.Font = Enum.Font.GothamBold
+        title.Parent = mainFrame
 
-        -- 4. Hauler upgrade
-        local haulerLevel = LumberMillState.equipment.haulerLevel
-        local haulerStats = getHaulerStats(haulerLevel)
-        local haulerNextStats = getHaulerStats(haulerLevel + 1)
-        local haulerLabel = Instance.new("TextLabel")
-        haulerLabel.Name = "Upgrade4"
-        haulerLabel.Size = UDim2.new(1, 0, 0.18, 0)
-        haulerLabel.Position = UDim2.new(0, 0, yPos, 0)
-        haulerLabel.BackgroundTransparency = 1
-        haulerLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-        haulerLabel.TextScaled = true
-        haulerLabel.Font = Enum.Font.Gotham
-        haulerLabel.Text = string.format("4. HAULERS Lv%d→%d | %d→%d plank cap | Cost: %d",
-            haulerLevel, haulerLevel + 1, haulerStats.plankCapacity, haulerNextStats.plankCapacity, haulerNextStats.upgradeCost)
-        haulerLabel.Parent = upgradeFrame
+        -- Close button
+        local closeButton = Instance.new("TextButton")
+        closeButton.Name = "CloseButton"
+        closeButton.Size = UDim2.new(0, 40, 0, 40)
+        closeButton.Position = UDim2.new(1, -45, 0, 5)
+        closeButton.BackgroundColor3 = Color3.fromRGB(150, 50, 50)
+        closeButton.BorderSizePixel = 0
+        closeButton.Text = "X"
+        closeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+        closeButton.TextScaled = true
+        closeButton.Font = Enum.Font.GothamBold
+        closeButton.Parent = mainFrame
+        closeButton.MouseButton1Click:Connect(function()
+            screenGui:Destroy()
+            activeLumberUpgradeGuis[player.UserId] = nil
+        end)
+
+        -- Function to create an upgrade card
+        local function createUpgradeCard(yOffset, upgradeType, getStats, currentLevel, color, onUpgrade)
+            local stats = getStats(currentLevel)
+            local nextStats = getStats(currentLevel + 1)
+
+            local card = Instance.new("Frame")
+            card.Name = upgradeType .. "Card"
+            card.Size = UDim2.new(0.95, 0, 0, 100)
+            card.Position = UDim2.new(0.025, 0, 0, yOffset)
+            card.BackgroundColor3 = Color3.fromRGB(45, 50, 40)
+            card.BorderSizePixel = 2
+            card.BorderColor3 = color
+            card.Parent = mainFrame
+
+            local cardTitle = Instance.new("TextLabel")
+            cardTitle.Size = UDim2.new(0.6, 0, 0, 30)
+            cardTitle.Position = UDim2.new(0.02, 0, 0, 5)
+            cardTitle.BackgroundTransparency = 1
+            cardTitle.Text = string.format("%s  Lv.%d", upgradeType:upper(), currentLevel)
+            cardTitle.TextColor3 = color
+            cardTitle.TextXAlignment = Enum.TextXAlignment.Left
+            cardTitle.TextScaled = true
+            cardTitle.Font = Enum.Font.GothamBold
+            cardTitle.Parent = card
+
+            local statsLabel = Instance.new("TextLabel")
+            statsLabel.Size = UDim2.new(0.96, 0, 0, 35)
+            statsLabel.Position = UDim2.new(0.02, 0, 0, 35)
+            statsLabel.BackgroundTransparency = 1
+            statsLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+            statsLabel.TextXAlignment = Enum.TextXAlignment.Left
+            statsLabel.TextScaled = true
+            statsLabel.Font = Enum.Font.Gotham
+            statsLabel.Parent = card
+
+            -- Set stats text based on upgrade type
+            if upgradeType == "Axe" then
+                statsLabel.Text = string.format("Current: %d logs/chop → Next: %d logs/chop", stats.logsPerChop, nextStats.logsPerChop)
+            elseif upgradeType == "Sawmill" then
+                statsLabel.Text = string.format("Current: %d planks/log, %.1fs → Next: %d planks/log, %.1fs",
+                    stats.planksPerLog, stats.processTime, nextStats.planksPerLog, nextStats.processTime)
+            elseif upgradeType == "Logger" then
+                statsLabel.Text = string.format("Current: %d log capacity → Next: %d log capacity", stats.logCapacity, nextStats.logCapacity)
+            elseif upgradeType == "Hauler" then
+                statsLabel.Text = string.format("Current: %d plank capacity → Next: %d plank capacity", stats.plankCapacity, nextStats.plankCapacity)
+            end
+
+            local upgradeButton = Instance.new("TextButton")
+            upgradeButton.Name = "UpgradeButton"
+            upgradeButton.Size = UDim2.new(0.4, 0, 0, 28)
+            upgradeButton.Position = UDim2.new(0.55, 0, 0, 68)
+            upgradeButton.BackgroundColor3 = Color3.fromRGB(80, 150, 80)
+            upgradeButton.BorderSizePixel = 0
+            upgradeButton.Text = string.format("UPGRADE - %d gold", nextStats.upgradeCost)
+            upgradeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+            upgradeButton.TextScaled = true
+            upgradeButton.Font = Enum.Font.GothamBold
+            upgradeButton.Parent = card
+
+            upgradeButton.MouseButton1Click:Connect(function()
+                onUpgrade()
+                -- Refresh the GUI
+                createLumberUpgradeGui(player)
+            end)
+
+            return card
+        end
+
+        -- Create upgrade cards
+        local yOffset = 60
+
+        -- 1. Axe Upgrade
+        createUpgradeCard(yOffset, "Axe", getAxeStats, LumberMillState.equipment.axeLevel,
+            Color3.fromRGB(139, 90, 43), function()
+                local nextLevel = LumberMillState.equipment.axeLevel + 1
+                local nextStats = getAxeStats(nextLevel)
+                LumberMillState.equipment.axeLevel = nextLevel
+                addLumberXP(50)
+                print(string.format("[Upgrade] %s upgraded Axe to Lv%d! Now %d logs/chop", player.Name, nextLevel, nextStats.logsPerChop))
+            end)
+        yOffset = yOffset + 110
+
+        -- 2. Sawmill Upgrade
+        createUpgradeCard(yOffset, "Sawmill", getSawmillStats, LumberMillState.equipment.sawmillLevel,
+            Color3.fromRGB(180, 140, 90), function()
+                local nextLevel = LumberMillState.equipment.sawmillLevel + 1
+                local nextStats = getSawmillStats(nextLevel)
+                LumberMillState.equipment.sawmillLevel = nextLevel
+                addLumberXP(50)
+                print(string.format("[Upgrade] %s upgraded Sawmill to Lv%d!", player.Name, nextLevel))
+            end)
+        yOffset = yOffset + 110
+
+        -- 3. Logger Upgrade
+        createUpgradeCard(yOffset, "Logger", getLoggerStats, LumberMillState.equipment.loggerLevel,
+            Color3.fromRGB(180, 50, 50), function()
+                local nextLevel = LumberMillState.equipment.loggerLevel + 1
+                local nextStats = getLoggerStats(nextLevel)
+                LumberMillState.equipment.loggerLevel = nextLevel
+                addLumberXP(50)
+                print(string.format("[Upgrade] %s upgraded Loggers to Lv%d!", player.Name, nextLevel))
+            end)
+        yOffset = yOffset + 110
+
+        -- 4. Hauler Upgrade
+        createUpgradeCard(yOffset, "Hauler", getHaulerStats, LumberMillState.equipment.haulerLevel,
+            Color3.fromRGB(60, 150, 60), function()
+                local nextLevel = LumberMillState.equipment.haulerLevel + 1
+                local nextStats = getHaulerStats(nextLevel)
+                LumberMillState.equipment.haulerLevel = nextLevel
+                addLumberXP(50)
+                print(string.format("[Upgrade] %s upgraded Haulers to Lv%d!", player.Name, nextLevel))
+            end)
     end
 
-    -- Initial display
-    updateLumberUpgradeDisplay()
-
-    -- Create 4 interaction parts for each upgrade (pedestals)
-    local lumberUpgradePositions = {
-        { name = "Axe", offset = Vector3.new(-4.5, 0, 3), color = Color3.fromRGB(139, 90, 43) },
-        { name = "Sawmill", offset = Vector3.new(-1.5, 0, 3), color = Color3.fromRGB(180, 140, 90) },
-        { name = "LoggerGear", offset = Vector3.new(1.5, 0, 3), color = Color3.fromRGB(180, 50, 50) },
-        { name = "HaulerGear", offset = Vector3.new(4.5, 0, 3), color = Color3.fromRGB(60, 100, 60) },
-    }
-
-    local lumberPedestals = {}
-    for i, upgradeInfo in lumberUpgradePositions do
-        local pedestal = Instance.new("Part")
-        pedestal.Name = upgradeInfo.name .. "Pedestal"
-        pedestal.Size = Vector3.new(2, 1, 2)
-        pedestal.Position = upgradeArea + upgradeInfo.offset + Vector3.new(0, 0.5, 0)
-        pedestal.Anchored = true
-        pedestal.Material = Enum.Material.Cobblestone
-        pedestal.Color = upgradeInfo.color
-        pedestal.Parent = millModel
-        lumberPedestals[i] = pedestal
-
-        local numberSign = Instance.new("TextLabel")
-        local signBillboard = Instance.new("BillboardGui")
-        signBillboard.Size = UDim2.new(2, 0, 1, 0)
-        signBillboard.StudsOffset = Vector3.new(0, 1.5, 0)
-        signBillboard.AlwaysOnTop = true
-        signBillboard.Parent = pedestal
-        numberSign.Size = UDim2.new(1, 0, 1, 0)
-        numberSign.BackgroundTransparency = 1
-        numberSign.Text = tostring(i)
-        numberSign.TextColor3 = Color3.fromRGB(255, 255, 255)
-        numberSign.TextStrokeTransparency = 0
-        numberSign.TextScaled = true
-        numberSign.Font = Enum.Font.GothamBold
-        numberSign.Parent = signBillboard
-    end
-
-    -- INTERACTION: Upgrade Axe (pedestal 1) - UNLIMITED LEVELS
-    createInteraction(lumberPedestals[1], "Buy Axe Upgrade", "Pedestal 1", 1.5, function(player)
-        local currentLevel = LumberMillState.equipment.axeLevel
-        local nextLevel = currentLevel + 1
-        local nextStats = getAxeStats(nextLevel)
-        local cost = nextStats.upgradeCost
-
-        -- TODO: Check if player has enough gold and deduct
-        LumberMillState.equipment.axeLevel = nextLevel
-        addLumberXP(50)
-        updateLumberUpgradeDisplay()
-        print(string.format("[Upgrade] %s upgraded Axe to Lv%d! Now %d logs/chop (-%d gold)",
-            player.Name, nextLevel, nextStats.logsPerChop, cost))
+    -- Cleanup GUI when player leaves
+    Players.PlayerRemoving:Connect(function(player)
+        if activeLumberUpgradeGuis[player.UserId] then
+            activeLumberUpgradeGuis[player.UserId]:Destroy()
+            activeLumberUpgradeGuis[player.UserId] = nil
+        end
     end)
 
-    -- INTERACTION: Upgrade Sawmill (pedestal 2) - UNLIMITED LEVELS
-    createInteraction(lumberPedestals[2], "Buy Sawmill Upgrade", "Pedestal 2", 1.5, function(player)
-        local currentLevel = LumberMillState.equipment.sawmillLevel
-        local nextLevel = currentLevel + 1
-        local nextStats = getSawmillStats(nextLevel)
-        local cost = nextStats.upgradeCost
-
-        LumberMillState.equipment.sawmillLevel = nextLevel
-        addLumberXP(50)
-        updateLumberUpgradeDisplay()
-        print(string.format("[Upgrade] %s upgraded Sawmill to Lv%d! Now %d planks/log, %.1fs (-%d gold)",
-            player.Name, nextLevel, nextStats.planksPerLog, nextStats.processTime, cost))
-    end)
-
-    -- INTERACTION: Upgrade Logger Gear (pedestal 3) - UNLIMITED LEVELS
-    createInteraction(lumberPedestals[3], "Buy Logger Upgrade", "Pedestal 3", 1.5, function(player)
-        local currentLevel = LumberMillState.equipment.loggerLevel
-        local nextLevel = currentLevel + 1
-        local nextStats = getLoggerStats(nextLevel)
-        local cost = nextStats.upgradeCost
-
-        LumberMillState.equipment.loggerLevel = nextLevel
-        addLumberXP(50)
-        updateLumberUpgradeDisplay()
-        print(string.format("[Upgrade] %s upgraded Loggers to Lv%d! Now %d log capacity (-%d gold)",
-            player.Name, nextLevel, nextStats.logCapacity, cost))
-    end)
-
-    -- INTERACTION: Upgrade Hauler Gear (pedestal 4) - UNLIMITED LEVELS
-    createInteraction(lumberPedestals[4], "Buy Hauler Upgrade", "Pedestal 4", 1.5, function(player)
-        local currentLevel = LumberMillState.equipment.haulerLevel
-        local nextLevel = currentLevel + 1
-        local nextStats = getHaulerStats(nextLevel)
-        local cost = nextStats.upgradeCost
-
-        LumberMillState.equipment.haulerLevel = nextLevel
-        addLumberXP(50)
-        updateLumberUpgradeDisplay()
-        print(string.format("[Upgrade] %s upgraded Haulers to Lv%d! Now %d plank capacity (-%d gold)",
-            player.Name, nextLevel, nextStats.plankCapacity, cost))
+    -- INTERACTION: Open Upgrade Menu (single kiosk)
+    createInteraction(upgradeKiosk, "Open Upgrades", "Upgrade Kiosk", 2, function(player)
+        createLumberUpgradeGui(player)
+        print(string.format("[LumberMill] %s opened Upgrade Menu", player.Name))
     end)
 
     -- ========== EXIT PORTAL ==========
@@ -6980,6 +7007,11 @@ local function createFarmState(farmNumber)
         updateFoodStorageVisuals = nil,
         updateWindmillUI = nil, -- Function to update windmill progress bar
         updateExteriorStats = nil, -- Function to update exterior sign stats
+        -- Hiring station tracking (like Gold Mine pattern)
+        waitingFarmers = {},  -- NPCs waiting at hire station
+        waitingCarriers = {}, -- NPCs waiting at carrier station
+        farmerSign = nil,     -- TextLabel reference for "HIRE FARMERS" / "FULLY STAFFED"
+        carrierSign = nil,    -- TextLabel reference for "HIRE CARRIERS" / "FULLY STAFFED"
     }
 end
 
@@ -7284,8 +7316,8 @@ local function createFarm(farmNumber)
 
     local cropsLabel = Instance.new("TextLabel")
     cropsLabel.Name = "CropsLabel"
-    cropsLabel.Size = UDim2.new(1, 0, 0.35, 0)
-    cropsLabel.Position = UDim2.new(0, 0, 0.65, 0)
+    cropsLabel.Size = UDim2.new(1, 0, 0.25, 0)
+    cropsLabel.Position = UDim2.new(0, 0, 0.55, 0)
     cropsLabel.BackgroundTransparency = 1
     cropsLabel.Text = "🌱 Crops: 0 | Level 1"
     cropsLabel.TextColor3 = Color3.fromRGB(200, 200, 255)
@@ -7293,12 +7325,71 @@ local function createFarm(farmNumber)
     cropsLabel.Font = Enum.Font.GothamMedium
     cropsLabel.Parent = statsFrame
 
+    -- Production rate label (like Gold Mine pattern)
+    local productionLabel = Instance.new("TextLabel")
+    productionLabel.Name = "ProductionLabel"
+    productionLabel.Size = UDim2.new(1, 0, 0.2, 0)
+    productionLabel.Position = UDim2.new(0, 0, 0.8, 0)
+    productionLabel.BackgroundTransparency = 1
+    productionLabel.Text = "+0 gold/min"
+    productionLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
+    productionLabel.TextScaled = true
+    productionLabel.Font = Enum.Font.GothamBold
+    productionLabel.Parent = statsFrame
+
+    -- Function to update production rate based on workers
+    local function updateFarmProduction()
+        -- Calculate production based on farmers and carriers
+        local farmerCount = #currentFarmState.farmers
+        local carrierCount = #currentFarmState.carriers
+        local farmerStats = getFarmerStats(currentFarmState.equipment.farmerLevel)
+        local carrierStats = getCarrierStats(currentFarmState.equipment.carrierLevel)
+        local windmillStats = getWindmillStatsFunc(currentFarmState.equipment.windmillLevel)
+
+        -- Estimate production chain:
+        -- Farmer: harvests cropCapacity crops, delivers to windmill (~30 sec cycle = ~2 cycles/min)
+        -- Windmill: converts crops to food at grainPerCrop rate
+        -- Carrier: delivers food to storage chest
+
+        local cyclesPerMinute = 2  -- Approximate cycles per minute
+        local cropsPerMinute = farmerCount * (farmerStats.cropCapacity * cyclesPerMinute)
+        local foodPerMinute = cropsPerMinute * windmillStats.grainPerCrop
+        -- Carriers limit how fast food can be delivered
+        local deliveredFoodPerMinute = math.min(foodPerMinute, carrierCount * carrierStats.grainCapacity * cyclesPerMinute)
+
+        -- Only count production if we have both farmers and carriers
+        local effectiveProduction = (farmerCount > 0 and carrierCount > 0) and math.floor(deliveredFoodPerMinute) or 0
+
+        productionLabel.Text = string.format("+%d food/min", effectiveProduction)
+
+        -- Color based on production level
+        if effectiveProduction == 0 then
+            productionLabel.TextColor3 = Color3.fromRGB(150, 150, 150)  -- Gray when idle
+        elseif effectiveProduction < 50 then
+            productionLabel.TextColor3 = Color3.fromRGB(180, 255, 180)  -- Light green
+        else
+            productionLabel.TextColor3 = Color3.fromRGB(100, 255, 100)  -- Bright green
+        end
+    end
+
+    -- Store update function for use when workers are hired
+    currentFarmState.updateFarmProduction = updateFarmProduction
+
     -- Function to update exterior stats
     currentFarmState.updateExteriorStats = function()
         local totalCrops = currentFarmState.harvestPile + currentFarmState.windmillCrops
         foodLabel.Text = string.format("🌾 Food: %d", currentFarmState.foodStorage)
         cropsLabel.Text = string.format("🌱 Crops: %d | Level %d", totalCrops, currentFarmState.level)
+        updateFarmProduction()  -- Also update production rate
     end
+
+    -- Update production periodically (like Gold Mine)
+    task.spawn(function()
+        while true do
+            updateFarmProduction()
+            task.wait(5)  -- Update every 5 seconds
+        end
+    end)
 
     -- ========== OPEN FARMLAND INTERIOR ==========
     local basePos = INTERIOR_POSITIONS[farmKey]
@@ -8560,20 +8651,57 @@ local function createFarm(farmNumber)
     farmHireSignLabel.Font = Enum.Font.GothamBold
     farmHireSignLabel.Parent = farmHireSignGui
 
-    -- Waiting farmer NPCs (for visual) - positioned in front of barn toward center
-    for i = 1, 2 do
-        local waitingFarmerPos = hireFarmerPos + Vector3.new(3 + i * 2, 0, 0) -- Offset toward center (right)
+    -- Store reference for updating later (like Gold Mine pattern)
+    FarmState.farmerSign = farmHireSignLabel
+
+    -- Table/counter in front of workers (player approaches from center)
+    local farmerTable = Instance.new("Part")
+    farmerTable.Name = "FarmerHiringTable"
+    farmerTable.Size = Vector3.new(8, 1, 2)
+    farmerTable.Anchored = true
+    farmerTable.Material = Enum.Material.Wood
+    farmerTable.Color = Color3.fromRGB(90, 65, 45)
+    -- Table is in front of barn (toward center)
+    farmerTable.CFrame = barn.CFrame * CFrame.new(0, -2, -6)
+    farmerTable.Parent = farmModel
+
+    -- Table legs
+    for i = -1, 1, 2 do
+        for j = -1, 1, 2 do
+            local leg = Instance.new("Part")
+            leg.Name = "TableLeg"
+            leg.Size = Vector3.new(0.3, 1, 0.3)
+            leg.Anchored = true
+            leg.Material = Enum.Material.Wood
+            leg.Color = Color3.fromRGB(70, 50, 35)
+            leg.CFrame = farmerTable.CFrame * CFrame.new(i * 3.5, -0.5, j * 0.7)
+            leg.Parent = farmModel
+        end
+    end
+
+    -- 3 Waiting farmer NPCs standing behind table (like Gold Mine pattern)
+    FarmState.waitingFarmers = {}
+    for i = 1, 3 do
+        -- Workers behind table, spread along X axis: -3, 0, +3
+        local waitingFarmerPos = hireFarmerPos + Vector3.new((i - 2) * 3, 0, 0)
         local waitingFarmer = createWorkerNPC(
-            "Farmer " .. i,
+            "WaitingFarmer" .. i,
             waitingFarmerPos,
             Color3.fromRGB(100, 140, 100) -- Green overalls
         )
         setNPCStatus(waitingFarmer, "For hire!")
         waitingFarmer.Parent = farmModel
+        table.insert(FarmState.waitingFarmers, waitingFarmer)
     end
 
-    -- INTERACTION: Hire Farmer NPC
-    createInteraction(barn, "Hire Farmer", "Barn", 1, function(player)
+    -- INTERACTION: Hire Farmer NPC (on the table, like Gold Mine)
+    createInteraction(farmerTable, "Hire Farmer", "Hiring Table", 1, function(player)
+        -- Check if any waiting workers left at the stand
+        if #FarmState.waitingFarmers == 0 then
+            print(string.format("[Farm] %s: No workers available to hire!", player.Name))
+            return
+        end
+
         local farmerCount = #FarmState.farmers
         local maxFarmers = 3
 
@@ -8584,6 +8712,29 @@ local function createFarm(farmNumber)
 
         local cost = FarmerCosts[farmerCount + 1]
         local farmerId = farmerCount + 1
+
+        -- Remove one waiting worker from the stand (they walk away to work)
+        local waitingWorker = table.remove(FarmState.waitingFarmers, 1)
+        if waitingWorker then
+            -- Make the waiting worker walk away before destroying
+            local workerTorso = waitingWorker:FindFirstChild("Torso")
+            if workerTorso then
+                local walkAwayPos = FarmState.positions.workerSpawn + Vector3.new(farmerCount * 3, 0, 0)
+                walkNPCTo(waitingWorker, walkAwayPos, 6, function()
+                    waitingWorker:Destroy()
+                end)
+            else
+                waitingWorker:Destroy()
+            end
+        end
+
+        -- Update sign if no more waiting workers
+        if #FarmState.waitingFarmers == 0 then
+            if FarmState.farmerSign then
+                FarmState.farmerSign.Text = "FULLY STAFFED"
+                FarmState.farmerSign.TextColor3 = Color3.fromRGB(150, 150, 150)
+            end
+        end
 
         -- Create visible farmer NPC
         local spawnPos = FarmState.positions.workerSpawn + Vector3.new(farmerCount * 3, 0, 0)
@@ -8691,6 +8842,11 @@ local function createFarm(farmNumber)
         print(string.format("[Farm] %s hired Farmer #%d for %d gold + %d food!",
             player.Name, farmerId, cost.gold, cost.food))
         print(string.format("[Farm] Farmer #%d will harvest crops -> deliver to windmill -> repeat!", farmerId))
+
+        -- Update production display (like Gold Mine pattern)
+        if FarmState.updateFarmProduction then
+            FarmState.updateFarmProduction()
+        end
     end)
 
     -- ========== HIRE CARRIERS STATION ==========
@@ -8742,20 +8898,57 @@ local function createFarm(farmNumber)
     carrierHireSignLabel.Font = Enum.Font.GothamBold
     carrierHireSignLabel.Parent = carrierHireSignGui
 
-    -- Waiting carrier NPCs - positioned in front of station toward center
-    for i = 1, 2 do
-        local waitingCarrierPos = hireCarrierPos + Vector3.new(-3 - i * 2, 0, 0) -- Offset toward center (left)
+    -- Store reference for updating later (like Gold Mine pattern)
+    FarmState.carrierSign = carrierHireSignLabel
+
+    -- Table/counter in front of workers (player approaches from center)
+    local carrierTable = Instance.new("Part")
+    carrierTable.Name = "CarrierHiringTable"
+    carrierTable.Size = Vector3.new(8, 1, 2)
+    carrierTable.Anchored = true
+    carrierTable.Material = Enum.Material.Wood
+    carrierTable.Color = Color3.fromRGB(90, 65, 45)
+    -- Table is in front of station (toward center)
+    carrierTable.CFrame = carrierBoard.CFrame * CFrame.new(0, -1.5, -4)
+    carrierTable.Parent = farmModel
+
+    -- Table legs
+    for i = -1, 1, 2 do
+        for j = -1, 1, 2 do
+            local leg = Instance.new("Part")
+            leg.Name = "TableLeg"
+            leg.Size = Vector3.new(0.3, 1, 0.3)
+            leg.Anchored = true
+            leg.Material = Enum.Material.Wood
+            leg.Color = Color3.fromRGB(70, 50, 35)
+            leg.CFrame = carrierTable.CFrame * CFrame.new(i * 3.5, -0.5, j * 0.7)
+            leg.Parent = farmModel
+        end
+    end
+
+    -- 3 Waiting carrier NPCs standing behind table (like Gold Mine pattern)
+    FarmState.waitingCarriers = {}
+    for i = 1, 3 do
+        -- Workers behind table, spread along X axis: -3, 0, +3
+        local waitingCarrierPos = hireCarrierPos + Vector3.new((i - 2) * 3, 0, 0)
         local waitingCarrier = createWorkerNPC(
-            "Carrier " .. i,
+            "WaitingCarrier" .. i,
             waitingCarrierPos,
             Color3.fromRGB(60, 100, 60) -- Darker green work clothes
         )
         setNPCStatus(waitingCarrier, "For hire!")
         waitingCarrier.Parent = farmModel
+        table.insert(FarmState.waitingCarriers, waitingCarrier)
     end
 
-    -- INTERACTION: Hire Carrier NPC
-    createInteraction(carrierBoard, "Hire Carrier", "Hiring Board", 1, function(player)
+    -- INTERACTION: Hire Carrier NPC (on the table, like Gold Mine)
+    createInteraction(carrierTable, "Hire Carrier", "Hiring Table", 1, function(player)
+        -- Check if any waiting workers left at the stand
+        if #FarmState.waitingCarriers == 0 then
+            print(string.format("[Farm] %s: No carriers available to hire!", player.Name))
+            return
+        end
+
         local carrierCount = #FarmState.carriers
         local maxCarriers = 3
 
@@ -8765,6 +8958,29 @@ local function createFarm(farmNumber)
         end
 
         local cost = CarrierCosts[carrierCount + 1]
+
+        -- Remove one waiting worker from the stand (they walk away to work)
+        local waitingWorker = table.remove(FarmState.waitingCarriers, 1)
+        if waitingWorker then
+            -- Make the waiting worker walk away before destroying
+            local workerTorso = waitingWorker:FindFirstChild("Torso")
+            if workerTorso then
+                local walkAwayPos = FarmState.positions.workerSpawn + Vector3.new(carrierCount * 3 + 10, 0, 0)
+                walkNPCTo(waitingWorker, walkAwayPos, 6, function()
+                    waitingWorker:Destroy()
+                end)
+            else
+                waitingWorker:Destroy()
+            end
+        end
+
+        -- Update sign if no more waiting workers
+        if #FarmState.waitingCarriers == 0 then
+            if FarmState.carrierSign then
+                FarmState.carrierSign.Text = "FULLY STAFFED"
+                FarmState.carrierSign.TextColor3 = Color3.fromRGB(150, 150, 150)
+            end
+        end
         local carrierId = carrierCount + 1
 
         -- Create visible carrier NPC
@@ -8835,22 +9051,21 @@ local function createFarm(farmNumber)
                         carrierData.state = "walking_to_storage"
                         setNPCStatus(carrier, "Delivering food...")
                         walkNPCTo(carrier, FarmState.positions.storageShed, walkSpeed, function()
-                            -- Deliver food for gold
+                            -- Deliver food to chest
                             carrierData.state = "delivering"
                             setNPCStatus(carrier, "Delivering...")
                             task.wait(1)
 
                             local foodDelivered = carrierData.carrying
-                            local goldEarned = foodDelivered * 10 -- 10 gold per food
 
                             carrierData.carrying = 0
                             setNPCCarrying(carrier, nil, 0)
 
-                            -- Delivery sparkle effect
+                            -- Delivery sparkle effect (green for food)
                             local torso = carrier:FindFirstChild("Torso")
                             if torso then
                                 local sparkle = Instance.new("ParticleEmitter")
-                                sparkle.Color = ColorSequence.new(Color3.fromRGB(255, 215, 0))
+                                sparkle.Color = ColorSequence.new(Color3.fromRGB(150, 255, 150))
                                 sparkle.Size = NumberSequence.new(0.4)
                                 sparkle.Lifetime = NumberRange.new(0.5, 1)
                                 sparkle.Rate = 30
@@ -8860,11 +9075,11 @@ local function createFarm(farmNumber)
                                 task.delay(0.6, function() sparkle:Destroy() end)
                             end
 
-                            print(string.format("[Carrier #%d] Delivered %d food -> +%d gold!",
-                                carrierId, foodDelivered, goldEarned))
+                            print(string.format("[Carrier #%d] Delivered %d food to storage!",
+                                carrierId, foodDelivered))
 
-                            -- ACTUALLY REWARD THE PLAYER (this was missing!)
-                            rewardPlayer(hiringPlayer, "gold", goldEarned, "Carrier")
+                            -- Reward food to the player
+                            rewardPlayer(hiringPlayer, "food", foodDelivered, "Carrier")
 
                             addFarmXP(15)
 
@@ -8890,6 +9105,11 @@ local function createFarm(farmNumber)
         print(string.format("[Farm] %s hired Carrier #%d for %d gold + %d food!",
             player.Name, carrierId, cost.gold, cost.food))
         print(string.format("[Farm] Carrier #%d will collect food from silo -> deliver to storage -> repeat!", carrierId))
+
+        -- Update production display (like Gold Mine pattern)
+        if FarmState.updateFarmProduction then
+            FarmState.updateFarmProduction()
+        end
     end)
 
     -- ========== STEP 8: SINGLE UPGRADE KIOSK (front-right area) ==========

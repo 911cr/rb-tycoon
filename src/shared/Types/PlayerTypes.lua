@@ -39,6 +39,11 @@ export type RevengeData = {
     used: boolean,
 }
 
+export type MapPosition = {
+    x: number,
+    z: number,
+}
+
 export type TrophyData = {
     current: number,
     season: number,
@@ -109,6 +114,11 @@ export type PlayerData = {
     -- Cities owned (for multi-city conquest)
     cities: {string}, -- cityIds
     activeCityId: string,
+
+    -- World Map
+    mapPosition: MapPosition?, -- Position on world map
+    lastMoveTime: number?, -- Timestamp of last base relocation
+    friends: {number}?, -- List of friend userIds
 
     -- Monetization
     vipActive: boolean,

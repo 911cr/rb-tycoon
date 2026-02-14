@@ -1,5 +1,5 @@
 {
-  "name": "BattleTycoon",
+  "name": "BattleTycoon_Overworld",
   "tree": {
     "$className": "DataModel",
 
@@ -14,16 +14,16 @@
       "$className": "ServerScriptService",
       "$ignoreUnknownInstances": true,
       "Main": {
-        "$path": "src/server/Main.server.lua"
-      },
-      "SimpleTest": {
-        "$path": "src/server/SimpleTest.server.lua"
-      },
-      "VillageBuilder": {
-        "$path": "src/server/VillageBuilder.lua"
+        "$path": "src/overworld/Main.server.lua"
       },
       "Services": {
-        "$path": "src/server/Services"
+        "$path": "src/overworld/Services"
+      },
+      "WorldBuilder": {
+        "$path": "src/overworld/WorldBuilder.lua"
+      },
+      "MiniBaseBuilder": {
+        "$path": "src/overworld/MiniBaseBuilder.lua"
       }
     },
 
@@ -31,8 +31,14 @@
       "$className": "StarterPlayer",
       "StarterPlayerScripts": {
         "$className": "StarterPlayerScripts",
-        "Client": {
-          "$path": "src/client"
+        "OverworldClient": {
+          "$path": "src/overworld/Client"
+        },
+        "Controllers": {
+          "$path": "src/overworld/Controllers"
+        },
+        "UI": {
+          "$path": "src/overworld/UI"
         }
       }
     },
@@ -50,22 +56,14 @@
       "$properties": {
         "FilteringEnabled": true
       },
-      "Baseplate": {
-        "$className": "Part",
-        "$properties": {
-          "Size": [200, 4, 200],
-          "Position": [50, -2, 50],
-          "Anchored": true,
-          "Material": "Grass",
-          "Color": [0.314, 0.549, 0.196]
-        }
+      "Terrain": {
+        "$className": "Terrain"
       },
       "SpawnLocation": {
         "$className": "SpawnLocation",
         "$properties": {
-          "Size": [6, 1, 6],
-          "Position": [50, 2.5, 15],
-          "Orientation": [0, 90, 0],
+          "Size": [8, 1, 8],
+          "Position": [500, 5, 500],
           "Anchored": true,
           "Material": "Cobblestone",
           "Color": [0.471, 0.451, 0.431],
@@ -88,7 +86,19 @@
         "GlobalShadows": true,
         "Brightness": 2,
         "EnvironmentDiffuseScale": 1,
-        "EnvironmentSpecularScale": 1
+        "EnvironmentSpecularScale": 1,
+        "ClockTime": 14,
+        "GeographicLatitude": 45
+      },
+      "Atmosphere": {
+        "$className": "Atmosphere",
+        "$properties": {
+          "Density": 0.3,
+          "Color": [0.9, 0.95, 1],
+          "Decay": [0.85, 0.9, 1],
+          "Glare": 0.1,
+          "Haze": 1
+        }
       }
     }
   }

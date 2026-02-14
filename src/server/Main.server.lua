@@ -208,20 +208,13 @@ initService(LeaderboardService, "LeaderboardService")
 initService(WorldMapService, "WorldMapService")
 
 -- ═══════════════════════════════════════════════════════════════════════════════
--- STEP 4.5: Build the village environment (streets, gate, decorations)
+-- STEP 4.5: Village environment
+-- NOTE: VillageBuilder is DISABLED - SimpleTest.server.lua builds the actual
+-- gameplay village with buildings, walls, and interiors. VillageBuilder was
+-- creating duplicate ground, invisible boundary walls, and overlapping objects
+-- that blocked player movement.
 -- ═══════════════════════════════════════════════════════════════════════════════
-print("[SERVER] Building village environment...")
-
-local VillageBuilder = require(ServerScriptService:WaitForChild("VillageBuilder"))
-local buildSuccess, buildErr = pcall(function()
-    VillageBuilder.Build()
-end)
-
-if buildSuccess then
-    print("[SERVER] Village environment built successfully (includes gate)")
-else
-    warn("[SERVER] Failed to build village environment:", tostring(buildErr))
-end
+print("[SERVER] Village environment built by SimpleTest.server.lua (VillageBuilder disabled)")
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- STEP 5: Connect service signals for food supply updates

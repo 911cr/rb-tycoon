@@ -17,6 +17,7 @@ local Types = require(ReplicatedStorage.Shared.Types.PlayerTypes)
 local BalanceConfig = require(ReplicatedStorage.Shared.Constants.BalanceConfig)
 local BuildingData = require(ReplicatedStorage.Shared.Constants.BuildingData)
 local TroopData = require(ReplicatedStorage.Shared.Constants.TroopData)
+local WorldMapData = require(ReplicatedStorage.Shared.Constants.WorldMapData)
 local Signal = require(ReplicatedStorage.Shared.Modules.Signal)
 
 local DataService = {}
@@ -50,7 +51,7 @@ end
 -- Constants
 local DATA_SAVE_INTERVAL = 300 -- 5 minutes
 local SESSION_LOCK_KEY_PREFIX = "SessionLock_"
-local SESSION_LOCK_TIMEOUT = 600 -- 10 minutes
+local SESSION_LOCK_TIMEOUT = 120 -- 2 minutes (reduced from 10 to handle crashes + teleport transitions)
 
 --[[
     Sanitizes a number to prevent NaN/Infinity exploits.
@@ -161,6 +162,11 @@ local function createDefaultData(userId: number, username: string): Types.Player
             sfxEnabled = true,
             notificationsEnabled = true,
         },
+
+        -- World Map
+        mapPosition = WorldMapData.GenerateStartingPosition(),
+        lastMoveTime = 0,
+        friends = {},
     }
 end
 
@@ -233,6 +239,24 @@ local function validatePlayerData(data: Types.PlayerData): Types.PlayerData
     -- Set maxFarmPlots based on TH level
     data.maxFarmPlots = BuildingData.MaxFarmPlotsPerTH[data.townHallLevel] or 2
 
+    -- World Map migration
+    if not data.mapPosition then
+        data.mapPosition = WorldMapData.GenerateStartingPosition()
+    else
+        -- Validate position is within bounds
+        if not WorldMapData.IsValidPosition(data.mapPosition) then
+            data.mapPosition = WorldMapData.GenerateStartingPosition()
+        end
+    end
+
+    if data.lastMoveTime == nil then
+        data.lastMoveTime = 0
+    end
+
+    if not data.friends then
+        data.friends = {}
+    end
+
     return data
 end
 
@@ -241,6 +265,9 @@ end
     Prevents data corruption from multiple sessions.
     FIXED: Uses UpdateAsync for atomic check-and-set to prevent race conditions.
 ]]
+local SESSION_LOCK_RETRIES = 3
+local SESSION_LOCK_RETRY_DELAY = 2 -- seconds between retries
+
 local function acquireSessionLock(userId: number): boolean
     -- In local mode, always succeed (no DataStore)
     if _useLocalData then
@@ -251,33 +278,40 @@ local function acquireSessionLock(userId: number): boolean
     local lockKey = SESSION_LOCK_KEY_PREFIX .. userId
     local lockStore = DataStoreService:GetDataStore("BattleTycoon_SessionLocks")
 
-    local acquired = false
-    local now = os.time()
+    -- Retry loop: the previous server may still be releasing the lock (teleport race condition)
+    for attempt = 1, SESSION_LOCK_RETRIES do
+        local acquired = false
+        local now = os.time()
 
-    local success, err = pcall(function()
-        lockStore:UpdateAsync(lockKey, function(currentValue)
-            -- If no lock exists or lock is stale (> 10 minutes old), acquire it
-            if not currentValue or (now - currentValue) >= SESSION_LOCK_TIMEOUT then
-                acquired = true
-                return now -- Set new lock timestamp
-            end
-            -- Lock is active, don't modify
-            acquired = false
-            return nil -- Return nil to cancel the update
+        local success, err = pcall(function()
+            lockStore:UpdateAsync(lockKey, function(currentValue)
+                -- If no lock exists or lock is stale (> 10 minutes old), acquire it
+                if not currentValue or (now - currentValue) >= SESSION_LOCK_TIMEOUT then
+                    acquired = true
+                    return now -- Set new lock timestamp
+                end
+                -- Lock is active, don't modify
+                acquired = false
+                return nil -- Return nil to cancel the update
+            end)
         end)
-    end)
 
-    if not success then
-        warn("Failed to acquire session lock for", userId, err)
-        return false
+        if not success then
+            warn("Failed to acquire session lock for", userId, "attempt", attempt, err)
+        elseif acquired then
+            _sessionLocks[userId] = now
+            return true
+        end
+
+        -- Wait before retrying (gives previous server time to release lock)
+        if attempt < SESSION_LOCK_RETRIES then
+            warn(string.format("[DataService] Session lock busy for %d, retrying in %ds (attempt %d/%d)",
+                userId, SESSION_LOCK_RETRY_DELAY, attempt, SESSION_LOCK_RETRIES))
+            task.wait(SESSION_LOCK_RETRY_DELAY)
+        end
     end
 
-    if acquired then
-        _sessionLocks[userId] = now
-        return true
-    end
-
-    warn("Session lock active for", userId)
+    warn("Session lock still active for", userId, "after", SESSION_LOCK_RETRIES, "attempts")
     return false
 end
 
@@ -406,6 +440,33 @@ function DataService:SavePlayerData(player: Player): boolean
     end
 
     DataService.PlayerDataSaved:Fire(player)
+    return true
+end
+
+--[[
+    Prepares player data for cross-place teleport.
+    Saves data, releases session lock, and clears cache so the destination
+    server can acquire the lock immediately without a race condition.
+
+    MUST be called before TeleportService:TeleportAsync().
+]]
+function DataService:PrepareForTeleport(player: Player): boolean
+    local userId = player.UserId
+
+    -- Save data first
+    local saved = self:SavePlayerData(player)
+    if not saved then
+        warn("[DataService] Failed to save before teleport for", userId)
+        return false
+    end
+
+    -- Release session lock so destination server can acquire it
+    releaseSessionLock(userId)
+
+    -- Clear cached data (PlayerRemoving will fire later but find nothing to do)
+    _playerData[userId] = nil
+
+    print(string.format("[DataService] Player %s prepared for teleport (data saved, lock released)", player.Name))
     return true
 end
 
@@ -605,11 +666,14 @@ function DataService:Init()
         end
     end)
 
-    -- Handle player leave
+    -- Handle player leave (ALWAYS release lock, even if data wasn't loaded)
     Players.PlayerRemoving:Connect(function(player)
-        self:SavePlayerData(player)
+        if _playerData[player.UserId] then
+            self:SavePlayerData(player)
+            _playerData[player.UserId] = nil
+        end
+        -- Always release lock - prevents death loop where failed load → kick → lock never released
         releaseSessionLock(player.UserId)
-        _playerData[player.UserId] = nil
     end)
 
     -- Auto-save interval

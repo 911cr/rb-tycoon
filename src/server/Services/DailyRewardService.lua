@@ -26,26 +26,26 @@ DailyRewardService.StreakUpdated = Signal.new()
 -- Private state
 local _initialized = false
 
--- Reward schedule (7-day cycle)
+-- Reward schedule (7-day cycle) - All gold rewards
 local DailyRewards = {
-    [1] = { gold = 1000, description = "Day 1: Gold" },
-    [2] = { gold = 2000, description = "Day 2: More Gold" },
-    [3] = { gems = 5, description = "Day 3: Gems" },
-    [4] = { gold = 3000, description = "Day 4: Gold Boost" },
-    [5] = { gold = 2000, gems = 3, description = "Day 5: Mixed Reward" },
-    [6] = { gems = 10, description = "Day 6: Gem Bonus" },
-    [7] = { gold = 5000, gems = 20, description = "Day 7: Weekly Jackpot!" },
+    [1] = { gold = 500, description = "Day 1: Gold" },
+    [2] = { gold = 750, description = "Day 2: More Gold" },
+    [3] = { gold = 1000, description = "Day 3: Gold Bonus" },
+    [4] = { gold = 1500, description = "Day 4: Gold Boost" },
+    [5] = { gold = 2000, wood = 500, description = "Day 5: Mixed Reward" },
+    [6] = { gold = 2500, food = 500, description = "Day 6: Resource Bonus" },
+    [7] = { gold = 5000, wood = 1000, food = 500, description = "Day 7: Weekly Jackpot!" },
 }
 
--- Streak milestones (extra rewards)
+-- Streak milestones (extra gold rewards)
 local StreakMilestones = {
-    [7] = { gems = 25, description = "1 Week Streak!" },
-    [14] = { gems = 50, description = "2 Week Streak!" },
-    [30] = { gems = 100, description = "1 Month Streak!" },
-    [60] = { gems = 200, description = "2 Month Streak!" },
-    [90] = { gems = 300, description = "3 Month Streak!" },
-    [180] = { gems = 500, description = "6 Month Streak!" },
-    [365] = { gems = 1000, description = "1 Year Streak!" },
+    [7] = { gold = 2500, description = "1 Week Streak!" },
+    [14] = { gold = 5000, description = "2 Week Streak!" },
+    [30] = { gold = 10000, description = "1 Month Streak!" },
+    [60] = { gold = 25000, description = "2 Month Streak!" },
+    [90] = { gold = 50000, description = "3 Month Streak!" },
+    [180] = { gold = 100000, description = "6 Month Streak!" },
+    [365] = { gold = 250000, description = "1 Year Streak!" },
 }
 
 --[[
