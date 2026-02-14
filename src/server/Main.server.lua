@@ -128,6 +128,12 @@ local GetPlayerRank = createRemoteFunction("GetPlayerRank")
 local GetLeaderboardInfo = createRemoteFunction("GetLeaderboardInfo")
 local LeagueChanged = createRemoteEvent("LeagueChanged")
 
+-- Research events
+local GetResearchList = createRemoteEvent("GetResearchList")
+local StartResearchRequest = createRemoteEvent("StartResearchRequest")
+local ResearchUpdate = createRemoteEvent("ResearchUpdate")
+local OpenResearchUI = createRemoteEvent("OpenResearchUI")
+
 print("[SERVER] Events folder created with all RemoteEvents")
 
 -- ═══════════════════════════════════════════════════════════════════════════════

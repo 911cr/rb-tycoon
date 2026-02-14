@@ -49,7 +49,7 @@ local _events: Folder? = nil
 local _approachBase: RemoteEvent? = nil
 local _leaveBase: RemoteEvent? = nil
 local _requestTeleportToVillage: RemoteEvent? = nil
-local _requestTeleportToBattle: RemoteEvent? = nil
+local _requestBattle: RemoteEvent? = nil -- BattleArenaService (replaces old RequestTeleportToBattle)
 
 -- ============================================================================
 -- HELPER FUNCTIONS
@@ -136,10 +136,10 @@ local function onInteractPressed(actionName: string, inputState: Enum.UserInputS
             end
             BaseInteractionController.InteractionRequested:Fire("Enter", _nearestBase.userId)
         else
-            -- Attack enemy base
+            -- Attack enemy base via BattleArenaService (same-server arena)
             print("[BaseInteraction] Attacking base:", _nearestBase.userId)
-            if _requestTeleportToBattle then
-                _requestTeleportToBattle:FireServer(_nearestBase.userId)
+            if _requestBattle then
+                _requestBattle:FireServer(_nearestBase.userId)
             end
             BaseInteractionController.InteractionRequested:Fire("Attack", _nearestBase.userId)
         end
@@ -168,7 +168,8 @@ function BaseInteractionController:Init()
         _approachBase = events:FindFirstChild("ApproachBase") :: RemoteEvent?
         _leaveBase = events:FindFirstChild("LeaveBase") :: RemoteEvent?
         _requestTeleportToVillage = events:FindFirstChild("RequestTeleportToVillage") :: RemoteEvent?
-        _requestTeleportToBattle = events:FindFirstChild("RequestTeleportToBattle") :: RemoteEvent?
+        -- BattleArenaService creates this event; use it instead of the old RequestTeleportToBattle
+        _requestBattle = events:FindFirstChild("RequestBattle") :: RemoteEvent?
     end
 
     -- Bind interact action
@@ -329,8 +330,8 @@ end
     @param targetUserId number - The target user ID
 ]]
 function BaseInteractionController:RequestAttack(targetUserId: number)
-    if _requestTeleportToBattle then
-        _requestTeleportToBattle:FireServer(targetUserId)
+    if _requestBattle then
+        _requestBattle:FireServer(targetUserId)
     end
     self.InteractionRequested:Fire("Attack", targetUserId)
 end

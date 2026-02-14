@@ -79,6 +79,11 @@ local RequestTeleportToBattle = createRemoteEvent("RequestTeleportToBattle")
 local TeleportStarted = createRemoteEvent("TeleportStarted")
 local TeleportFailed = createRemoteEvent("TeleportFailed")
 
+-- Matchmaking events
+local RequestMatchmaking = createRemoteEvent("RequestMatchmaking")
+local MatchmakingResult = createRemoteEvent("MatchmakingResult")
+local ConfirmMatchmaking = createRemoteEvent("ConfirmMatchmaking")
+
 -- UI data
 local GetOwnBaseData = createRemoteFunction("GetOwnBaseData")
 local GetPlayerResources = createRemoteFunction("GetPlayerResources")
@@ -120,6 +125,8 @@ end
 -- Load overworld services
 local OverworldService = loadService("OverworldService")
 local TeleportManager = loadService("TeleportManager")
+local BattleArenaService = loadService("BattleArenaService")
+local MatchmakingService = loadService("MatchmakingService")
 
 -- Load shared module references
 local OverworldConfig = require(ReplicatedStorage.Shared.Constants.OverworldConfig)
@@ -144,6 +151,8 @@ end
 
 initService(TeleportManager, "TeleportManager")
 initService(OverworldService, "OverworldService")
+initService(MatchmakingService, "MatchmakingService")
+initService(BattleArenaService, "BattleArenaService")
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- STEP 5: Build the overworld environment
@@ -305,8 +314,24 @@ connectEvent(RequestTeleportToVillage, function(player)
     end
 end)
 
--- Teleport to battle request
+-- Teleport to battle request (LEGACY - bypassed)
+-- Battle flow now uses BattleArenaService's RequestBattle RemoteEvent for
+-- same-server instanced arenas instead of cross-place teleports.
+-- This handler is kept for backwards compatibility but no longer triggers teleports.
 connectEvent(RequestTeleportToBattle, function(player, targetUserId)
+    -- Redirect to BattleArenaService if available
+    if BattleArenaService then
+        print(string.format("[OVERWORLD] Legacy RequestTeleportToBattle from %s redirected to BattleArenaService", player.Name))
+        -- BattleArenaService handles battles via its own RequestBattle RemoteEvent.
+        -- If client still fires the old event, inform them to use RequestBattle instead.
+        ServerResponse:FireClient(player, "TeleportToBattle", {
+            success = false,
+            error = "USE_REQUEST_BATTLE",
+        })
+        return
+    end
+
+    -- Fallback to old teleport flow if BattleArenaService is not loaded
     if TeleportManager and OverworldService then
         if typeof(targetUserId) ~= "number" then
             ServerResponse:FireClient(player, "TeleportToBattle", { success = false, error = "INVALID_TARGET" })
@@ -329,6 +354,156 @@ connectEvent(RequestTeleportToBattle, function(player, targetUserId)
             ServerResponse:FireClient(player, "TeleportToBattle", { success = false, error = teleportErr })
         end
     end
+end)
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- STEP 7.5: Matchmaking handlers
+-- ═══════════════════════════════════════════════════════════════════════════════
+print("[OVERWORLD] Connecting matchmaking handlers...")
+
+-- Track pending matchmaking results per player:
+-- [userId] = { opponent data from FindOpponent, timestamp, searchCount }
+local _pendingMatches: {[number]: any} = {}
+local _matchmakingRateLimit: {[number]: number} = {} -- [userId] = lastRequestTime
+local MATCHMAKING_RATE_LIMIT = 1 -- seconds between requests
+
+-- Request matchmaking: client asks server to find an opponent
+connectEvent(RequestMatchmaking, function(player)
+    if not MatchmakingService then
+        MatchmakingResult:FireClient(player, { success = false, error = "SERVICE_UNAVAILABLE" })
+        return
+    end
+
+    -- Rate limit
+    local now = os.clock()
+    local lastRequest = _matchmakingRateLimit[player.UserId] or 0
+    if now - lastRequest < MATCHMAKING_RATE_LIMIT then
+        MatchmakingResult:FireClient(player, { success = false, error = "RATE_LIMITED" })
+        return
+    end
+    _matchmakingRateLimit[player.UserId] = now
+
+    -- Check if player is already in a battle
+    if BattleArenaService and BattleArenaService:IsPlayerInBattle(player) then
+        MatchmakingResult:FireClient(player, { success = false, error = "ALREADY_IN_BATTLE" })
+        return
+    end
+
+    -- Get search count from pending match data (for skip cost tracking)
+    local pending = _pendingMatches[player.UserId]
+    local searchCount = if pending then pending.searchCount + 1 else 1
+
+    -- Find or skip to next opponent
+    local opponent, err
+    if searchCount > 1 then
+        opponent, err = MatchmakingService:NextOpponent(player, searchCount)
+    else
+        opponent, err = MatchmakingService:FindOpponent(player)
+    end
+
+    if not opponent then
+        MatchmakingResult:FireClient(player, { success = false, error = err or "NO_OPPONENT_FOUND" })
+        return
+    end
+
+    -- Calculate available loot
+    local lootAvailable = {
+        gold = 0,
+        wood = 0,
+        food = 0,
+    }
+    if opponent.resources then
+        -- Loot formula: attacker can steal a percentage of defender resources
+        local lootPercent = 0.2 -- 20% of stored resources
+        lootAvailable.gold = math.floor((opponent.resources.gold or 0) * lootPercent)
+        lootAvailable.wood = math.floor((opponent.resources.wood or 0) * lootPercent)
+        lootAvailable.food = math.floor((opponent.resources.food or 0) * lootPercent)
+    end
+
+    -- Calculate next skip cost
+    local nextSkipCost = MatchmakingService:GetSkipCost(searchCount + 1)
+
+    -- Store pending match for validation when client confirms
+    _pendingMatches[player.UserId] = {
+        opponent = opponent,
+        timestamp = os.time(),
+        searchCount = searchCount,
+    }
+
+    -- Send result to client
+    MatchmakingResult:FireClient(player, {
+        success = true,
+        target = {
+            userId = opponent.userId,
+            username = opponent.username,
+            townHallLevel = opponent.townHallLevel or 1,
+            trophies = opponent.trophies or 0,
+            lootAvailable = lootAvailable,
+        },
+        skipCost = nextSkipCost,
+        searchCount = searchCount,
+    })
+
+    print(string.format("[OVERWORLD] Matchmaking result for %s: found %s (search #%d)",
+        player.Name, opponent.username, searchCount))
+end)
+
+-- Confirm matchmaking: client wants to attack the matched opponent
+connectEvent(ConfirmMatchmaking, function(player, targetUserId)
+    -- Type validation
+    if typeof(targetUserId) ~= "number" then return end
+
+    if not BattleArenaService then
+        ServerResponse:FireClient(player, "ConfirmMatchmaking", { success = false, error = "SERVICE_UNAVAILABLE" })
+        return
+    end
+
+    -- Check if player is already in a battle
+    if BattleArenaService:IsPlayerInBattle(player) then
+        ServerResponse:FireClient(player, "ConfirmMatchmaking", { success = false, error = "ALREADY_IN_BATTLE" })
+        return
+    end
+
+    -- Validate the target was actually matched to this player
+    local pending = _pendingMatches[player.UserId]
+    if not pending or not pending.opponent then
+        ServerResponse:FireClient(player, "ConfirmMatchmaking", { success = false, error = "NO_PENDING_MATCH" })
+        return
+    end
+
+    if pending.opponent.userId ~= targetUserId then
+        ServerResponse:FireClient(player, "ConfirmMatchmaking", { success = false, error = "MATCH_MISMATCH" })
+        return
+    end
+
+    -- Check match freshness (expire after 60 seconds)
+    if os.time() - pending.timestamp > 60 then
+        _pendingMatches[player.UserId] = nil
+        ServerResponse:FireClient(player, "ConfirmMatchmaking", { success = false, error = "MATCH_EXPIRED" })
+        return
+    end
+
+    -- Clear pending match
+    _pendingMatches[player.UserId] = nil
+
+    -- Create the battle arena
+    -- BattleArenaService:CreateArena handles both real players and AI opponents.
+    -- For AI opponents (negative userId), CreateArena loads defender data via
+    -- DataService or CombatService which supports AI battle data.
+    local result = BattleArenaService:CreateArena(player, targetUserId)
+    if result.success then
+        ServerResponse:FireClient(player, "ConfirmMatchmaking", { success = true, battleId = result.battleId })
+    else
+        ServerResponse:FireClient(player, "ConfirmMatchmaking", { success = false, error = result.error })
+    end
+
+    print(string.format("[OVERWORLD] ConfirmMatchmaking from %s for target %d", player.Name, targetUserId))
+end)
+
+-- Clean up pending matches when player leaves
+Players.PlayerRemoving:Connect(function(player)
+    _pendingMatches[player.UserId] = nil
+    _matchmakingRateLimit[player.UserId] = nil
 end)
 
 -- ═══════════════════════════════════════════════════════════════════════════════

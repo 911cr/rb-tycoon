@@ -54,7 +54,8 @@ local ApproachBase = Events:WaitForChild("ApproachBase") :: RemoteEvent
 local LeaveBase = Events:WaitForChild("LeaveBase") :: RemoteEvent
 local BaseInteractionResult = Events:WaitForChild("BaseInteractionResult") :: RemoteEvent
 local RequestTeleportToVillage = Events:WaitForChild("RequestTeleportToVillage") :: RemoteEvent
-local RequestTeleportToBattle = Events:WaitForChild("RequestTeleportToBattle") :: RemoteEvent
+local RequestTeleportToBattle = Events:WaitForChild("RequestTeleportToBattle") :: RemoteEvent -- legacy
+local RequestBattle = Events:WaitForChild("RequestBattle", 10) :: RemoteEvent? -- BattleArenaService
 local TeleportStarted = Events:WaitForChild("TeleportStarted") :: RemoteEvent
 local TeleportFailed = Events:WaitForChild("TeleportFailed") :: RemoteEvent
 local ServerResponse = Events:WaitForChild("ServerResponse") :: RemoteEvent
@@ -97,6 +98,7 @@ local UIFolder = script.Parent:FindFirstChild("UI")
 
 local BaseInfoUI: any
 local OverworldHUD: any
+local MatchmakingUI: any
 
 local function loadUI(name: string): any?
     if UIFolder then
@@ -118,6 +120,7 @@ end
 
 BaseInfoUI = loadUI("BaseInfoUI")
 OverworldHUD = loadUI("OverworldHUD")
+MatchmakingUI = loadUI("MatchmakingUI")
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- Initialize controllers
@@ -141,12 +144,28 @@ initController(OverworldController, "OverworldController")
 initController(BaseInteractionController, "BaseInteractionController")
 initController(BaseInfoUI, "BaseInfoUI")
 initController(OverworldHUD, "OverworldHUD")
+initController(MatchmakingUI, "MatchmakingUI")
 
 -- Connect Go to City button
 if OverworldHUD and OverworldHUD.GoToCityClicked then
     OverworldHUD.GoToCityClicked:Connect(function()
         print("[CLIENT] Go to City clicked - requesting teleport to village")
         RequestTeleportToVillage:FireServer()
+    end)
+end
+
+-- Connect Find Battle button -> open MatchmakingUI
+if OverworldHUD and OverworldHUD.FindBattleClicked then
+    OverworldHUD.FindBattleClicked:Connect(function()
+        print("[CLIENT] Find Battle clicked - opening matchmaking")
+        if MatchmakingUI then
+            if not MatchmakingUI:IsInitialized() then
+                MatchmakingUI:Init()
+            end
+            if not MatchmakingUI:IsVisible() then
+                MatchmakingUI:Show()
+            end
+        end
     end)
 end
 
@@ -214,9 +233,89 @@ ServerResponse.OnClientEvent:Connect(function(eventName, result)
     print(string.format("[CLIENT] Server response for %s: %s", eventName, result.success and "success" or "failed"))
 
     if not result.success and OverworldHUD and OverworldHUD.ShowError then
-        OverworldHUD:ShowError(result.error or "Unknown error")
+        -- Don't show raw error codes for matchmaking - handled by MatchmakingUI
+        if eventName ~= "ConfirmMatchmaking" then
+            OverworldHUD:ShowError(result.error or "Unknown error")
+        end
+    end
+
+    -- Handle matchmaking confirm result
+    if eventName == "ConfirmMatchmaking" then
+        if result.success then
+            print("[CLIENT] Battle started from matchmaking! battleId:", result.battleId)
+            -- Battle arena will handle camera and UI via BattleArenaReady event
+        else
+            if OverworldHUD and OverworldHUD.ShowError then
+                OverworldHUD:ShowError(result.error or "Failed to start battle")
+            end
+        end
     end
 end)
+
+-- Handle BattleArenaReady event (sent by BattleArenaService when arena is created)
+local BattleArenaReady = Events:FindFirstChild("BattleArenaReady") :: RemoteEvent?
+if not BattleArenaReady then
+    -- Wait briefly for BattleArenaService to create the event
+    task.delay(2, function()
+        BattleArenaReady = Events:FindFirstChild("BattleArenaReady") :: RemoteEvent?
+        if BattleArenaReady then
+            BattleArenaReady.OnClientEvent:Connect(function(arenaData)
+                if arenaData.error then
+                    if OverworldHUD and OverworldHUD.ShowError then
+                        OverworldHUD:ShowError(arenaData.error)
+                    end
+                    return
+                end
+                print(string.format("[CLIENT] Battle arena ready: battleId=%s, defender=%s",
+                    arenaData.battleId or "?", arenaData.defenderName or "?"))
+                -- Hide the OverworldHUD during battle
+                if OverworldHUD then
+                    OverworldHUD:Hide()
+                end
+            end)
+            print("[CLIENT] Connected to BattleArenaReady event (deferred)")
+        end
+    end)
+else
+    BattleArenaReady.OnClientEvent:Connect(function(arenaData)
+        if arenaData.error then
+            if OverworldHUD and OverworldHUD.ShowError then
+                OverworldHUD:ShowError(arenaData.error)
+            end
+            return
+        end
+        print(string.format("[CLIENT] Battle arena ready: battleId=%s, defender=%s",
+            arenaData.battleId or "?", arenaData.defenderName or "?"))
+        -- Hide the OverworldHUD during battle
+        if OverworldHUD then
+            OverworldHUD:Hide()
+        end
+    end)
+    print("[CLIENT] Connected to BattleArenaReady event")
+end
+
+-- Handle ReturnToOverworld event (sent after battle ends)
+local ReturnToOverworld = Events:FindFirstChild("ReturnToOverworld") :: RemoteEvent?
+if not ReturnToOverworld then
+    task.delay(2, function()
+        ReturnToOverworld = Events:FindFirstChild("ReturnToOverworld") :: RemoteEvent?
+        if ReturnToOverworld then
+            ReturnToOverworld.OnClientEvent:Connect(function()
+                print("[CLIENT] Returning to overworld after battle")
+                if OverworldHUD then
+                    OverworldHUD:Show()
+                end
+            end)
+        end
+    end)
+else
+    ReturnToOverworld.OnClientEvent:Connect(function()
+        print("[CLIENT] Returning to overworld after battle")
+        if OverworldHUD then
+            OverworldHUD:Show()
+        end
+    end)
+end
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- Player setup
@@ -263,7 +362,13 @@ function OverworldClient.RequestEnterVillage()
 end
 
 function OverworldClient.RequestAttack(targetUserId: number)
-    RequestTeleportToBattle:FireServer(targetUserId)
+    -- Use BattleArenaService's RequestBattle event for same-server arena battles
+    if RequestBattle then
+        RequestBattle:FireServer(targetUserId)
+    else
+        -- Fallback to legacy teleport-based battle (will be rejected by server)
+        RequestTeleportToBattle:FireServer(targetUserId)
+    end
 end
 
 function OverworldClient.GetNearbyBases(centerPos: Vector3?, maxCount: number?): {any}

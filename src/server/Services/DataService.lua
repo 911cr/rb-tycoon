@@ -136,6 +136,7 @@ local function createDefaultData(userId: number, username: string): Types.Player
         -- Protection
         shield = nil,
         revengeList = {},
+        defenseLog = {},
 
         -- Social
         alliance = {
@@ -219,6 +220,9 @@ local function validatePlayerData(data: Types.PlayerData): Types.PlayerData
 
     -- Ensure settings exist
     data.settings = data.settings or { musicEnabled = true, sfxEnabled = true, notificationsEnabled = true }
+
+    -- Defense log migration
+    if not data.defenseLog then data.defenseLog = {} end
 
     -- Food Supply System migration
     if data.foodProduction == nil then data.foodProduction = 0 end
@@ -496,6 +500,35 @@ function DataService:GetPlayerDataById(userId: number): Types.PlayerData?
     end
 
     return nil
+end
+
+--[[
+    Saves player data by UserId directly to DataStore.
+    Used for offline players whose data was modified (e.g., defender after a battle).
+    Does NOT affect the in-memory cache (_playerData) for online players.
+]]
+function DataService:SavePlayerDataById(userId: number, data: any): boolean
+    -- In local mode, data is only in memory (no persistence)
+    if _useLocalData then
+        return true
+    end
+
+    if not data then
+        warn("[DataService] No data to save for userId", userId)
+        return false
+    end
+
+    local success, err = pcall(function()
+        _dataStore:SetAsync(tostring(userId), data)
+    end)
+
+    if not success then
+        warn("[DataService] Failed to save offline data for userId", userId, err)
+        return false
+    end
+
+    print(string.format("[DataService] Saved offline player data for userId %d", userId))
+    return true
 end
 
 --[[

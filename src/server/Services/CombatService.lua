@@ -282,9 +282,30 @@ function CombatService:StartBattle(attacker: Player, defenderUserId: number): St
 
     -- Store building targets (internal, not in battle state)
     local targets = getDefenderBuildings(defenderData)
+
+    -- Apply wall HP bonus from defense research
+    local completedResearch = (defenderData.research and defenderData.research.completed) or {}
+    local hasWallBonus = false
+    for _, researchId in completedResearch do
+        if researchId == "defense_walls" then
+            hasWallBonus = true
+            break
+        end
+    end
+    if hasWallBonus then
+        for _, target in targets do
+            if target.category == "wall" then
+                target.maxHp = math.floor(target.maxHp * 1.5) -- +50% HP
+                target.currentHp = target.maxHp
+            end
+        end
+    end
+
     _activeBattles[battleId .. "_targets"] = targets :: any
     _activeBattles[battleId .. "_totalHp"] = calculateTotalBuildingHp(targets) :: any
     _activeBattles[battleId .. "_defenderData"] = defenderData :: any
+    _activeBattles[battleId .. "_defenderResearch"] = (defenderData.research and defenderData.research.completed) or {} :: any
+    _activeBattles[battleId .. "_buildingLastAttack"] = {} :: any
 
     -- Fire event
     CombatService.BattleStarted:Fire(attacker.UserId, defenderUserId, battleId)
@@ -548,6 +569,135 @@ function CombatService:SimulateTick(battleId: string)
         end
     end
 
+    -- === DEFENSE BUILDING AI ===
+    -- Buildings fire at troops based on defender's research
+    local defenderResearch = _activeBattles[battleId .. "_defenderResearch"] :: {string}
+    local buildingLastAttack = _activeBattles[battleId .. "_buildingLastAttack"] :: {[string]: number}
+
+    if defenderResearch and #defenderResearch > 0 then
+        -- Build lookup table for research
+        local researchLookup = {}
+        for _, researchId in defenderResearch do
+            researchLookup[researchId] = true
+        end
+
+        -- Calculate defense bonuses from research
+        local defenseDamageBonus = 1.0
+        local defenseRangeBonus = 1.0
+        if researchLookup["defense_damage_1"] then defenseDamageBonus = defenseDamageBonus + 0.15 end
+        if researchLookup["defense_damage_2"] then defenseDamageBonus = defenseDamageBonus + 0.25 end
+        if researchLookup["defense_range_1"] then defenseRangeBonus = defenseRangeBonus + 0.10 end
+
+        -- Map building types to their research activation requirement
+        local buildingToResearch = {
+            Cannon = "defense_basic",
+            ArcherTower = "defense_archery",
+            Mortar = "defense_splash",
+            AirDefense = "defense_anti_air",
+            WizardTower = "defense_magic",
+        }
+
+        local BuildingData = require(ReplicatedStorage.Shared.Constants.BuildingData)
+
+        for _, building in targets do
+            if building.isDestroyed then continue end
+
+            -- Check if this is a defense building
+            local requiredResearch = buildingToResearch[building.type]
+            if not requiredResearch then continue end
+
+            -- Check if defender has researched this building's activation
+            if not researchLookup[requiredResearch] then continue end
+
+            -- Get building stats from BuildingData
+            local buildingDef = BuildingData.GetByType(building.type)
+            if not buildingDef then continue end
+
+            -- Find the building's level (stored in defenderData)
+            local defenderData2 = _activeBattles[battleId .. "_defenderData"]
+            local buildingLevel = 1
+            if defenderData2 and defenderData2.buildings and defenderData2.buildings[building.id] then
+                buildingLevel = defenderData2.buildings[building.id].level or 1
+            end
+
+            local levelData = BuildingData.GetLevelData(building.type, buildingLevel)
+            if not levelData then continue end
+
+            -- Check attack cooldown
+            local attackSpeed = levelData.attackSpeed or 1
+            local attackInterval = 1.0 / attackSpeed
+            local lastAttack = buildingLastAttack[building.id] or 0
+            if (now - lastAttack) < attackInterval then continue end
+
+            -- Get building range (with research bonus)
+            local range = (levelData.range or 9) * defenseRangeBonus
+
+            -- Get target type this building can attack
+            local targetType = levelData.targetType or "ground"
+
+            -- Find nearest troop in range
+            local nearestTroop = nil
+            local nearestDistance = math.huge
+
+            for _, troop in battle.troops do
+                if troop.state == "dead" then continue end
+
+                -- Check target type compatibility
+                local troopDef = TroopData.GetByType(troop.type)
+                if not troopDef then continue end
+                local troopLevelData = TroopData.GetLevelData(troop.type, troop.level)
+                if not troopLevelData then continue end
+
+                local troopTargetType = troopLevelData.targetType or "ground"
+
+                -- Building targets "ground" can only hit ground troops
+                -- Building targets "air" can only hit air troops
+                -- Building targets "both" can hit either
+                if targetType == "ground" and troopTargetType == "air" then continue end
+                if targetType == "air" and troopTargetType ~= "air" then continue end
+
+                local dist = (building.position - troop.position).Magnitude
+                if dist <= range and dist < nearestDistance then
+                    nearestTroop = troop
+                    nearestDistance = dist
+                end
+            end
+
+            if nearestTroop then
+                -- Fire at troop!
+                buildingLastAttack[building.id] = now
+
+                -- Calculate damage (with research bonus)
+                local damage = (levelData.damage or 10) * defenseDamageBonus
+
+                -- Apply splash damage for Mortar and WizardTower
+                local splashRadius = levelData.splashRadius
+                if splashRadius and splashRadius > 0 then
+                    for _, troop in battle.troops do
+                        if troop.state == "dead" then continue end
+                        if troop.id == nearestTroop.id then continue end
+
+                        local splashDist = (troop.position - nearestTroop.position).Magnitude
+                        if splashDist <= splashRadius then
+                            troop.currentHp -= damage * 0.5
+                            if troop.currentHp <= 0 then
+                                troop.currentHp = 0
+                                troop.state = "dead"
+                            end
+                        end
+                    end
+                end
+
+                -- Apply main damage to target troop
+                nearestTroop.currentHp -= damage
+                if nearestTroop.currentHp <= 0 then
+                    nearestTroop.currentHp = 0
+                    nearestTroop.state = "dead"
+                end
+            end
+        end
+    end
+
     -- Calculate destruction percentage
     local destroyedHp = 0
     for _, target in targets do
@@ -653,13 +803,38 @@ function CombatService:EndBattle(battleId: string): CombatTypes.BattleResult?
         loot.food = math.floor(loot.food * (1 + thBonus))
     end
 
-    -- Calculate trophies
+    -- Calculate trophies with TH level difference multiplier
     local trophyConfig = BalanceConfig.Combat.Trophies
     local trophiesGained = 0
+    local defenderTrophyLoss = 0
+
+    -- Calculate TH level difference multiplier
+    local attackerTHLevel = 1
+    local defenderTHLevel = defenderData and defenderData.townHallLevel or 1
+    local attacker = Players:GetPlayerByUserId(battle.attackerId)
+    if attacker then
+        local attackerData = DataService:GetPlayerData(attacker)
+        if attackerData then
+            attackerTHLevel = attackerData.townHallLevel or 1
+        end
+    end
+
+    local thDifference = defenderTHLevel - attackerTHLevel -- positive = attacking higher TH
+    local thMultiplier = 1.0
+    if thDifference > 0 then
+        -- Attacking higher TH = more trophies gained
+        thMultiplier = math.pow(trophyConfig.THDifferenceMultiplier, thDifference)
+    elseif thDifference < 0 then
+        -- Attacking lower TH = fewer trophies gained
+        thMultiplier = math.pow(1 / trophyConfig.THDifferenceMultiplier, math.abs(thDifference))
+    end
+
     if battle.starsEarned > 0 then
-        trophiesGained = math.floor(trophyConfig.BaseWin * (battle.starsEarned / 3))
+        trophiesGained = math.floor(trophyConfig.BaseWin * (battle.starsEarned / 3) * thMultiplier)
+        defenderTrophyLoss = math.floor(trophyConfig.BaseLoss * thMultiplier)
     else
-        trophiesGained = -trophyConfig.BaseLoss
+        trophiesGained = -math.floor(trophyConfig.BaseLoss * thMultiplier)
+        defenderTrophyLoss = 0 -- Defender gains trophies on successful defense
     end
 
     -- Calculate XP
@@ -704,7 +879,6 @@ function CombatService:EndBattle(battleId: string): CombatTypes.BattleResult?
     }
 
     -- Apply rewards to attacker
-    local attacker = Players:GetPlayerByUserId(battle.attackerId)
     if attacker then
         -- Add loot
         DataService:UpdateResources(attacker, loot :: any)
@@ -751,9 +925,12 @@ function CombatService:EndBattle(battleId: string): CombatTypes.BattleResult?
 
         -- Update defender trophies
         if result.victory then
-            defenderData.trophies.current = math.max(0, defenderData.trophies.current - trophyConfig.BaseLoss)
+            defenderData.trophies.current = math.max(0, defenderData.trophies.current - defenderTrophyLoss)
         else
-            defenderData.trophies.current += trophyConfig.BaseWin
+            -- Successful defense: defender gains trophies
+            local defenseGain = math.floor(trophyConfig.BaseWin * (1 / thMultiplier))
+            defenderData.trophies.current += defenseGain
+            defenderData.trophies.allTime = math.max(defenderData.trophies.allTime or 0, defenderData.trophies.current)
             defenderData.stats.defensesWon += 1
         end
 
@@ -775,18 +952,72 @@ function CombatService:EndBattle(battleId: string): CombatTypes.BattleResult?
             }
         end
 
-        -- Add to revenge list
+        -- Get attacker name (may be offline in edge cases)
+        local attackerName = "Unknown"
         if attacker then
-            table.insert(defenderData.revengeList, {
-                attackerId = battle.attackerId,
-                attackerName = attacker.Name,
-                attackTime = now,
-                expiresAt = now + (BalanceConfig.Combat.RevengeWindow * 3600),
-                used = false,
-            })
+            attackerName = attacker.Name
         end
 
-        -- Note: Defender data will be saved when they next login or by periodic save
+        -- Add to revenge list
+        table.insert(defenderData.revengeList, {
+            attackerId = battle.attackerId,
+            attackerName = attackerName,
+            attackTime = now,
+            expiresAt = now + (BalanceConfig.Combat.RevengeWindow * 3600),
+            used = false,
+        })
+
+        -- Add defense log entry (used by DefenseLogUI on client)
+        if not defenderData.defenseLog then
+            defenderData.defenseLog = {}
+        end
+
+        table.insert(defenderData.defenseLog, {
+            attackerId = battle.attackerId,
+            attackerName = attackerName,
+            stars = result.stars,
+            destruction = result.destruction,
+            goldStolen = loot.gold,
+            trophyChange = result.victory and -defenderTrophyLoss or math.floor(trophyConfig.BaseWin * (1 / thMultiplier)),
+            timestamp = now,
+            canRevenge = true,
+        })
+
+        -- Cap defense log to 50 entries (remove oldest)
+        while #defenderData.defenseLog > 50 do
+            table.remove(defenderData.defenseLog, 1)
+        end
+
+        -- Persist defender data: if defender is online, their cached data is already
+        -- updated in memory and will be saved on next auto-save or logout.
+        -- If defender is offline, save directly to DataStore.
+        local defenderPlayer = Players:GetPlayerByUserId(battle.defenderId)
+        if not defenderPlayer then
+            -- Defender is offline - save directly to DataStore
+            task.spawn(function()
+                DataService:SavePlayerDataById(battle.defenderId, defenderData)
+            end)
+        end
+    end
+
+    -- Sync HUD for both players to reflect updated resources/trophies
+    local eventsFolder = ReplicatedStorage:FindFirstChild("Events")
+    local syncEvent = eventsFolder and eventsFolder:FindFirstChild("SyncPlayerData")
+
+    if syncEvent then
+        -- Sync attacker HUD
+        if attacker then
+            local attackerData = DataService:GetPlayerData(attacker)
+            if attackerData then
+                syncEvent:FireClient(attacker, attackerData)
+            end
+        end
+
+        -- Sync defender HUD if they are online
+        local onlineDefender = Players:GetPlayerByUserId(battle.defenderId)
+        if onlineDefender and defenderData then
+            syncEvent:FireClient(onlineDefender, defenderData)
+        end
     end
 
     -- Cleanup battle data
@@ -795,6 +1026,8 @@ function CombatService:EndBattle(battleId: string): CombatTypes.BattleResult?
         _activeBattles[battleId .. "_targets"] = nil
         _activeBattles[battleId .. "_totalHp"] = nil
         _activeBattles[battleId .. "_defenderData"] = nil
+        _activeBattles[battleId .. "_defenderResearch"] = nil
+        _activeBattles[battleId .. "_buildingLastAttack"] = nil
     end)
 
     -- Fire event

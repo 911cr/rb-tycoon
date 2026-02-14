@@ -39,6 +39,17 @@ export type RevengeData = {
     used: boolean,
 }
 
+export type DefenseLogEntry = {
+    attackerId: number,
+    attackerName: string,
+    stars: number,
+    destruction: number,
+    goldStolen: number,
+    trophyChange: number,
+    timestamp: number,
+    canRevenge: boolean,
+}
+
 export type MapPosition = {
     x: number,
     z: number,
@@ -107,6 +118,7 @@ export type PlayerData = {
     -- Protection
     shield: ShieldData?,
     revengeList: {RevengeData},
+    defenseLog: {DefenseLogEntry},
 
     -- Social
     alliance: AllianceMembership,

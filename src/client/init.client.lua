@@ -315,6 +315,50 @@ if Controllers then
 end
 
 -- ═══════════════════════════════════════════════════════════════════════════════
+-- INITIALIZE RESEARCH UI
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+do
+    local uiFolder = script:FindFirstChild("UI")
+    if uiFolder then
+        local researchUIModule = uiFolder:FindFirstChild("ResearchUI")
+        if researchUIModule then
+            local success, err = pcall(function()
+                local ResearchUI = require(researchUIModule)
+                ResearchUI:Init()
+            end)
+            if success then
+                print("[CLIENT] ResearchUI initialized")
+            else
+                warn("[CLIENT] Failed to initialize ResearchUI:", err)
+            end
+        end
+    end
+end
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- INITIALIZE BATTLE UI (HUD)
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+do
+    local uiFolder = script:FindFirstChild("UI")
+    if uiFolder then
+        local battleUIModule = uiFolder:FindFirstChild("BattleUI")
+        if battleUIModule then
+            local success, err = pcall(function()
+                local BattleUI = require(battleUIModule)
+                BattleUI:Init()
+            end)
+            if success then
+                print("[CLIENT] BattleUI initialized")
+            else
+                warn("[CLIENT] Failed to initialize BattleUI:", err)
+            end
+        end
+    end
+end
+
+-- ═══════════════════════════════════════════════════════════════════════════════
 -- WIRE UP RENDERERS TO DATA AND CONTROLLERS
 -- ═══════════════════════════════════════════════════════════════════════════════
 

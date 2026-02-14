@@ -22,8 +22,9 @@ local Signal = require(ReplicatedStorage.Shared.Modules.Signal)
 local OverworldHUD = {}
 OverworldHUD.__index = OverworldHUD
 
--- Signal for Go to City button
+-- Signals
 OverworldHUD.GoToCityClicked = Signal.new()
+OverworldHUD.FindBattleClicked = Signal.new()
 
 -- ============================================================================
 -- PRIVATE STATE
@@ -39,6 +40,7 @@ local _miniMapFrame: Frame? = nil
 local _loadingFrame: Frame? = nil
 local _errorFrame: Frame? = nil
 local _goToCityButton: TextButton? = nil
+local _findBattleButton: TextButton? = nil
 
 -- ============================================================================
 -- UI CREATION
@@ -227,6 +229,48 @@ local function createHUD(): ScreenGui
     end)
 
     _goToCityButton = goToCityButton
+
+    -- Find Battle button (bottom center, to the right of Go to City)
+    local findBattleButton = Instance.new("TextButton")
+    findBattleButton.Name = "FindBattleButton"
+    findBattleButton.Size = UDim2.new(0, 160, 0, 50)
+    findBattleButton.Position = UDim2.new(0.5, 110, 1, -70)
+    findBattleButton.BackgroundColor3 = Color3.fromRGB(140, 50, 50)
+    findBattleButton.BorderSizePixel = 0
+    findBattleButton.Text = "Find Battle"
+    findBattleButton.TextColor3 = Color3.fromRGB(255, 230, 200)
+    findBattleButton.TextSize = 20
+    findBattleButton.Font = Enum.Font.GothamBold
+    findBattleButton.Parent = screenGui
+
+    local fbCorner = Instance.new("UICorner")
+    fbCorner.CornerRadius = UDim.new(0, 10)
+    fbCorner.Parent = findBattleButton
+
+    local fbStroke = Instance.new("UIStroke")
+    fbStroke.Color = Color3.fromRGB(180, 80, 60)
+    fbStroke.Thickness = 3
+    fbStroke.Parent = findBattleButton
+
+    -- Hover effect
+    findBattleButton.MouseEnter:Connect(function()
+        TweenService:Create(findBattleButton, TweenInfo.new(0.2), {
+            BackgroundColor3 = Color3.fromRGB(170, 65, 65)
+        }):Play()
+    end)
+
+    findBattleButton.MouseLeave:Connect(function()
+        TweenService:Create(findBattleButton, TweenInfo.new(0.2), {
+            BackgroundColor3 = Color3.fromRGB(140, 50, 50)
+        }):Play()
+    end)
+
+    -- Click handler
+    findBattleButton.MouseButton1Click:Connect(function()
+        OverworldHUD.FindBattleClicked:Fire()
+    end)
+
+    _findBattleButton = findBattleButton
 
     -- Loading screen (for teleports)
     local loadingFrame = Instance.new("Frame")
