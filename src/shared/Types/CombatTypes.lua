@@ -169,6 +169,9 @@ export type BattleState = {
         wood: number,
         food: number,
     },
+
+    -- Revenge flag (revenge attacks bypass shields and grant bonus loot)
+    isRevenge: boolean?,
 }
 
 export type BattleResult = {
@@ -196,6 +199,10 @@ export type BattleResult = {
     troopsLost: {[string]: number},
     spellsUsed: {[string]: number},
     buildingsDestroyed: number,
+
+    -- Revenge info
+    isRevenge: boolean?,
+    revengeLootBonus: number?, -- Bonus percentage applied (e.g. 0.20 for 20%)
 }
 
 export type MatchmakingResult = {

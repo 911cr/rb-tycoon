@@ -217,8 +217,14 @@ end
 
 --[[
     Starts a new battle between attacker and defender.
+
+    @param attacker Player - The attacking player
+    @param defenderUserId number - The defender's UserId
+    @param options table? - Optional battle options:
+        - isRevenge: boolean - If true, skip shield check and mark battle as revenge
+    @return StartBattleResult
 ]]
-function CombatService:StartBattle(attacker: Player, defenderUserId: number): StartBattleResult
+function CombatService:StartBattle(attacker: Player, defenderUserId: number, options: {isRevenge: boolean?}?): StartBattleResult
     -- Validate attacker
     local attackerData = DataService:GetPlayerData(attacker)
     if not attackerData then
@@ -254,10 +260,13 @@ function CombatService:StartBattle(attacker: Player, defenderUserId: number): St
         return { success = false, battleId = nil, error = "NO_TROOPS" }
     end
 
-    -- Check defender has shield
-    if defenderData.shield and defenderData.shield.active then
-        if os.time() < defenderData.shield.expiresAt then
-            return { success = false, battleId = nil, error = "DEFENDER_HAS_SHIELD" }
+    -- Check defender has shield (revenge attacks ignore shields)
+    local isRevenge = options and options.isRevenge or false
+    if not isRevenge then
+        if defenderData.shield and defenderData.shield.active then
+            if os.time() < defenderData.shield.expiresAt then
+                return { success = false, battleId = nil, error = "DEFENDER_HAS_SHIELD" }
+            end
         end
     end
 
@@ -287,6 +296,7 @@ function CombatService:StartBattle(attacker: Player, defenderUserId: number): St
         remainingSpells = {}, -- Populated below from player data
         lootAvailable = lootAvailable,
         lootClaimed = { gold = 0, wood = 0, food = 0 },
+        isRevenge = isRevenge,
     }
 
     -- Populate remaining spells from player data
@@ -1085,6 +1095,14 @@ function CombatService:EndBattle(battleId: string): CombatTypes.BattleResult?
         loot.food = math.floor(loot.food * (1 + thBonus))
     end
 
+    -- Revenge loot bonus (+20%)
+    if battle.isRevenge then
+        local revengeBonus = BalanceConfig.Combat.RevengeLootBonus
+        loot.gold = math.floor(loot.gold * (1 + revengeBonus))
+        loot.wood = math.floor(loot.wood * (1 + revengeBonus))
+        loot.food = math.floor(loot.food * (1 + revengeBonus))
+    end
+
     -- Calculate trophies with TH level difference multiplier
     local trophyConfig = BalanceConfig.Combat.Trophies
     local trophiesGained = 0
@@ -1164,6 +1182,8 @@ function CombatService:EndBattle(battleId: string): CombatTypes.BattleResult?
         troopsLost = troopsLost,
         spellsUsed = spellsUsed,
         buildingsDestroyed = buildingsDestroyed,
+        isRevenge = battle.isRevenge or false,
+        revengeLootBonus = battle.isRevenge and BalanceConfig.Combat.RevengeLootBonus or 0,
     }
 
     -- Apply rewards to attacker

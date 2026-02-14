@@ -43,7 +43,7 @@ local _isVisible = false
 -- Events
 local _events: Folder? = nil
 local _requestTeleportToVillage: RemoteEvent? = nil
-local _requestTeleportToBattle: RemoteEvent? = nil
+local _requestBattle: RemoteEvent? = nil
 
 -- ============================================================================
 -- UI CREATION
@@ -523,7 +523,7 @@ function BaseInfoUI:Init()
     _events = ReplicatedStorage:WaitForChild("Events", 5) :: Folder?
     if _events then
         _requestTeleportToVillage = _events:FindFirstChild("RequestTeleportToVillage") :: RemoteEvent?
-        _requestTeleportToBattle = _events:FindFirstChild("RequestTeleportToBattle") :: RemoteEvent?
+        _requestBattle = _events:FindFirstChild("RequestBattle") :: RemoteEvent?
     end
 
     -- Connect button clicks
@@ -543,8 +543,8 @@ function BaseInfoUI:Init()
             local attackButton = buttonsFrame:FindFirstChild("AttackButton") :: TextButton?
             if attackButton then
                 attackButton.MouseButton1Click:Connect(function()
-                    if _currentBaseData and _requestTeleportToBattle then
-                        _requestTeleportToBattle:FireServer(_currentBaseData.userId)
+                    if _currentBaseData and _requestBattle then
+                        _requestBattle:FireServer(_currentBaseData.userId)
                     end
                     self.AttackClicked:Fire(_currentBaseData)
                 end)

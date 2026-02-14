@@ -537,9 +537,11 @@ end
 
     @param attacker Player - The attacking player
     @param defenderUserId number - The defender's UserId (may be offline)
+    @param options table? - Optional battle options (passed through to CombatService):
+        - isRevenge: boolean - If true, skip shield check and grant revenge loot bonus
     @return CreateArenaResult - Success/failure with battleId or error
 ]]
-function BattleArenaService:CreateArena(attacker: Player, defenderUserId: number): CreateArenaResult
+function BattleArenaService:CreateArena(attacker: Player, defenderUserId: number, options: {isRevenge: boolean?}?): CreateArenaResult
     -- 1. VALIDATE ATTACKER
     if not attacker or not attacker:IsA("Player") then
         return { success = false, battleId = nil, error = "INVALID_ATTACKER" }
@@ -584,7 +586,7 @@ function BattleArenaService:CreateArena(attacker: Player, defenderUserId: number
     end
 
     -- 6. START COMBAT (via CombatService -- validates troops, shield, etc.)
-    local combatResult = CombatService:StartBattle(attacker, defenderUserId)
+    local combatResult = CombatService:StartBattle(attacker, defenderUserId, options)
     if not combatResult.success then
         return { success = false, battleId = nil, error = combatResult.error }
     end
@@ -644,6 +646,7 @@ function BattleArenaService:CreateArena(attacker: Player, defenderUserId: number
         buildings = serializedLayout,
         defenderName = defenderData.username or ("Player " .. tostring(defenderUserId)),
         defenderTownHallLevel = defenderData.townHallLevel or 1,
+        isRevenge = options and options.isRevenge or false,
     })
 
     -- 14. FIRE INTERNAL EVENT

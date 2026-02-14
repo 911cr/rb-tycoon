@@ -86,11 +86,17 @@ local ConfirmMatchmaking = createRemoteEvent("ConfirmMatchmaking")
 
 -- Battle events
 local RequestSurrender = createRemoteEvent("RequestSurrender")
+local RequestRevenge = createRemoteEvent("RequestRevenge")
+
+-- Goblin camp events
+local AttackGoblinCamp = createRemoteEvent("AttackGoblinCamp")
+local GetGoblinCamps = createRemoteFunction("GetGoblinCamps")
 
 -- UI data
 local GetOwnBaseData = createRemoteFunction("GetOwnBaseData")
 local GetPlayerResources = createRemoteFunction("GetPlayerResources")
 local GetDefenseLog = createRemoteFunction("GetDefenseLog")
+local GetUnreadAttacks = createRemoteFunction("GetUnreadAttacks")
 
 print("[OVERWORLD] Events folder created")
 
@@ -131,6 +137,7 @@ local OverworldService = loadService("OverworldService")
 local TeleportManager = loadService("TeleportManager")
 local BattleArenaService = loadService("BattleArenaService")
 local MatchmakingService = loadService("MatchmakingService")
+local GoblinCampService = loadService("GoblinCampService")
 
 -- Load shared module references
 local OverworldConfig = require(ReplicatedStorage.Shared.Constants.OverworldConfig)
@@ -157,6 +164,7 @@ initService(TeleportManager, "TeleportManager")
 initService(OverworldService, "OverworldService")
 initService(MatchmakingService, "MatchmakingService")
 initService(BattleArenaService, "BattleArenaService")
+initService(GoblinCampService, "GoblinCampService")
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- STEP 5: Build the overworld environment
@@ -317,6 +325,36 @@ GetDefenseLog.OnServerInvoke = function(player)
     return {}
 end
 
+-- Get unread attacks (attacks since last login) and update lastLoginTime
+GetUnreadAttacks.OnServerInvoke = function(player)
+    local dataServiceModule = ServerScriptService:FindFirstChild("Services")
+        and ServerScriptService.Services:FindFirstChild("DataService")
+    if dataServiceModule then
+        local success, DataService = pcall(require, dataServiceModule)
+        if success and DataService and DataService.GetPlayerData then
+            local data = DataService:GetPlayerData(player)
+            if data then
+                local lastLogin = data.lastLoginTime or 0
+                local unreadAttacks = {}
+
+                if data.defenseLog then
+                    for _, entry in data.defenseLog do
+                        if (entry.timestamp or 0) > lastLogin then
+                            table.insert(unreadAttacks, entry)
+                        end
+                    end
+                end
+
+                -- Update lastLoginTime to current time
+                data.lastLoginTime = os.time()
+
+                return unreadAttacks
+            end
+        end
+    end
+    return {}
+end
+
 -- Surrender: client requests to surrender the current battle
 connectEvent(RequestSurrender, function(player, data)
     if not BattleArenaService then return end
@@ -434,6 +472,7 @@ print("[OVERWORLD] Connecting matchmaking handlers...")
 local _pendingMatches: {[number]: any} = {}
 local _matchmakingRateLimit: {[number]: number} = {} -- [userId] = lastRequestTime
 local MATCHMAKING_RATE_LIMIT = 1 -- seconds between requests
+local _revengeRateLimit: {[number]: number} = {} -- [userId] = lastRequestTime (declared here, used in revenge handler below)
 
 -- Request matchmaking: client asks server to find an opponent
 connectEvent(RequestMatchmaking, function(player)
@@ -572,6 +611,157 @@ end)
 Players.PlayerRemoving:Connect(function(player)
     _pendingMatches[player.UserId] = nil
     _matchmakingRateLimit[player.UserId] = nil
+    _revengeRateLimit[player.UserId] = nil
+end)
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- STEP 7.6: Revenge attack handler
+-- ═══════════════════════════════════════════════════════════════════════════════
+print("[OVERWORLD] Connecting revenge handler...")
+
+local REVENGE_RATE_LIMIT = 5 -- seconds between revenge requests
+
+connectEvent(RequestRevenge, function(player, data)
+    if not BattleArenaService then
+        ServerResponse:FireClient(player, "RequestRevenge", { success = false, error = "SERVICE_UNAVAILABLE" })
+        return
+    end
+
+    -- 1. RATE LIMIT (1 request per 5 seconds)
+    local now = os.clock()
+    local lastRequest = _revengeRateLimit[player.UserId] or 0
+    if now - lastRequest < REVENGE_RATE_LIMIT then
+        ServerResponse:FireClient(player, "RequestRevenge", { success = false, error = "RATE_LIMITED" })
+        return
+    end
+    _revengeRateLimit[player.UserId] = now
+
+    -- 2. TYPE VALIDATION
+    if typeof(data) ~= "table" then
+        ServerResponse:FireClient(player, "RequestRevenge", { success = false, error = "INVALID_DATA" })
+        return
+    end
+
+    local targetUserId = data.targetUserId
+    if typeof(targetUserId) ~= "number" then
+        ServerResponse:FireClient(player, "RequestRevenge", { success = false, error = "INVALID_TARGET" })
+        return
+    end
+
+    -- 3. CHECK PLAYER IS NOT ALREADY IN BATTLE
+    if BattleArenaService:IsPlayerInBattle(player) then
+        ServerResponse:FireClient(player, "RequestRevenge", { success = false, error = "ALREADY_IN_BATTLE" })
+        return
+    end
+
+    -- 4. VERIFY PLAYER WAS ATTACKED BY THIS TARGET (via defenseLog)
+    local dataServiceModule = ServerScriptService:FindFirstChild("Services")
+        and ServerScriptService.Services:FindFirstChild("DataService")
+    if not dataServiceModule then
+        ServerResponse:FireClient(player, "RequestRevenge", { success = false, error = "SERVICE_UNAVAILABLE" })
+        return
+    end
+
+    local dsSuccess, DataService = pcall(require, dataServiceModule)
+    if not dsSuccess or not DataService then
+        ServerResponse:FireClient(player, "RequestRevenge", { success = false, error = "SERVICE_UNAVAILABLE" })
+        return
+    end
+
+    local playerData = DataService:GetPlayerData(player)
+    if not playerData then
+        ServerResponse:FireClient(player, "RequestRevenge", { success = false, error = "NO_PLAYER_DATA" })
+        return
+    end
+
+    -- Check defenseLog for an entry where this target attacked the player
+    local foundValidRevenge = false
+    if playerData.defenseLog then
+        for _, entry in playerData.defenseLog do
+            if entry.attackerId == targetUserId and entry.canRevenge then
+                foundValidRevenge = true
+                break
+            end
+        end
+    end
+
+    if not foundValidRevenge then
+        ServerResponse:FireClient(player, "RequestRevenge", { success = false, error = "NO_REVENGE_AVAILABLE" })
+        return
+    end
+
+    -- 5. CREATE BATTLE ARENA WITH isRevenge FLAG
+    -- Revenge attacks bypass shields (handled by CombatService via isRevenge option)
+    local result = BattleArenaService:CreateArena(player, targetUserId, { isRevenge = true })
+
+    if result.success then
+        -- Mark all revenge entries for this target as used (canRevenge = false)
+        if playerData.defenseLog then
+            for _, entry in playerData.defenseLog do
+                if entry.attackerId == targetUserId then
+                    entry.canRevenge = false
+                end
+            end
+        end
+
+        -- Also mark revengeList entries as used
+        if playerData.revengeList then
+            for _, entry in playerData.revengeList do
+                if entry.attackerId == targetUserId then
+                    entry.used = true
+                end
+            end
+        end
+
+        ServerResponse:FireClient(player, "RequestRevenge", { success = true, battleId = result.battleId })
+        print(string.format("[OVERWORLD] Revenge battle started: %s vs %d (battleId=%s)", player.Name, targetUserId, result.battleId))
+    else
+        ServerResponse:FireClient(player, "RequestRevenge", { success = false, error = result.error })
+    end
+end)
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- STEP 7.7: Goblin camp handlers
+-- ═══════════════════════════════════════════════════════════════════════════════
+print("[OVERWORLD] Connecting goblin camp handlers...")
+
+-- GetGoblinCamps: client asks for active camps with position, name, difficulty, loot preview
+GetGoblinCamps.OnServerInvoke = function(player)
+    if GoblinCampService then
+        return GoblinCampService:GetActiveCamps()
+    end
+    return {}
+end
+
+-- AttackGoblinCamp: client requests to attack a specific goblin camp
+connectEvent(AttackGoblinCamp, function(player, campId)
+    if not GoblinCampService then
+        ServerResponse:FireClient(player, "AttackGoblinCamp", { success = false, error = "SERVICE_UNAVAILABLE" })
+        return
+    end
+
+    -- Type validation
+    if typeof(campId) ~= "string" then
+        ServerResponse:FireClient(player, "AttackGoblinCamp", { success = false, error = "INVALID_CAMP_ID" })
+        return
+    end
+
+    -- Check if player is already in a battle
+    if BattleArenaService and BattleArenaService:IsPlayerInBattle(player) then
+        ServerResponse:FireClient(player, "AttackGoblinCamp", { success = false, error = "ALREADY_IN_BATTLE" })
+        return
+    end
+
+    -- Start the camp attack
+    local success, err = GoblinCampService:StartCampAttack(player, campId)
+    if success then
+        ServerResponse:FireClient(player, "AttackGoblinCamp", { success = true })
+    else
+        ServerResponse:FireClient(player, "AttackGoblinCamp", { success = false, error = err or "ATTACK_FAILED" })
+    end
+
+    print(string.format("[OVERWORLD] AttackGoblinCamp from %s for camp %s: %s",
+        player.Name, tostring(campId), success and "success" or (err or "failed")))
 end)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -605,13 +795,18 @@ Players.PlayerAdded:Connect(function(player)
             end
         end
 
+        -- Spawn player in front of their base gate (gate faces -Z at radius 10)
+        local gateOffset = Vector3.new(0, 0, -25) -- 25 studs in front of base center
+        local playerSpawnPos = spawnPos + gateOffset
+        local facingBase = CFrame.lookAt(playerSpawnPos + Vector3.new(0, 3, 0), spawnPos + Vector3.new(0, 3, 0))
+
         -- Wait for character then position
         player.CharacterAdded:Connect(function(character)
             task.wait(0.1)
 
             local humanoidRootPart = character:WaitForChild("HumanoidRootPart", 5)
             if humanoidRootPart then
-                humanoidRootPart.CFrame = CFrame.new(spawnPos + Vector3.new(0, 3, 0))
+                humanoidRootPart.CFrame = facingBase
             end
 
             -- Set walk speed
@@ -626,7 +821,7 @@ Players.PlayerAdded:Connect(function(player)
         if player.Character then
             local humanoidRootPart = player.Character:FindFirstChild("HumanoidRootPart")
             if humanoidRootPart then
-                humanoidRootPart.CFrame = CFrame.new(spawnPos + Vector3.new(0, 3, 0))
+                humanoidRootPart.CFrame = facingBase
             end
         end
     end
@@ -667,11 +862,15 @@ for _, player in Players:GetPlayers() do
         if OverworldService then
             local spawnPos = OverworldService:RegisterPlayer(player)
 
-            -- If character exists, position it
+            -- Spawn in front of base gate, facing the base
+            local gateOffset = Vector3.new(0, 0, -25)
+            local playerSpawnPos = spawnPos + gateOffset
+            local facingBase = CFrame.lookAt(playerSpawnPos + Vector3.new(0, 3, 0), spawnPos + Vector3.new(0, 3, 0))
+
             if player.Character then
                 local humanoidRootPart = player.Character:FindFirstChild("HumanoidRootPart")
                 if humanoidRootPart then
-                    humanoidRootPart.CFrame = CFrame.new(spawnPos + Vector3.new(0, 3, 0))
+                    humanoidRootPart.CFrame = facingBase
                 end
 
                 local humanoid = player.Character:FindFirstChild("Humanoid") :: Humanoid?
@@ -721,6 +920,16 @@ task.spawn(function()
                 local nearbyBases = OverworldService:GetNearbyBases(player, nil, 20)
                 PositionSync:FireClient(player, nearbyBases)
             end
+        end
+    end
+end)
+
+-- Periodically check for goblin camp respawns
+task.spawn(function()
+    while true do
+        task.wait(60) -- Every 60 seconds
+        if GoblinCampService then
+            GoblinCampService:CheckRespawns()
         end
     end
 end)

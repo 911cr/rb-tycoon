@@ -112,11 +112,19 @@ local function getSpawnPosition(player: Player): Vector3
         if data and data.mapPosition then
             return OverworldConfig.MapToWorld(data.mapPosition.x, data.mapPosition.z)
         end
+
+        -- No saved position — generate a random starting position and save it
+        local startPos = WorldMapData.GenerateStartingPosition()
+        if data then
+            data.mapPosition = startPos
+        end
+
+        return OverworldConfig.MapToWorld(startPos.x, startPos.z)
     end
 
-    -- Default spawn at map center
-    local mapConfig = OverworldConfig.Map
-    return Vector3.new(mapConfig.CenterX, 0, mapConfig.CenterZ)
+    -- Fallback if DataService unavailable — random position
+    local startPos = WorldMapData.GenerateStartingPosition()
+    return OverworldConfig.MapToWorld(startPos.x, startPos.z)
 end
 
 --[[

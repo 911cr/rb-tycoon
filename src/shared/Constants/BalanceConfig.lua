@@ -71,6 +71,9 @@ BalanceConfig.Combat = {
     -- Revenge window (hours)
     RevengeWindow = 24,
 
+    -- Revenge loot bonus (20% more loot on revenge attacks)
+    RevengeLootBonus = 0.20,
+
     -- Trophy calculations
     Trophies = {
         BaseWin = 30,
