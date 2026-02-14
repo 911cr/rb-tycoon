@@ -251,7 +251,7 @@ local BUILDING_EXTERIOR_POSITIONS = {
     Farm5 = { exitPos = Vector3.new(90, 3, 115), buildingPos = Vector3.new(110, 0, 115) },       -- Exit west of barn
     Farm6 = { exitPos = Vector3.new(60, 3, 160), buildingPos = Vector3.new(60, 0, 140) },        -- Exit south of barn (facing south, door on +Z)
     Barracks = { exitPos = Vector3.new(90, 3, 100), buildingPos = Vector3.new(95, 0, 100) },     -- Exit west of building
-    TownHall = { exitPos = Vector3.new(60, 3, 150), buildingPos = Vector3.new(60, 0, 155) },     -- Exit south of building
+    TownHall = { exitPos = Vector3.new(60, 3, 135), buildingPos = Vector3.new(60, 0, 155) },     -- Exit south of building (clear of walls)
 }
 
 -- ============================================================================
