@@ -297,6 +297,64 @@ connectEvent(RedeemCode, function(player, code)
     end
 end)
 
+-- Shop purchases
+local SHOP_ITEMS = {
+    -- Resource packs (gold → wood/food)
+    wood_500  = { type = "resource", resource = "wood", amount = 500,  goldCost = 750 },
+    wood_2k   = { type = "resource", resource = "wood", amount = 2000, goldCost = 2500 },
+    wood_5k   = { type = "resource", resource = "wood", amount = 5000, goldCost = 5000 },
+    food_300  = { type = "resource", resource = "food", amount = 300,  goldCost = 500 },
+    food_1k   = { type = "resource", resource = "food", amount = 1000, goldCost = 1500 },
+    food_3k   = { type = "resource", resource = "food", amount = 3000, goldCost = 4000 },
+    -- Shields (gold → timed protection)
+    shield_1d = { type = "shield", duration = 86400,  goldCost = 1000 },
+    shield_2d = { type = "shield", duration = 172800, goldCost = 2000 },
+    shield_7d = { type = "shield", duration = 604800, goldCost = 4500 },
+}
+
+connectEvent(ShopPurchase, function(player, itemId)
+    if typeof(itemId) ~= "string" then return end
+    local item = SHOP_ITEMS[itemId]
+    if not item then
+        ServerResponse:FireClient(player, "ShopPurchase", { success = false, error = "Invalid item" })
+        return
+    end
+    if not DataService or not DataService.CanAfford then
+        ServerResponse:FireClient(player, "ShopPurchase", { success = false, error = "Server not ready" })
+        return
+    end
+    if not DataService:CanAfford(player, { gold = item.goldCost }) then
+        ServerResponse:FireClient(player, "ShopPurchase", { success = false, error = "Not enough gold" })
+        return
+    end
+
+    DataService:DeductResources(player, { gold = item.goldCost })
+
+    if item.type == "resource" then
+        DataService:UpdateResources(player, { [item.resource] = item.amount })
+    elseif item.type == "shield" then
+        local data = DataService:GetPlayerData(player)
+        if data then
+            local now = os.time()
+            local currentEnd = 0
+            if data.shield and data.shield.expiresAt and data.shield.expiresAt > now then
+                currentEnd = data.shield.expiresAt
+            else
+                currentEnd = now
+            end
+            data.shield = { type = itemId, expiresAt = currentEnd + item.duration }
+            print(string.format("[Shop] %s shield active until %d (+%ds)", player.Name, data.shield.expiresAt, item.duration))
+        end
+    end
+
+    local data = DataService:GetPlayerData(player)
+    if data then
+        SyncPlayerData:FireClient(player, data)
+    end
+    ServerResponse:FireClient(player, "ShopPurchase", { success = true })
+    print(string.format("[Shop] %s purchased %s", player.Name, itemId))
+end)
+
 -- Helper to send food supply updates to client
 local function sendFoodSupplyUpdate(player)
     if DataService and DataService.GetFoodSupplyStatus then

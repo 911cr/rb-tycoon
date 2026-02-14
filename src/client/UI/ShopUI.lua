@@ -2,7 +2,7 @@
 --[[
     ShopUI.lua
 
-    In-game shop for purchasing builders, shields, and resource conversions.
+    In-game shop for purchasing resource packs and farm plot expansions.
     All purchases use gold (earned through gameplay).
 ]]
 
@@ -27,23 +27,29 @@ local _panel: Frame
 local _contentContainer: ScrollingFrame
 local _isVisible = false
 local _initialized = false
-local _currentCategory = "Builders"
+local _currentCategory = "Resources"
 
--- Shop categories (no more Gems category)
+-- Shop categories
 local Categories = {
-    { id = "Builders", name = "Builders", icon = "B" },
-    { id = "Expansion", name = "Expand", icon = "E" },
     { id = "Resources", name = "Resources", icon = "R" },
-    { id = "Boosts", name = "Boosts", icon = "S" },
+    { id = "Defense", name = "Defense", icon = "D" },
+    { id = "Expansion", name = "Expand", icon = "E" },
 }
 
 -- Shop items (all priced in gold)
 local ShopItems = {
-    Builders = {
-        { id = "builder_2", name = "2nd Builder", goldCost = 25000, permanent = true, description = "Build 2 things at once!" },
-        { id = "builder_3", name = "3rd Builder", goldCost = 75000, permanent = true, description = "Build 3 things at once!" },
-        { id = "builder_4", name = "4th Builder", goldCost = 200000, permanent = true, description = "Build 4 things at once!", featured = true },
-        { id = "builder_5", name = "5th Builder", goldCost = 500000, permanent = true, description = "Maximum building speed!" },
+    Resources = {
+        { id = "wood_500", name = "Wood Bundle", resource = "wood", amount = 500, goldCost = 750, description = "Quick wood boost" },
+        { id = "wood_2k", name = "Wood Crate", resource = "wood", amount = 2000, goldCost = 2500, description = "Solid wood supply" },
+        { id = "wood_5k", name = "Wood Shipment", resource = "wood", amount = 5000, goldCost = 5000, description = "Fill your stores!", featured = true },
+        { id = "food_300", name = "Food Basket", resource = "food", amount = 300, goldCost = 500, description = "Quick food boost" },
+        { id = "food_1k", name = "Food Crate", resource = "food", amount = 1000, goldCost = 1500, description = "Feed your workers" },
+        { id = "food_3k", name = "Food Feast", resource = "food", amount = 3000, goldCost = 4000, description = "Fill your stores!", featured = true },
+    },
+    Defense = {
+        { id = "shield_1d", name = "1-Day Shield", goldCost = 1000, shield = true, duration = "24 hours", description = "Protect your village!" },
+        { id = "shield_2d", name = "2-Day Shield", goldCost = 2000, shield = true, duration = "48 hours", description = "Extended protection" },
+        { id = "shield_7d", name = "Week Shield", goldCost = 4500, shield = true, duration = "7 days", description = "Maximum protection!", featured = true },
     },
     Expansion = {
         { id = "farm_plot_2", name = "2nd Farm Plot", goldCost = 1000, woodCost = 500, expansion = true, plotNumber = 2, description = "Build a second farm!" },
@@ -51,19 +57,6 @@ local ShopItems = {
         { id = "farm_plot_4", name = "4th Farm Plot", goldCost = 10000, woodCost = 5000, expansion = true, plotNumber = 4, description = "Expand your farms!", featured = true },
         { id = "farm_plot_5", name = "5th Farm Plot", goldCost = 30000, woodCost = 15000, expansion = true, plotNumber = 5, description = "Feed a larger army!" },
         { id = "farm_plot_6", name = "6th Farm Plot", goldCost = 75000, woodCost = 35000, expansion = true, plotNumber = 6, description = "Maximum farm capacity!", featured = true },
-    },
-    Resources = {
-        { id = "wood_5k", name = "Wood Pack", resource = "wood", amount = 5000, goldCost = 7500, description = "Quick wood boost" },
-        { id = "wood_20k", name = "Wood Crate", resource = "wood", amount = 20000, goldCost = 25000, description = "Large wood shipment" },
-        { id = "wood_50k", name = "Wood Warehouse", resource = "wood", amount = 50000, goldCost = 55000, description = "Massive wood delivery", featured = true },
-        { id = "food_2k", name = "Food Pack", resource = "food", amount = 2000, goldCost = 5000, description = "Quick food boost" },
-        { id = "food_10k", name = "Food Crate", resource = "food", amount = 10000, goldCost = 20000, description = "Large food shipment" },
-        { id = "food_25k", name = "Food Warehouse", resource = "food", amount = 25000, goldCost = 45000, description = "Massive food delivery", featured = true },
-    },
-    Boosts = {
-        { id = "shield_1d", name = "1-Day Shield", goldCost = 10000, duration = "24 hours", description = "Protection from attacks" },
-        { id = "shield_2d", name = "2-Day Shield", goldCost = 18000, duration = "48 hours", description = "Extended protection" },
-        { id = "shield_7d", name = "Week Shield", goldCost = 50000, duration = "7 days", description = "Maximum protection", featured = true },
     },
 }
 
@@ -140,12 +133,10 @@ local function createItemCard(item: any, parent: GuiObject): Frame
     local iconColor = Components.Colors.Gold
     if item.resource then
         iconColor = getResourceColor(item.resource)
+    elseif item.shield then
+        iconColor = Components.Colors.Primary -- Blue for shields
     elseif item.expansion then
         iconColor = Components.Colors.Food -- Green for farm plots
-    elseif item.permanent then
-        iconColor = Components.Colors.Secondary
-    elseif item.duration then
-        iconColor = Components.Colors.Primary
     end
 
     local iconBg = Components.CreateFrame({
@@ -162,12 +153,10 @@ local function createItemCard(item: any, parent: GuiObject): Frame
     local iconText = "?"
     if item.amount then
         iconText = formatNumber(item.amount)
+    elseif item.shield then
+        iconText = "SLD"
     elseif item.expansion then
         iconText = "#" .. (item.plotNumber or "?")
-    elseif item.permanent then
-        iconText = "+" .. (item.id:match("%d+") or "1")
-    elseif item.duration then
-        iconText = "🛡️"
     end
 
     local iconLabel = Components.CreateLabel({
@@ -196,9 +185,8 @@ local function createItemCard(item: any, parent: GuiObject): Frame
     -- Description
     local descText = item.description or ""
     if item.duration then
-        descText = item.duration .. (item.description and " • " .. item.description or "")
+        descText = item.duration .. (descText ~= "" and " - " .. descText or "")
     end
-
     if descText ~= "" then
         local descLabel = Components.CreateLabel({
             Name = "Description",

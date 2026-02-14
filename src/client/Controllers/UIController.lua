@@ -743,6 +743,8 @@ function UIController:Init()
                     Notifications:Warning("Upgrade Town Hall to unlock more farm plots!")
                 elseif errorMsg == "MAX_FARM_PLOTS_REACHED" then
                     Notifications:Info("You have the maximum number of farm plots!")
+                elseif errorMsg == "Not enough gold" then
+                    Notifications:Error("Not enough gold!")
                 else
                     Notifications:Error(action .. " failed")
                 end
