@@ -142,8 +142,8 @@ local function createResourceBar(parent: ScreenGui): Frame
     foodIcon.Position = UDim2.new(0, 4, 0.5, 0)
     foodIcon.AnchorPoint = Vector2.new(0, 0.5)
     foodIcon.BackgroundTransparency = 1
-    foodIcon.Image = "rbxassetid://6031094678" -- Turkey/meat icon (matches resource display)
-    foodIcon.ImageColor3 = Components.Colors.Food or Color3.fromRGB(255, 100, 100)
+    foodIcon.Image = "rbxassetid://2958706766" -- Red apple (matches resource display)
+    foodIcon.ImageColor3 = Color3.new(1, 1, 1)
     foodIcon.ScaleType = Enum.ScaleType.Fit
     foodIcon.Parent = foodSupplyDisplay
 

@@ -47,7 +47,7 @@ local _goToCityButton: TextButton? = nil
 --[[
     Creates a resource display bar.
 ]]
-local function createResourceBar(name: string, color: Color3, parent: Frame): Frame
+local function createResourceBar(name: string, color: Color3, imageId: string, parent: Frame): Frame
     local frame = Instance.new("Frame")
     frame.Name = name .. "Bar"
     frame.Size = UDim2.new(0, 120, 0, 35)
@@ -70,6 +70,17 @@ local function createResourceBar(name: string, color: Color3, parent: Frame): Fr
     local iconCorner = Instance.new("UICorner")
     iconCorner.CornerRadius = UDim.new(0, 4)
     iconCorner.Parent = icon
+
+    local iconImage = Instance.new("ImageLabel")
+    iconImage.Name = "IconImage"
+    iconImage.Size = UDim2.new(0, 19, 0, 19)
+    iconImage.Position = UDim2.new(0.5, 0, 0.5, 0)
+    iconImage.AnchorPoint = Vector2.new(0.5, 0.5)
+    iconImage.BackgroundTransparency = 1
+    iconImage.Image = imageId
+    iconImage.ImageColor3 = Color3.new(1, 1, 1)
+    iconImage.ScaleType = Enum.ScaleType.Fit
+    iconImage.Parent = icon
 
     -- Value
     local valueLabel = Instance.new("TextLabel")
@@ -110,13 +121,13 @@ local function createHUD(): ScreenGui
     resourcesLayout.Parent = resourcesFrame
 
     -- Gold bar
-    createResourceBar("Gold", Color3.fromRGB(255, 200, 50), resourcesFrame)
+    createResourceBar("Gold", Color3.fromRGB(255, 200, 50), "rbxassetid://132769554", resourcesFrame)
 
     -- Wood bar
-    createResourceBar("Wood", Color3.fromRGB(139, 100, 60), resourcesFrame)
+    createResourceBar("Wood", Color3.fromRGB(139, 100, 60), "rbxassetid://16537944090", resourcesFrame)
 
     -- Food bar
-    createResourceBar("Food", Color3.fromRGB(100, 180, 80), resourcesFrame)
+    createResourceBar("Food", Color3.fromRGB(100, 180, 80), "rbxassetid://2958706766", resourcesFrame)
 
     _resourcesFrame = resourcesFrame
 

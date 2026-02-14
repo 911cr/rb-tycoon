@@ -381,23 +381,23 @@ function Components.CreateResourceDisplay(props: {
         Gold = {
             color = Components.Colors.Gold,
             darkColor = Components.Colors.GoldDark,
-            -- Gold bar/ingot image
-            imageId = "rbxassetid://7072725342", -- Gold bar icon
+            -- Gold coins pile
+            imageId = "rbxassetid://132769554", -- Gold coins pile
             fallbackText = "🪙",
         },
         Wood = {
             color = Components.Colors.Wood,
             darkColor = Color3.fromRGB(100, 65, 30),
-            -- Tree image
-            imageId = "rbxassetid://6031763426", -- Tree icon
+            -- Three wood logs
+            imageId = "rbxassetid://16537944090", -- Three wood logs
             fallbackText = "🌲",
         },
         Food = {
             color = Components.Colors.Food,
             darkColor = Color3.fromRGB(70, 130, 50),
-            -- Cooked turkey/meat plate image
-            imageId = "rbxassetid://6031094678", -- Turkey/meat icon
-            fallbackText = "🍗",
+            -- Red apple
+            imageId = "rbxassetid://2958706766", -- Red apple
+            fallbackText = "🍎",
         },
         Gems = {
             color = Components.Colors.Gems,
