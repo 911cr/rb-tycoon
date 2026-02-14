@@ -1442,11 +1442,12 @@ end
 
 -- ============================================================================
 -- NPC WORKER SYSTEM
--- Creates visible animated workers that walk between stations
+-- Creates visible R15 humanoid workers that walk between stations
+-- Falls back to box-part NPCs if R15 creation fails
 -- ============================================================================
 
--- Create a simple NPC worker model
-local function createWorkerNPC(name, position, color)
+-- Fallback: Create a simple box-part NPC worker model (legacy style)
+local function createFallbackNPC(name, position, color)
     local npc = Instance.new("Model")
     npc.Name = name
 
@@ -1553,32 +1554,19 @@ local function createWorkerNPC(name, position, color)
     return npc
 end
 
--- Update NPC status text
-local function setNPCStatus(npc, status)
-    local head = npc:FindFirstChild("Head")
-    if not head then return end
-    local billboard = head:FindFirstChild("StatusBillboard")
-    if not billboard then return end
-    local statusLabel = billboard:FindFirstChild("StatusLabel")
-    if statusLabel then
-        statusLabel.Text = status
-    end
-end
-
--- Move all parts of an NPC to a new position (including carried items)
-local function moveNPC(npc, newPosition)
+-- Fallback: Move all parts of a legacy box NPC to a new position
+local function moveNPCLegacy(npc, newPosition)
     local torso = npc:FindFirstChild("Torso")
     if not torso then return end
 
     local offset = newPosition - (torso.Position - Vector3.new(0, 3, 0))
 
-    -- Move all parts recursively (including those in child models like CarriedItem)
     local function moveParts(parent)
         for _, child in parent:GetChildren() do
             if child:IsA("BasePart") then
                 child.Position = child.Position + offset
             elseif child:IsA("Model") then
-                moveParts(child)  -- Recursively move parts in child models
+                moveParts(child)
             end
         end
     end
@@ -1586,8 +1574,8 @@ local function moveNPC(npc, newPosition)
     moveParts(npc)
 end
 
--- Animate NPC walking to a destination
-local function walkNPCTo(npc, destination, speed, callback)
+-- Fallback: Animate legacy box NPC walking to a destination
+local function walkNPCToLegacy(npc, destination, speed, callback)
     local torso = npc:FindFirstChild("Torso")
     if not torso then return end
 
@@ -1595,10 +1583,6 @@ local function walkNPCTo(npc, destination, speed, callback)
     local endPos = Vector3.new(destination.X, startPos.Y, destination.Z)
     local distance = (endPos - startPos).Magnitude
     local duration = distance / (speed or 8)
-
-    -- Face destination
-    local direction = (endPos - startPos).Unit
-    local lookAt = CFrame.lookAt(startPos, endPos)
 
     local elapsed = 0
     local walkConnection
@@ -1608,11 +1592,9 @@ local function walkNPCTo(npc, destination, speed, callback)
         elapsed = elapsed + dt
         local alpha = math.min(elapsed / duration, 1)
 
-        -- Lerp position
         local currentPos = startPos:Lerp(endPos, alpha)
-        moveNPC(npc, currentPos)
+        moveNPCLegacy(npc, currentPos)
 
-        -- Animate legs
         legPhase = legPhase + dt * 10
         local leftLeg = npc:FindFirstChild("LeftLeg")
         local rightLeg = npc:FindFirstChild("RightLeg")
@@ -1632,7 +1614,6 @@ local function walkNPCTo(npc, destination, speed, callback)
 
         if alpha >= 1 then
             walkConnection:Disconnect()
-            -- Reset leg positions
             if leftLeg then leftLeg.Position = currentPos + Vector3.new(-0.4, 1, 0) end
             if rightLeg then rightLeg.Position = currentPos + Vector3.new(0.4, 1, 0) end
             if leftArm then leftArm.Position = currentPos + Vector3.new(-1, 3, 0) end
@@ -1644,6 +1625,509 @@ local function walkNPCTo(npc, destination, speed, callback)
     return walkConnection
 end
 
+-- Worker appearance definitions for R15 humanoid NPCs
+local WorkerAppearances = {
+    Miner = {
+        torsoColor = Color3.fromRGB(139, 90, 43),
+        legColor = Color3.fromRGB(80, 60, 40),
+        headColor = Color3.fromRGB(255, 205, 170),
+        heightScale = 0.9,
+        widthScale = 1.05,
+    },
+    Collector = {
+        torsoColor = Color3.fromRGB(60, 100, 60),
+        legColor = Color3.fromRGB(50, 50, 40),
+        headColor = Color3.fromRGB(255, 205, 170),
+        heightScale = 1.0,
+        widthScale = 1.0,
+    },
+    Logger = {
+        torsoColor = Color3.fromRGB(180, 50, 50),
+        legColor = Color3.fromRGB(50, 70, 100),
+        headColor = Color3.fromRGB(255, 205, 170),
+        heightScale = 1.05,
+        widthScale = 1.1,
+    },
+    Hauler = {
+        torsoColor = Color3.fromRGB(60, 100, 60),
+        legColor = Color3.fromRGB(60, 50, 40),
+        headColor = Color3.fromRGB(255, 205, 170),
+        heightScale = 1.0,
+        widthScale = 1.1,
+    },
+    Farmer = {
+        torsoColor = Color3.fromRGB(100, 140, 100),
+        legColor = Color3.fromRGB(100, 140, 100),
+        headColor = Color3.fromRGB(255, 205, 170),
+        heightScale = 1.0,
+        widthScale = 1.0,
+    },
+    Carrier = {
+        torsoColor = Color3.fromRGB(60, 100, 60),
+        legColor = Color3.fromRGB(60, 50, 40),
+        headColor = Color3.fromRGB(255, 205, 170),
+        heightScale = 1.0,
+        widthScale = 1.05,
+    },
+}
+
+-- Add role-specific Part-based accessories to an R15 NPC
+local function addWorkerAccessories(npc, workerType)
+    if not workerType then return end
+
+    -- Helper to create a Part welded to a body part
+    local function weldAccessory(parent, props, offset)
+        local part = Instance.new("Part")
+        part.Name = props.name or "Accessory"
+        part.Size = props.size or Vector3.new(0.5, 0.5, 0.5)
+        part.Anchored = false
+        part.CanCollide = false
+        part.Material = props.material or Enum.Material.SmoothPlastic
+        part.Color = props.color or Color3.new(1, 1, 1)
+        if props.shape then
+            part.Shape = props.shape
+        end
+        part.Parent = npc
+
+        local weld = Instance.new("Weld")
+        weld.Part0 = parent
+        weld.Part1 = part
+        weld.C0 = offset
+        weld.Parent = part
+
+        return part
+    end
+
+    local head = npc:FindFirstChild("Head")
+    local upperTorso = npc:FindFirstChild("UpperTorso")
+    local rightHand = npc:FindFirstChild("RightHand") or npc:FindFirstChild("RightLowerArm")
+
+    if workerType == "Miner" then
+        -- Hard hat (yellow cylinder on head)
+        if head then
+            local hat = weldAccessory(head, {
+                name = "HardHat",
+                size = Vector3.new(1.1, 0.4, 1.1),
+                shape = Enum.PartType.Cylinder,
+                material = Enum.Material.SmoothPlastic,
+                color = Color3.fromRGB(255, 210, 50),
+            }, CFrame.new(0, 0.55, 0) * CFrame.Angles(0, 0, math.rad(90)))
+
+            -- Headlamp on hat
+            weldAccessory(hat, {
+                name = "Headlamp",
+                size = Vector3.new(0.2, 0.2, 0.2),
+                material = Enum.Material.Neon,
+                color = Color3.fromRGB(255, 255, 200),
+            }, CFrame.new(0, 0, -0.5))
+        end
+
+        -- Pickaxe welded to right hand
+        if rightHand then
+            local handle = weldAccessory(rightHand, {
+                name = "PickaxeHandle",
+                size = Vector3.new(0.15, 1.6, 0.15),
+                material = Enum.Material.Wood,
+                color = Color3.fromRGB(100, 70, 45),
+            }, CFrame.new(0, -0.8, 0))
+
+            weldAccessory(handle, {
+                name = "PickaxeHead",
+                size = Vector3.new(0.7, 0.25, 0.15),
+                material = Enum.Material.Metal,
+                color = Color3.fromRGB(140, 140, 150),
+            }, CFrame.new(0.35, -0.7, 0))
+        end
+
+    elseif workerType == "Collector" then
+        -- Cloth cap (brown flat part on head)
+        if head then
+            weldAccessory(head, {
+                name = "ClothCap",
+                size = Vector3.new(1.0, 0.2, 1.1),
+                material = Enum.Material.Fabric,
+                color = Color3.fromRGB(120, 80, 50),
+            }, CFrame.new(0, 0.5, -0.1))
+        end
+
+        -- Leather apron on torso
+        if upperTorso then
+            weldAccessory(upperTorso, {
+                name = "Apron",
+                size = Vector3.new(0.9, 1.2, 0.15),
+                material = Enum.Material.Fabric,
+                color = Color3.fromRGB(120, 80, 50),
+            }, CFrame.new(0, -0.2, -0.55))
+        end
+
+    elseif workerType == "Logger" then
+        -- Knit beanie (red cylinder on head)
+        if head then
+            weldAccessory(head, {
+                name = "Beanie",
+                size = Vector3.new(0.9, 0.5, 0.9),
+                shape = Enum.PartType.Cylinder,
+                material = Enum.Material.Fabric,
+                color = Color3.fromRGB(180, 40, 40),
+            }, CFrame.new(0, 0.5, 0) * CFrame.Angles(0, 0, math.rad(90)))
+        end
+
+        -- Axe welded to right hand
+        if rightHand then
+            local axeHandle = weldAccessory(rightHand, {
+                name = "AxeHandle",
+                size = Vector3.new(0.15, 1.8, 0.15),
+                material = Enum.Material.Wood,
+                color = Color3.fromRGB(100, 70, 45),
+            }, CFrame.new(0, -0.9, 0))
+
+            weldAccessory(axeHandle, {
+                name = "AxeHead",
+                size = Vector3.new(0.5, 0.6, 0.15),
+                material = Enum.Material.Metal,
+                color = Color3.fromRGB(160, 160, 170),
+            }, CFrame.new(0.25, -0.8, 0))
+        end
+
+    elseif workerType == "Hauler" then
+        -- Bandana (dark green wedge on head)
+        if head then
+            weldAccessory(head, {
+                name = "Bandana",
+                size = Vector3.new(1.0, 0.3, 1.0),
+                material = Enum.Material.Fabric,
+                color = Color3.fromRGB(40, 80, 40),
+            }, CFrame.new(0, 0.45, 0))
+        end
+
+        -- Shoulder strap across torso
+        if upperTorso then
+            weldAccessory(upperTorso, {
+                name = "ShoulderStrap",
+                size = Vector3.new(0.2, 1.6, 0.1),
+                material = Enum.Material.Fabric,
+                color = Color3.fromRGB(100, 70, 40),
+            }, CFrame.new(-0.2, 0, -0.4) * CFrame.Angles(0, 0, math.rad(30)))
+        end
+
+    elseif workerType == "Farmer" then
+        -- Straw hat (wide brim: cylinder + disc)
+        if head then
+            -- Hat crown
+            weldAccessory(head, {
+                name = "StrawHatCrown",
+                size = Vector3.new(0.9, 0.4, 0.9),
+                shape = Enum.PartType.Cylinder,
+                material = Enum.Material.Fabric,
+                color = Color3.fromRGB(230, 210, 140),
+            }, CFrame.new(0, 0.6, 0) * CFrame.Angles(0, 0, math.rad(90)))
+
+            -- Hat brim
+            weldAccessory(head, {
+                name = "StrawHatBrim",
+                size = Vector3.new(1.6, 0.08, 1.6),
+                shape = Enum.PartType.Cylinder,
+                material = Enum.Material.Fabric,
+                color = Color3.fromRGB(230, 210, 140),
+            }, CFrame.new(0, 0.42, 0) * CFrame.Angles(0, 0, math.rad(90)))
+        end
+
+        -- Seed pouch on hip
+        if upperTorso then
+            weldAccessory(upperTorso, {
+                name = "SeedPouch",
+                size = Vector3.new(0.4, 0.5, 0.3),
+                material = Enum.Material.Fabric,
+                color = Color3.fromRGB(180, 150, 100),
+            }, CFrame.new(0.55, -0.5, 0))
+        end
+
+    elseif workerType == "Carrier" then
+        -- Flat cap (green part on head)
+        if head then
+            weldAccessory(head, {
+                name = "FlatCap",
+                size = Vector3.new(1.0, 0.2, 1.1),
+                material = Enum.Material.Fabric,
+                color = Color3.fromRGB(60, 90, 60),
+            }, CFrame.new(0, 0.5, -0.1))
+        end
+
+        -- Backpack frame (brown parts on back)
+        if upperTorso then
+            -- Main frame
+            weldAccessory(upperTorso, {
+                name = "BackpackFrame",
+                size = Vector3.new(0.8, 1.2, 0.15),
+                material = Enum.Material.Wood,
+                color = Color3.fromRGB(100, 70, 40),
+            }, CFrame.new(0, 0, 0.5))
+
+            -- Side struts
+            weldAccessory(upperTorso, {
+                name = "BackpackStrut1",
+                size = Vector3.new(0.1, 1.0, 0.1),
+                material = Enum.Material.Wood,
+                color = Color3.fromRGB(100, 70, 40),
+            }, CFrame.new(-0.35, 0, 0.55))
+            weldAccessory(upperTorso, {
+                name = "BackpackStrut2",
+                size = Vector3.new(0.1, 1.0, 0.1),
+                material = Enum.Material.Wood,
+                color = Color3.fromRGB(100, 70, 40),
+            }, CFrame.new(0.35, 0, 0.55))
+        end
+    end
+end
+
+-- R15 animation asset IDs (built-in Roblox animations)
+local NPC_ANIMS = {
+    idle = "rbxassetid://507766666",
+    walk = "rbxassetid://507777826",
+}
+
+-- Module-level table to store AnimationTrack references per NPC
+-- Keyed by NPC model, value = {idle = AnimationTrack, walk = AnimationTrack}
+local _npcAnimTracks = {}
+
+-- Create an R15 humanoid NPC worker, or fall back to box-part NPC
+local function createWorkerNPC(name, position, color, workerType)
+    -- Look up appearance config for this worker type
+    local appearance = workerType and WorkerAppearances[workerType]
+    local torsoColor = (appearance and appearance.torsoColor) or color or Color3.fromRGB(100, 80, 60)
+    local legColor = (appearance and appearance.legColor) or Color3.fromRGB(60, 50, 40)
+    local headColor = (appearance and appearance.headColor) or Color3.fromRGB(255, 205, 170)
+
+    -- Try to create R15 humanoid NPC
+    local npc
+    local r15Success = false
+
+    local ok, err = pcall(function()
+        -- Build HumanoidDescription with body colors and scaling
+        local desc = Instance.new("HumanoidDescription")
+        desc.HeadColor = headColor
+        desc.TorsoColor = torsoColor
+        desc.LeftArmColor = torsoColor
+        desc.RightArmColor = torsoColor
+        desc.LeftLegColor = legColor
+        desc.RightLegColor = legColor
+
+        -- Apply per-role scaling
+        if appearance then
+            desc.HeightScale = appearance.heightScale or 1.0
+            desc.WidthScale = appearance.widthScale or 1.0
+            desc.DepthScale = appearance.widthScale or 1.0
+            desc.HeadScale = 1.0
+        end
+
+        -- Create R15 model from description
+        npc = Players:CreateHumanoidModelFromDescription(desc, Enum.HumanoidRigType.R15)
+        npc.Name = name
+
+        -- Clean up the description after use
+        desc:Destroy()
+
+        -- Configure humanoid
+        local humanoid = npc:FindFirstChildOfClass("Humanoid")
+        if humanoid then
+            humanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
+            humanoid.RequiresNeck = false
+            humanoid.WalkSpeed = 8
+        end
+
+        -- Set all parts non-collidable except HumanoidRootPart
+        for _, part in npc:GetDescendants() do
+            if part:IsA("BasePart") then
+                part.CanCollide = false
+            end
+        end
+        local rootPart = npc:FindFirstChild("HumanoidRootPart")
+        if rootPart then
+            rootPart.CanCollide = true
+            rootPart.Anchored = false
+            rootPart:SetNetworkOwner(nil) -- Server authority
+        end
+
+        -- Position the NPC
+        if rootPart then
+            rootPart.CFrame = CFrame.new(position + Vector3.new(0, 3, 0))
+        end
+
+        -- Remove default Animate LocalScript (won't work on server NPCs)
+        local animScript = npc:FindFirstChild("Animate")
+        if animScript then animScript:Destroy() end
+
+        -- Create Animator and load idle animation
+        if humanoid then
+            local animator = humanoid:FindFirstChildOfClass("Animator")
+            if not animator then
+                animator = Instance.new("Animator")
+                animator.Parent = humanoid
+            end
+
+            local idleAnim = Instance.new("Animation")
+            idleAnim.AnimationId = NPC_ANIMS.idle
+            local idleTrack = animator:LoadAnimation(idleAnim)
+            idleTrack.Looped = true
+            idleTrack.Priority = Enum.AnimationPriority.Idle
+            idleTrack:Play()
+            idleAnim:Destroy()
+
+            -- Store walk animation reference for walkNPCTo
+            local walkAnim = Instance.new("Animation")
+            walkAnim.AnimationId = NPC_ANIMS.walk
+            local walkTrack = animator:LoadAnimation(walkAnim)
+            walkTrack.Looped = true
+            walkTrack.Priority = Enum.AnimationPriority.Movement
+            walkAnim:Destroy()
+
+            -- Store animation tracks in module-level table for walkNPCTo access
+            _npcAnimTracks[npc] = {
+                idle = idleTrack,
+                walk = walkTrack,
+            }
+        end
+
+        r15Success = true
+    end)
+
+    if not r15Success then
+        -- Fallback to box-part NPC
+        if err then
+            warn("[NPC] R15 creation failed for " .. name .. ": " .. tostring(err))
+        end
+        npc = createFallbackNPC(name, position, color)
+        return npc
+    end
+
+    -- Add billboard GUI to head
+    local head = npc:FindFirstChild("Head")
+    if head then
+        local billboard = Instance.new("BillboardGui")
+        billboard.Name = "StatusBillboard"
+        billboard.Size = UDim2.new(5, 0, 1.5, 0)
+        billboard.StudsOffset = Vector3.new(0, 3, 0)
+        billboard.AlwaysOnTop = true
+        billboard.Parent = head
+
+        local nameLabel = Instance.new("TextLabel")
+        nameLabel.Name = "NameLabel"
+        nameLabel.Size = UDim2.new(1, 0, 0.5, 0)
+        nameLabel.Position = UDim2.new(0, 0, 0, 0)
+        nameLabel.BackgroundTransparency = 1
+        nameLabel.Text = name
+        nameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+        nameLabel.TextStrokeTransparency = 0.5
+        nameLabel.TextScaled = true
+        nameLabel.Font = Enum.Font.GothamBold
+        nameLabel.Parent = billboard
+
+        local statusLabel = Instance.new("TextLabel")
+        statusLabel.Name = "StatusLabel"
+        statusLabel.Size = UDim2.new(1, 0, 0.5, 0)
+        statusLabel.Position = UDim2.new(0, 0, 0.5, 0)
+        statusLabel.BackgroundTransparency = 1
+        statusLabel.Text = "Idle"
+        statusLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+        statusLabel.TextStrokeTransparency = 0.5
+        statusLabel.TextScaled = true
+        statusLabel.Font = Enum.Font.Gotham
+        statusLabel.Parent = billboard
+    end
+
+    -- Add worker-type-specific accessories (hats, tools, etc.)
+    addWorkerAccessories(npc, workerType)
+
+    return npc
+end
+
+-- Update NPC status text
+local function setNPCStatus(npc, status)
+    local head = npc:FindFirstChild("Head")
+    if not head then return end
+    local billboard = head:FindFirstChild("StatusBillboard")
+    if not billboard then return end
+    local statusLabel = billboard:FindFirstChild("StatusLabel")
+    if statusLabel then
+        statusLabel.Text = status
+    end
+end
+
+-- Move all parts of an NPC to a new position (including carried items)
+local function moveNPC(npc, newPosition)
+    -- R15 path: move via HumanoidRootPart CFrame (joints handle all other parts)
+    local rootPart = npc:FindFirstChild("HumanoidRootPart")
+    if rootPart then
+        rootPart.CFrame = CFrame.new(newPosition + Vector3.new(0, 3, 0))
+        return
+    end
+
+    -- Legacy fallback: move all parts by offset
+    moveNPCLegacy(npc, newPosition)
+end
+
+-- Animate NPC walking to a destination (R15 uses Humanoid:MoveTo, legacy uses lerp)
+local function walkNPCTo(npc, destination, speed, callback)
+    -- Check if this is an R15 NPC (has Humanoid)
+    local humanoid = npc:FindFirstChildOfClass("Humanoid")
+    local rootPart = npc:FindFirstChild("HumanoidRootPart")
+
+    if humanoid and rootPart then
+        -- R15 path: use Humanoid:MoveTo() with walk animation
+        humanoid.WalkSpeed = speed or 8
+
+        -- Get animation tracks from module-level table
+        local tracks = _npcAnimTracks[npc]
+        if tracks and tracks.walk then
+            tracks.walk:Play()
+        end
+
+        -- MoveTo has an 8-second timeout, so we loop until actually arrived
+        local arrived = false
+        local moveConn
+
+        local function doMoveTo()
+            if not npc.Parent then return end -- NPC was destroyed
+            humanoid:MoveTo(Vector3.new(destination.X, rootPart.Position.Y, destination.Z))
+        end
+
+        moveConn = humanoid.MoveToFinished:Connect(function(reached)
+            local dist = (Vector3.new(rootPart.Position.X, 0, rootPart.Position.Z)
+                - Vector3.new(destination.X, 0, destination.Z)).Magnitude
+            if dist < 2 then
+                -- Close enough, we've arrived
+                arrived = true
+                moveConn:Disconnect()
+
+                -- Stop walk animation, resume idle
+                if tracks then
+                    if tracks.walk then tracks.walk:Stop() end
+                    if tracks.idle and not tracks.idle.IsPlaying then tracks.idle:Play() end
+                end
+
+                if callback then callback() end
+            else
+                -- Not there yet (hit 8-sec timeout), re-issue MoveTo
+                doMoveTo()
+            end
+        end)
+
+        doMoveTo()
+
+        -- Return a disconnect-able object for API compatibility
+        return {
+            Disconnect = function()
+                if moveConn then moveConn:Disconnect() end
+                if tracks and tracks.walk then tracks.walk:Stop() end
+                if tracks and tracks.idle and not tracks.idle.IsPlaying then tracks.idle:Play() end
+            end
+        }
+    end
+
+    -- Legacy fallback: box-part NPC with lerp + sinusoidal animation
+    return walkNPCToLegacy(npc, destination, speed, callback)
+end
+
 -- Add carried item visual to NPC (uses welds so items follow NPC movement)
 local function setNPCCarrying(npc, itemType, amount)
     -- Remove existing carried item
@@ -1652,7 +2136,7 @@ local function setNPCCarrying(npc, itemType, amount)
 
     if not itemType or amount <= 0 then return end
 
-    local torso = npc:FindFirstChild("Torso")
+    local torso = npc:FindFirstChild("UpperTorso") or npc:FindFirstChild("Torso")
     if not torso then return end
 
     local carried = Instance.new("Model")
@@ -3654,7 +4138,8 @@ local function createGoldMine()
         local waitingMiner = createWorkerNPC(
             "WaitingMiner" .. i,
             waitingMinerPos,
-            Color3.fromRGB(100, 80, 60)
+            Color3.fromRGB(100, 80, 60),
+            "Miner"
         )
         setNPCStatus(waitingMiner, "For hire!")
         waitingMiner.Parent = mineModel
@@ -3685,13 +4170,15 @@ local function createGoldMine()
         local waitingWorker = table.remove(GoldMineState.waitingMiners, 1)
         if waitingWorker then
             -- Make the waiting worker walk away before destroying
-            local workerTorso = waitingWorker:FindFirstChild("Torso")
-            if workerTorso then
+            local workerRoot = waitingWorker:FindFirstChild("HumanoidRootPart") or waitingWorker:FindFirstChild("Torso")
+            if workerRoot then
                 local walkAwayPos = GoldMineState.positions.workerSpawn + Vector3.new(minerCount * 3, 0, 0)
                 walkNPCTo(waitingWorker, walkAwayPos, 6, function()
+                    _npcAnimTracks[waitingWorker] = nil
                     waitingWorker:Destroy()
                 end)
             else
+                _npcAnimTracks[waitingWorker] = nil
                 waitingWorker:Destroy()
             end
         end
@@ -3709,28 +4196,34 @@ local function createGoldMine()
         local miner = createWorkerNPC(
             "Miner " .. minerId,
             spawnPos,
-            Color3.fromRGB(139, 90, 43) -- Brown work clothes
+            Color3.fromRGB(139, 90, 43), -- Brown work clothes
+            "Miner"
         )
         miner.Parent = mineModel
 
-        -- Create pickaxe for the miner
-        local pickaxe = Instance.new("Part")
-        pickaxe.Name = "Pickaxe"
-        pickaxe.Size = Vector3.new(0.2, 2, 0.2)
-        pickaxe.Anchored = true
-        pickaxe.CanCollide = false
-        pickaxe.Material = Enum.Material.Wood
-        pickaxe.Color = Color3.fromRGB(100, 70, 45)
-        pickaxe.Parent = miner
+        -- Create pickaxe for legacy (box-part) miners only
+        -- R15 miners get their pickaxe from addWorkerAccessories (welded to hand)
+        local pickaxe, pickaxeHead
+        local isR15Miner = miner:FindFirstChild("HumanoidRootPart") ~= nil
+        if not isR15Miner then
+            pickaxe = Instance.new("Part")
+            pickaxe.Name = "Pickaxe"
+            pickaxe.Size = Vector3.new(0.2, 2, 0.2)
+            pickaxe.Anchored = true
+            pickaxe.CanCollide = false
+            pickaxe.Material = Enum.Material.Wood
+            pickaxe.Color = Color3.fromRGB(100, 70, 45)
+            pickaxe.Parent = miner
 
-        local pickaxeHead = Instance.new("Part")
-        pickaxeHead.Name = "PickaxeHead"
-        pickaxeHead.Size = Vector3.new(0.8, 0.3, 0.2)
-        pickaxeHead.Anchored = true
-        pickaxeHead.CanCollide = false
-        pickaxeHead.Material = Enum.Material.Metal
-        pickaxeHead.Color = Color3.fromRGB(140, 140, 150)
-        pickaxeHead.Parent = miner
+            pickaxeHead = Instance.new("Part")
+            pickaxeHead.Name = "PickaxeHead"
+            pickaxeHead.Size = Vector3.new(0.8, 0.3, 0.2)
+            pickaxeHead.Anchored = true
+            pickaxeHead.CanCollide = false
+            pickaxeHead.Material = Enum.Material.Metal
+            pickaxeHead.Color = Color3.fromRGB(140, 140, 150)
+            pickaxeHead.Parent = miner
+        end
 
         local minerData = {
             npc = miner,
@@ -3741,8 +4234,9 @@ local function createGoldMine()
         }
         table.insert(GoldMineState.miners, minerData)
 
-        -- Function to update pickaxe position relative to miner
+        -- Function to update pickaxe position relative to miner (legacy only, R15 uses weld)
         local function updatePickaxePosition()
+            if isR15Miner then return end -- R15 pickaxe is welded, no manual update needed
             local torso = miner:FindFirstChild("Torso")
             if torso then
                 pickaxe.Position = torso.Position + Vector3.new(1, 0.5, 0)
@@ -3777,7 +4271,7 @@ local function createGoldMine()
                         setNPCStatus(miner, string.format("Mining %d/%d", oreMined, oreCapacity))
 
                         -- Rock particle effect
-                        local torso = miner:FindFirstChild("Torso")
+                        local torso = miner:FindFirstChild("UpperTorso") or miner:FindFirstChild("Torso")
                         if torso then
                             local rockParticles = Instance.new("ParticleEmitter")
                             rockParticles.Color = ColorSequence.new(Color3.fromRGB(120, 100, 80))
@@ -3915,7 +4409,8 @@ local function createGoldMine()
         local waitingCollector = createWorkerNPC(
             "WaitingCollector" .. i,
             waitingCollectorPos,
-            Color3.fromRGB(60, 100, 60) -- Green work clothes
+            Color3.fromRGB(60, 100, 60), -- Green work clothes
+            "Collector"
         )
         setNPCStatus(waitingCollector, "For hire!")
         waitingCollector.Parent = mineModel
@@ -3946,13 +4441,15 @@ local function createGoldMine()
         local waitingWorker = table.remove(GoldMineState.waitingCollectors, 1)
         if waitingWorker then
             -- Make the waiting worker walk away before destroying
-            local workerTorso = waitingWorker:FindFirstChild("Torso")
-            if workerTorso then
+            local workerRoot = waitingWorker:FindFirstChild("HumanoidRootPart") or waitingWorker:FindFirstChild("Torso")
+            if workerRoot then
                 local walkAwayPos = GoldMineState.positions.workerSpawn + Vector3.new(collectorCount * 3 + 10, 0, 0)
                 walkNPCTo(waitingWorker, walkAwayPos, 6, function()
+                    _npcAnimTracks[waitingWorker] = nil
                     waitingWorker:Destroy()
                 end)
             else
+                _npcAnimTracks[waitingWorker] = nil
                 waitingWorker:Destroy()
             end
         end
@@ -3970,7 +4467,8 @@ local function createGoldMine()
         local collector = createWorkerNPC(
             "Collector " .. collectorId,
             spawnPos,
-            Color3.fromRGB(60, 100, 60) -- Green work clothes
+            Color3.fromRGB(60, 100, 60), -- Green work clothes
+            "Collector"
         )
         collector.Parent = mineModel
 
@@ -4073,7 +4571,7 @@ local function createGoldMine()
                             end
 
                             -- Gold sparkle effect at chest
-                            local torso = collector:FindFirstChild("Torso")
+                            local torso = collector:FindFirstChild("UpperTorso") or collector:FindFirstChild("Torso")
                             if torso then
                                 local sparkle = Instance.new("ParticleEmitter")
                                 sparkle.Color = ColorSequence.new(Color3.fromRGB(255, 215, 0))
@@ -6337,7 +6835,8 @@ local function createLumberMill()
         local waitingLogger = createWorkerNPC(
             "Logger " .. i,
             waitingLoggerPos,
-            Color3.fromRGB(180, 50, 50) -- Red plaid
+            Color3.fromRGB(180, 50, 50), -- Red plaid
+            "Logger"
         )
         setNPCStatus(waitingLogger, "For hire!")
         waitingLogger.Parent = millModel
@@ -6372,6 +6871,7 @@ local function createLumberMill()
             task.spawn(function()
                 local walkAwayPos = LumberMillState.positions.workerSpawn + Vector3.new(loggerCount * 3, 0, 0)
                 walkNPCTo(waitingWorker, walkAwayPos, 6, function()
+                    _npcAnimTracks[waitingWorker] = nil
                     waitingWorker:Destroy()
                 end)
             end)
@@ -6387,7 +6887,8 @@ local function createLumberMill()
         local logger = createWorkerNPC(
             "Logger " .. loggerId,
             spawnPos,
-            Color3.fromRGB(180, 50, 50) -- Red plaid work clothes
+            Color3.fromRGB(180, 50, 50), -- Red plaid work clothes
+            "Logger"
         )
         logger.Parent = millModel
 
@@ -6441,7 +6942,7 @@ local function createLumberMill()
                             setNPCStatus(logger, string.format("Chopping tree #%d (%d logs)", targetTreeId, logsCollected))
 
                             -- Wood chip particle effect
-                            local torso = logger:FindFirstChild("Torso")
+                            local torso = logger:FindFirstChild("UpperTorso") or logger:FindFirstChild("Torso")
                             if torso then
                                 local chips = Instance.new("ParticleEmitter")
                                 chips.Color = ColorSequence.new(Color3.fromRGB(180, 140, 90))
@@ -6545,7 +7046,8 @@ local function createLumberMill()
         local waitingHauler = createWorkerNPC(
             "Hauler " .. i,
             waitingHaulerPos,
-            Color3.fromRGB(60, 100, 60) -- Green work clothes
+            Color3.fromRGB(60, 100, 60), -- Green work clothes
+            "Hauler"
         )
         setNPCStatus(waitingHauler, "For hire!")
         waitingHauler.Parent = millModel
@@ -6580,6 +7082,7 @@ local function createLumberMill()
             task.spawn(function()
                 local walkAwayPos = LumberMillState.positions.workerSpawn + Vector3.new(haulerCount * 3 + 10, 0, 0)
                 walkNPCTo(waitingWorker, walkAwayPos, 6, function()
+                    _npcAnimTracks[waitingWorker] = nil
                     waitingWorker:Destroy()
                 end)
             end)
@@ -6595,7 +7098,8 @@ local function createLumberMill()
         local hauler = createWorkerNPC(
             "Hauler " .. haulerId,
             spawnPos,
-            Color3.fromRGB(60, 100, 60) -- Green work clothes
+            Color3.fromRGB(60, 100, 60), -- Green work clothes
+            "Hauler"
         )
         hauler.Parent = millModel
 
@@ -6682,7 +7186,7 @@ local function createLumberMill()
                             end
 
                             -- Sparkle effect
-                            local torso = hauler:FindFirstChild("Torso")
+                            local torso = hauler:FindFirstChild("UpperTorso") or hauler:FindFirstChild("Torso")
                             if torso then
                                 local sparkle = Instance.new("ParticleEmitter")
                                 sparkle.Color = ColorSequence.new(Color3.fromRGB(200, 180, 140))
@@ -8730,7 +9234,8 @@ local function createFarm(farmNumber)
         local waitingFarmer = createWorkerNPC(
             "WaitingFarmer" .. i,
             waitingFarmerPos,
-            Color3.fromRGB(100, 140, 100) -- Green overalls
+            Color3.fromRGB(100, 140, 100), -- Green overalls
+            "Farmer"
         )
         setNPCStatus(waitingFarmer, "For hire!")
         waitingFarmer.Parent = farmModel
@@ -8761,13 +9266,15 @@ local function createFarm(farmNumber)
         local waitingWorker = table.remove(FarmState.waitingFarmers, 1)
         if waitingWorker then
             -- Make the waiting worker walk away before destroying
-            local workerTorso = waitingWorker:FindFirstChild("Torso")
-            if workerTorso then
+            local workerRoot = waitingWorker:FindFirstChild("HumanoidRootPart") or waitingWorker:FindFirstChild("Torso")
+            if workerRoot then
                 local walkAwayPos = FarmState.positions.workerSpawn + Vector3.new(farmerCount * 3, 0, 0)
                 walkNPCTo(waitingWorker, walkAwayPos, 6, function()
+                    _npcAnimTracks[waitingWorker] = nil
                     waitingWorker:Destroy()
                 end)
             else
+                _npcAnimTracks[waitingWorker] = nil
                 waitingWorker:Destroy()
             end
         end
@@ -8785,7 +9292,8 @@ local function createFarm(farmNumber)
         local farmer = createWorkerNPC(
             "Farmer " .. farmerId,
             spawnPos,
-            Color3.fromRGB(100, 140, 100) -- Green overalls
+            Color3.fromRGB(100, 140, 100), -- Green overalls
+            "Farmer"
         )
         farmer.Parent = farmModel
 
@@ -8823,7 +9331,7 @@ local function createFarm(farmNumber)
                         setNPCStatus(farmer, string.format("Harvesting %d/%d", cropsHarvested, cropCapacity))
 
                         -- Harvest particle effect
-                        local torso = farmer:FindFirstChild("Torso")
+                        local torso = farmer:FindFirstChild("UpperTorso") or farmer:FindFirstChild("Torso")
                         if torso then
                             local leaves = Instance.new("ParticleEmitter")
                             leaves.Color = ColorSequence.new(Color3.fromRGB(220, 200, 100))
@@ -8978,7 +9486,8 @@ local function createFarm(farmNumber)
         local waitingCarrier = createWorkerNPC(
             "WaitingCarrier" .. i,
             waitingCarrierPos,
-            Color3.fromRGB(60, 100, 60) -- Darker green work clothes
+            Color3.fromRGB(60, 100, 60), -- Darker green work clothes
+            "Carrier"
         )
         setNPCStatus(waitingCarrier, "For hire!")
         waitingCarrier.Parent = farmModel
@@ -9008,13 +9517,15 @@ local function createFarm(farmNumber)
         local waitingWorker = table.remove(FarmState.waitingCarriers, 1)
         if waitingWorker then
             -- Make the waiting worker walk away before destroying
-            local workerTorso = waitingWorker:FindFirstChild("Torso")
-            if workerTorso then
+            local workerRoot = waitingWorker:FindFirstChild("HumanoidRootPart") or waitingWorker:FindFirstChild("Torso")
+            if workerRoot then
                 local walkAwayPos = FarmState.positions.workerSpawn + Vector3.new(carrierCount * 3 + 10, 0, 0)
                 walkNPCTo(waitingWorker, walkAwayPos, 6, function()
+                    _npcAnimTracks[waitingWorker] = nil
                     waitingWorker:Destroy()
                 end)
             else
+                _npcAnimTracks[waitingWorker] = nil
                 waitingWorker:Destroy()
             end
         end
@@ -9033,7 +9544,8 @@ local function createFarm(farmNumber)
         local carrier = createWorkerNPC(
             "Carrier " .. carrierId,
             spawnPos,
-            Color3.fromRGB(60, 100, 60) -- Darker green work clothes
+            Color3.fromRGB(60, 100, 60), -- Darker green work clothes
+            "Carrier"
         )
         carrier.Parent = farmModel
 
@@ -9107,7 +9619,7 @@ local function createFarm(farmNumber)
                             setNPCCarrying(carrier, nil, 0)
 
                             -- Delivery sparkle effect (green for food)
-                            local torso = carrier:FindFirstChild("Torso")
+                            local torso = carrier:FindFirstChild("UpperTorso") or carrier:FindFirstChild("Torso")
                             if torso then
                                 local sparkle = Instance.new("ParticleEmitter")
                                 sparkle.Color = ColorSequence.new(Color3.fromRGB(150, 255, 150))
