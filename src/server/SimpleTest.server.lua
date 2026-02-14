@@ -1255,7 +1255,7 @@ local function createGround()
     local mainPath = Instance.new("Part")
     mainPath.Name = "MainPath"
     mainPath.Size = Vector3.new(12, 0.1, 150)  -- Wider, longer path
-    mainPath.Position = Vector3.new(60, GROUND_Y + 0.05, 90)
+    mainPath.Position = Vector3.new(60, GROUND_Y + 0.15, 90)
     mainPath.Anchored = true
     mainPath.Material = Enum.Material.Cobblestone
     mainPath.Color = Color3.fromRGB(100, 95, 90)
@@ -1265,7 +1265,7 @@ local function createGround()
     local crossPath1 = Instance.new("Part")
     crossPath1.Name = "CrossPath1"
     crossPath1.Size = Vector3.new(90, 0.1, 8)
-    crossPath1.Position = Vector3.new(60, GROUND_Y + 0.05, 50)
+    crossPath1.Position = Vector3.new(60, GROUND_Y + 0.15, 50)
     crossPath1.Anchored = true
     crossPath1.Material = Enum.Material.Cobblestone
     crossPath1.Color = Color3.fromRGB(100, 95, 90)
@@ -1275,7 +1275,7 @@ local function createGround()
     local crossPath2 = Instance.new("Part")
     crossPath2.Name = "CrossPath2"
     crossPath2.Size = Vector3.new(90, 0.1, 8)
-    crossPath2.Position = Vector3.new(60, GROUND_Y + 0.05, 100)
+    crossPath2.Position = Vector3.new(60, GROUND_Y + 0.15, 100)
     crossPath2.Anchored = true
     crossPath2.Material = Enum.Material.Cobblestone
     crossPath2.Color = Color3.fromRGB(100, 95, 90)
@@ -1285,7 +1285,7 @@ local function createGround()
     local plaza = Instance.new("Part")
     plaza.Name = "TownHallPlaza"
     plaza.Size = Vector3.new(40, 0.1, 30)
-    plaza.Position = Vector3.new(60, GROUND_Y + 0.05, 155)
+    plaza.Position = Vector3.new(60, GROUND_Y + 0.15, 155)
     plaza.Anchored = true
     plaza.Material = Enum.Material.Cobblestone
     plaza.Color = Color3.fromRGB(110, 105, 100)
@@ -6080,7 +6080,7 @@ local function createLumberMill()
     -- Dirt path between stations
     local dirtPath = Instance.new("Part")
     dirtPath.Size = Vector3.new(100, 0.2, 8)
-    dirtPath.Position = Vector3.new(baseX, GROUND_Y + 0.1, baseZ)
+    dirtPath.Position = Vector3.new(baseX, GROUND_Y + 0.2, baseZ)
     dirtPath.Anchored = true
     dirtPath.Material = Enum.Material.Ground
     dirtPath.Color = Color3.fromRGB(90, 70, 50)
@@ -6183,7 +6183,7 @@ local function createLumberMill()
     local leftTreeGrove = Instance.new("Part")
     leftTreeGrove.Name = "LeftTreeGroveGround"
     leftTreeGrove.Size = Vector3.new(20, 0.2, 40)
-    leftTreeGrove.Position = Vector3.new(baseX - 25, GROUND_Y + 0.1, baseZ)
+    leftTreeGrove.Position = Vector3.new(baseX - 25, GROUND_Y + 0.2, baseZ)
     leftTreeGrove.Anchored = true
     leftTreeGrove.Material = Enum.Material.Grass
     leftTreeGrove.Color = Color3.fromRGB(60, 100, 45)
@@ -6193,7 +6193,7 @@ local function createLumberMill()
     local rightTreeGrove = Instance.new("Part")
     rightTreeGrove.Name = "RightTreeGroveGround"
     rightTreeGrove.Size = Vector3.new(20, 0.2, 40)
-    rightTreeGrove.Position = Vector3.new(baseX + 25, GROUND_Y + 0.1, baseZ)
+    rightTreeGrove.Position = Vector3.new(baseX + 25, GROUND_Y + 0.2, baseZ)
     rightTreeGrove.Anchored = true
     rightTreeGrove.Material = Enum.Material.Grass
     rightTreeGrove.Color = Color3.fromRGB(60, 100, 45)
@@ -8120,7 +8120,7 @@ local function createFarm(farmNumber)
     -- Dirt paths between areas
     local mainPath = Instance.new("Part")
     mainPath.Size = Vector3.new(80, 0.2, 6)
-    mainPath.Position = Vector3.new(baseX, GROUND_Y + 0.1, baseZ)
+    mainPath.Position = Vector3.new(baseX, GROUND_Y + 0.2, baseZ)
     mainPath.Anchored = true
     mainPath.Material = Enum.Material.Ground
     mainPath.Color = Color3.fromRGB(100, 80, 55)
@@ -8440,7 +8440,7 @@ local function createFarm(farmNumber)
     local centralPath = Instance.new("Part")
     centralPath.Name = "CentralPath"
     centralPath.Size = Vector3.new(10, 0.2, 60)
-    centralPath.Position = Vector3.new(baseX, GROUND_Y + 0.1, baseZ)
+    centralPath.Position = Vector3.new(baseX, GROUND_Y + 0.2, baseZ)
     centralPath.Anchored = true
     centralPath.Material = Enum.Material.Ground
     centralPath.Color = Color3.fromRGB(100, 80, 55)
@@ -10575,7 +10575,7 @@ local function createBarracks()
     local trainingPit = Instance.new("Part")
     trainingPit.Name = "TrainingPit"
     trainingPit.Size = Vector3.new(40, 0.3, 40)
-    trainingPit.Position = Vector3.new(baseX, GROUND_Y + 0.1, baseZ)
+    trainingPit.Position = Vector3.new(baseX, GROUND_Y + 0.2, baseZ)
     trainingPit.Anchored = true
     trainingPit.Material = Enum.Material.Sand
     trainingPit.Color = Color3.fromRGB(150, 130, 95)
@@ -10852,7 +10852,7 @@ local function createBarracks()
     local trainingYard = Instance.new("Part")
     trainingYard.Name = "TrainingYard"
     trainingYard.Size = Vector3.new(16, 0.2, 14)
-    trainingYard.Position = Vector3.new(baseX, GROUND_Y + 0.1, baseZ + 16)
+    trainingYard.Position = Vector3.new(baseX, GROUND_Y + 0.2, baseZ + 16)
     trainingYard.Anchored = true
     trainingYard.Material = Enum.Material.Ground
     trainingYard.Color = Color3.fromRGB(120, 100, 80)
@@ -11351,7 +11351,7 @@ local function createBarracks()
     local armyCamp = Instance.new("Part")
     armyCamp.Name = "ArmyCamp"
     armyCamp.Size = Vector3.new(12, 0.2, 10)
-    armyCamp.Position = Vector3.new(baseX + 15, GROUND_Y + 0.1, baseZ - 5)
+    armyCamp.Position = Vector3.new(baseX + 15, GROUND_Y + 0.2, baseZ - 5)
     armyCamp.Anchored = true
     armyCamp.Material = Enum.Material.Grass
     armyCamp.Color = Color3.fromRGB(80, 120, 60)
@@ -12334,7 +12334,7 @@ local function createTownHall()
     -- Decorative floor pattern (darker marble inlay)
     local floorPattern = Instance.new("Part")
     floorPattern.Size = Vector3.new(100, 0.1, 80)
-    floorPattern.Position = Vector3.new(baseX, GROUND_Y + 0.05, baseZ)
+    floorPattern.Position = Vector3.new(baseX, GROUND_Y + 0.15, baseZ)
     floorPattern.Anchored = true
     floorPattern.Material = Enum.Material.Marble
     floorPattern.Color = Color3.fromRGB(180, 175, 165)
@@ -12414,7 +12414,7 @@ local function createTownHall()
     local carpet = Instance.new("Part")
     carpet.Name = "RoyalCarpet"
     carpet.Size = Vector3.new(6, 0.1, 60)
-    carpet.Position = Vector3.new(baseX, GROUND_Y + 0.05, baseZ)
+    carpet.Position = Vector3.new(baseX, GROUND_Y + 0.15, baseZ)
     carpet.Anchored = true
     carpet.Material = Enum.Material.Fabric
     carpet.Color = Color3.fromRGB(150, 50, 50)
