@@ -102,6 +102,46 @@ local function getPlayerData(player: Player): (number, number, boolean, string?,
 end
 
 --[[
+    Minimum distance between any two player bases (in map units).
+]]
+local MIN_BASE_DISTANCE = 40
+
+--[[
+    Checks if a map position is too close to any existing player base.
+
+    @param pos {x: number, z: number} - The candidate position
+    @return boolean - True if the position is occupied (too close to another base)
+]]
+local function isPositionOccupied(pos: {x: number, z: number}): boolean
+    for _, state in _players do
+        local dx = state.position.X - pos.x
+        local dz = state.position.Z - pos.z
+        local dist = math.sqrt(dx * dx + dz * dz)
+        if dist < MIN_BASE_DISTANCE then
+            return true
+        end
+    end
+    return false
+end
+
+--[[
+    Generates a starting position that doesn't overlap with existing bases.
+    Tries up to 20 times before accepting whatever it gets.
+
+    @return {x: number, z: number} - A non-overlapping map position
+]]
+local function generateNonOverlappingPosition(): {x: number, z: number}
+    for _ = 1, 20 do
+        local candidate = WorldMapData.GenerateStartingPosition()
+        if not isPositionOccupied(candidate) then
+            return candidate
+        end
+    end
+    -- After 20 attempts, accept the last random position (map is large enough this is rare)
+    return WorldMapData.GenerateStartingPosition()
+end
+
+--[[
     Gets the spawn position for a player based on their map position.
 ]]
 local function getSpawnPosition(player: Player): Vector3
@@ -113,8 +153,8 @@ local function getSpawnPosition(player: Player): Vector3
             return OverworldConfig.MapToWorld(data.mapPosition.x, data.mapPosition.z)
         end
 
-        -- No saved position — generate a random starting position and save it
-        local startPos = WorldMapData.GenerateStartingPosition()
+        -- No saved position — generate a non-overlapping random position and save it
+        local startPos = generateNonOverlappingPosition()
         if data then
             data.mapPosition = startPos
         end
@@ -122,8 +162,8 @@ local function getSpawnPosition(player: Player): Vector3
         return OverworldConfig.MapToWorld(startPos.x, startPos.z)
     end
 
-    -- Fallback if DataService unavailable — random position
-    local startPos = WorldMapData.GenerateStartingPosition()
+    -- Fallback if DataService unavailable — non-overlapping random position
+    local startPos = generateNonOverlappingPosition()
     return OverworldConfig.MapToWorld(startPos.x, startPos.z)
 end
 
