@@ -28,6 +28,38 @@ task.defer(function()
     end
 end)
 
+-- Helper: deduct resources from player, sync HUD, return true/false
+local function deductPlayerResources(player, costs, contextMsg)
+    if not DataService then
+        print("[" .. contextMsg .. "] DataService not available - demo mode")
+        return true
+    end
+    local playerData = DataService:GetPlayerData(player)
+    if not playerData then return false end
+    if costs.gold and (playerData.resources.gold or 0) < costs.gold then
+        print(string.format("[%s] %s: Not enough gold! Need %d, have %d",
+            contextMsg, player.Name, costs.gold, playerData.resources.gold or 0))
+        return false
+    end
+    if costs.food and (playerData.resources.food or 0) < costs.food then
+        print(string.format("[%s] %s: Not enough food! Need %d, have %d",
+            contextMsg, player.Name, costs.food, playerData.resources.food or 0))
+        return false
+    end
+    if costs.wood and (playerData.resources.wood or 0) < costs.wood then
+        print(string.format("[%s] %s: Not enough wood! Need %d, have %d",
+            contextMsg, player.Name, costs.wood, playerData.resources.wood or 0))
+        return false
+    end
+    DataService:DeductResources(player, costs)
+    local Events = ReplicatedStorage:FindFirstChild("Events")
+    if Events then
+        local SyncPlayerData = Events:FindFirstChild("SyncPlayerData")
+        if SyncPlayerData then SyncPlayerData:FireClient(player, playerData) end
+    end
+    return true
+end
+
 -- Constants
 local GROUND_Y = 2
 local WALL_THICKNESS = 1
@@ -2158,15 +2190,15 @@ local function getCollectorStats(level)
 end
 
 local MinerCosts = {
-    [1] = { gold = 500, food = 100 },
-    [2] = { gold = 1500, food = 300 },
-    [3] = { gold = 5000, food = 1000 },
+    [1] = { gold = 1500, food = 300 },
+    [2] = { gold = 4500, food = 900 },
+    [3] = { gold = 15000, food = 3000 },
 }
 
 local CollectorCosts = {
-    [1] = { gold = 300, food = 50 },
-    [2] = { gold = 1000, food = 200 },
-    [3] = { gold = 3000, food = 600 },
+    [1] = { gold = 900, food = 150 },
+    [2] = { gold = 3000, food = 600 },
+    [3] = { gold = 9000, food = 1800 },
 }
 
 local function getPlayerOre(player)
@@ -3646,6 +3678,7 @@ local function createGoldMine()
         end
 
         local cost = MinerCosts[minerCount + 1]
+        if not deductPlayerResources(player, {gold = cost.gold, food = cost.food}, "GoldMine") then return end
         local minerId = minerCount + 1
 
         -- Remove one waiting worker from the stand (they walk away to work)
@@ -3906,6 +3939,7 @@ local function createGoldMine()
         end
 
         local cost = CollectorCosts[collectorCount + 1]
+        if not deductPlayerResources(player, {gold = cost.gold, food = cost.food}, "GoldMine") then return end
         local collectorId = collectorCount + 1
 
         -- Remove one waiting worker from the stand (they walk away to work)
@@ -4293,7 +4327,7 @@ local function createGoldMine()
         pickaxeBtn.MouseButton1Click:Connect(function()
             local currentLevel = GoldMineState.equipment.pickaxeLevel
             local nextStats = getPickaxeStats(currentLevel + 1)
-            -- TODO: Check gold and deduct
+            if not deductPlayerResources(player, {gold = nextStats.upgradeCost}, "GoldMine") then return end
             GoldMineState.equipment.pickaxeLevel = currentLevel + 1
             addMineXP(50)
             print(string.format("[Upgrade] %s upgraded Pickaxe to Lv%d! Now %d ore/swing (-%d gold)",
@@ -4305,6 +4339,7 @@ local function createGoldMine()
         smelterBtn.MouseButton1Click:Connect(function()
             local currentLevel = GoldMineState.equipment.smelterLevel
             local nextStats = getSmelterStats(currentLevel + 1)
+            if not deductPlayerResources(player, {gold = nextStats.upgradeCost}, "GoldMine") then return end
             GoldMineState.equipment.smelterLevel = currentLevel + 1
             addMineXP(50)
             print(string.format("[Upgrade] %s upgraded Smelter to Lv%d! Now %d gold/ore, %.1fs (-%d gold)",
@@ -4319,6 +4354,7 @@ local function createGoldMine()
         minersBtn.MouseButton1Click:Connect(function()
             local currentLevel = GoldMineState.equipment.minerLevel
             local nextStats = getMinerStats(currentLevel + 1)
+            if not deductPlayerResources(player, {gold = nextStats.upgradeCost}, "GoldMine") then return end
             GoldMineState.equipment.minerLevel = currentLevel + 1
             addMineXP(50)
             print(string.format("[Upgrade] %s upgraded Miners to Lv%d! Now %d ore capacity (-%d gold)",
@@ -4333,6 +4369,7 @@ local function createGoldMine()
         collectorsBtn.MouseButton1Click:Connect(function()
             local currentLevel = GoldMineState.equipment.collectorLevel
             local nextStats = getCollectorStats(currentLevel + 1)
+            if not deductPlayerResources(player, {gold = nextStats.upgradeCost}, "GoldMine") then return end
             GoldMineState.equipment.collectorLevel = currentLevel + 1
             addMineXP(50)
             print(string.format("[Upgrade] %s upgraded Collectors to Lv%d! Now %d gold capacity (-%d gold)",
@@ -4887,15 +4924,15 @@ local function getHaulerStats(level)
 end
 
 local LoggerCosts = {
-    [1] = { gold = 400, food = 80 },
-    [2] = { gold = 1200, food = 250 },
-    [3] = { gold = 4000, food = 800 },
+    [1] = { gold = 1200, food = 240 },
+    [2] = { gold = 3600, food = 750 },
+    [3] = { gold = 12000, food = 2400 },
 }
 
 local HaulerCosts = {
-    [1] = { gold = 300, food = 60 },
-    [2] = { gold = 900, food = 180 },
-    [3] = { gold = 2700, food = 540 },
+    [1] = { gold = 900, food = 180 },
+    [2] = { gold = 2700, food = 540 },
+    [3] = { gold = 8100, food = 1620 },
 }
 
 local function getPlayerLogs(player)
@@ -6324,6 +6361,7 @@ local function createLumberMill()
         end
 
         local cost = LoggerCosts[loggerCount + 1]
+        if not deductPlayerResources(player, {gold = cost.gold, food = cost.food}, "LumberMill") then return end
         local loggerId = loggerCount + 1
 
         -- Remove one waiting worker from the stand (they walk away to work)
@@ -6531,6 +6569,7 @@ local function createLumberMill()
         end
 
         local cost = HaulerCosts[haulerCount + 1]
+        if not deductPlayerResources(player, {gold = cost.gold, food = cost.food}, "LumberMill") then return end
         local haulerId = haulerCount + 1
 
         -- Remove one waiting worker from the stand (they walk away to work)
@@ -6891,6 +6930,7 @@ local function createLumberMill()
             Color3.fromRGB(139, 90, 43), function()
                 local nextLevel = LumberMillState.equipment.axeLevel + 1
                 local nextStats = getAxeStats(nextLevel)
+                if not deductPlayerResources(player, {gold = nextStats.upgradeCost}, "LumberMill") then return end
                 LumberMillState.equipment.axeLevel = nextLevel
                 addLumberXP(50)
                 print(string.format("[Upgrade] %s upgraded Axe to Lv%d! Now %d logs/chop", player.Name, nextLevel, nextStats.logsPerChop))
@@ -6902,6 +6942,7 @@ local function createLumberMill()
             Color3.fromRGB(180, 140, 90), function()
                 local nextLevel = LumberMillState.equipment.sawmillLevel + 1
                 local nextStats = getSawmillStats(nextLevel)
+                if not deductPlayerResources(player, {gold = nextStats.upgradeCost}, "LumberMill") then return end
                 LumberMillState.equipment.sawmillLevel = nextLevel
                 addLumberXP(50)
                 print(string.format("[Upgrade] %s upgraded Sawmill to Lv%d!", player.Name, nextLevel))
@@ -6913,6 +6954,7 @@ local function createLumberMill()
             Color3.fromRGB(180, 50, 50), function()
                 local nextLevel = LumberMillState.equipment.loggerLevel + 1
                 local nextStats = getLoggerStats(nextLevel)
+                if not deductPlayerResources(player, {gold = nextStats.upgradeCost}, "LumberMill") then return end
                 LumberMillState.equipment.loggerLevel = nextLevel
                 addLumberXP(50)
                 print(string.format("[Upgrade] %s upgraded Loggers to Lv%d!", player.Name, nextLevel))
@@ -6924,6 +6966,7 @@ local function createLumberMill()
             Color3.fromRGB(60, 150, 60), function()
                 local nextLevel = LumberMillState.equipment.haulerLevel + 1
                 local nextStats = getHaulerStats(nextLevel)
+                if not deductPlayerResources(player, {gold = nextStats.upgradeCost}, "LumberMill") then return end
                 LumberMillState.equipment.haulerLevel = nextLevel
                 addLumberXP(50)
                 print(string.format("[Upgrade] %s upgraded Haulers to Lv%d!", player.Name, nextLevel))
@@ -7084,15 +7127,15 @@ local function getCarrierStats(level)
 end
 
 local FarmerCosts = {
-    [1] = { gold = 400, food = 80 },
-    [2] = { gold = 1200, food = 250 },
-    [3] = { gold = 4000, food = 800 },
+    [1] = { gold = 1200, food = 240 },
+    [2] = { gold = 3600, food = 750 },
+    [3] = { gold = 12000, food = 2400 },
 }
 
 local CarrierCosts = {
-    [1] = { gold = 300, food = 60 },
-    [2] = { gold = 900, food = 180 },
-    [3] = { gold = 2700, food = 540 },
+    [1] = { gold = 900, food = 180 },
+    [2] = { gold = 2700, food = 540 },
+    [3] = { gold = 8100, food = 1620 },
 }
 
 -- Crop types and their properties
@@ -8711,6 +8754,7 @@ local function createFarm(farmNumber)
         end
 
         local cost = FarmerCosts[farmerCount + 1]
+        if not deductPlayerResources(player, {gold = cost.gold, food = cost.food}, "Farm") then return end
         local farmerId = farmerCount + 1
 
         -- Remove one waiting worker from the stand (they walk away to work)
@@ -8958,6 +9002,7 @@ local function createFarm(farmNumber)
         end
 
         local cost = CarrierCosts[carrierCount + 1]
+        if not deductPlayerResources(player, {gold = cost.gold, food = cost.food}, "Farm") then return end
 
         -- Remove one waiting worker from the stand (they walk away to work)
         local waitingWorker = table.remove(FarmState.waitingCarriers, 1)
@@ -9323,7 +9368,7 @@ local function createFarm(farmNumber)
         hoeBtn.MouseButton1Click:Connect(function()
             local currentLevel = FarmState.equipment.hoeLevel
             local nextStats = getHoeStats(currentLevel + 1)
-            -- TODO: Check gold and deduct
+            if not deductPlayerResources(player, {gold = nextStats.upgradeCost}, "Farm") then return end
             FarmState.equipment.hoeLevel = currentLevel + 1
             addFarmXP(50)
             print(string.format("[Upgrade] %s upgraded Hoe to Lv%d! Now %d crops/harvest (-%d gold)",
@@ -9335,6 +9380,7 @@ local function createFarm(farmNumber)
         waterCanBtn.MouseButton1Click:Connect(function()
             local currentLevel = FarmState.equipment.wateringCanLevel
             local nextStats = getWateringCanStats(currentLevel + 1)
+            if not deductPlayerResources(player, {gold = nextStats.upgradeCost}, "Farm") then return end
             FarmState.equipment.wateringCanLevel = currentLevel + 1
             addFarmXP(50)
             print(string.format("[Upgrade] %s upgraded Watering Can to Lv%d! Now %d plots/water (-%d gold)",
@@ -9345,6 +9391,7 @@ local function createFarm(farmNumber)
         windmillBtn.MouseButton1Click:Connect(function()
             local currentLevel = FarmState.equipment.windmillLevel
             local nextStats = getWindmillStatsFunc(currentLevel + 1)
+            if not deductPlayerResources(player, {gold = nextStats.upgradeCost}, "Farm") then return end
             FarmState.equipment.windmillLevel = currentLevel + 1
             addFarmXP(50)
             print(string.format("[Upgrade] %s upgraded Windmill to Lv%d! Now %d grain/crop, %.1fs (-%d gold)",
@@ -9355,6 +9402,7 @@ local function createFarm(farmNumber)
         farmersBtn.MouseButton1Click:Connect(function()
             local currentLevel = FarmState.equipment.farmerLevel
             local nextStats = getFarmerStats(currentLevel + 1)
+            if not deductPlayerResources(player, {gold = nextStats.upgradeCost}, "Farm") then return end
             FarmState.equipment.farmerLevel = currentLevel + 1
             addFarmXP(50)
             print(string.format("[Upgrade] %s upgraded Farmers to Lv%d! Now %d crop capacity (-%d gold)",
@@ -9365,6 +9413,7 @@ local function createFarm(farmNumber)
         carriersBtn.MouseButton1Click:Connect(function()
             local currentLevel = FarmState.equipment.carrierLevel
             local nextStats = getCarrierStats(currentLevel + 1)
+            if not deductPlayerResources(player, {gold = nextStats.upgradeCost}, "Farm") then return end
             FarmState.equipment.carrierLevel = currentLevel + 1
             addFarmXP(50)
             print(string.format("[Upgrade] %s upgraded Carriers to Lv%d! Now %d food capacity (-%d gold)",
@@ -10863,6 +10912,7 @@ local function createBarracks()
         end
 
         local cost = DrillSergeantCosts[numSergeants + 1]
+        if not deductPlayerResources(player, {gold = cost.gold, food = cost.food}, "Barracks") then return end
         print(string.format("[Barracks] Hiring Drill Sergeant #%d (Cost: %d Gold, %d Food)",
             numSergeants + 1, cost.gold, cost.food))
 
@@ -11925,7 +11975,7 @@ local function createTownHall()
                             return
                         end
 
-                        -- TODO: Check and deduct resources
+                        if not deductPlayerResources(player, {gold = cost.gold}, "TownHall") then return end
                         print(string.format("[TownHall] %s unlocked gem slot %d for %d gold!",
                             player.Name, slotNum, cost.gold))
                         TownHallState.jewelCase.maxSlots = slotNum
