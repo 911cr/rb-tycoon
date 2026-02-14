@@ -101,6 +101,9 @@ local DonateTroops = createRemoteEvent("DonateTroops")
 local ShopPurchase = createRemoteEvent("ShopPurchase")
 local RedeemCode = createRemoteEvent("RedeemCode")
 
+-- Action button events
+local ActionButtonPressed = createRemoteEvent("ActionButtonPressed")
+
 -- Tutorial events
 local CompleteTutorial = createRemoteEvent("CompleteTutorial")
 

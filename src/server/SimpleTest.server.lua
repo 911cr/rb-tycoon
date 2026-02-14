@@ -42,6 +42,9 @@ local function isVillageOwner(player)
     return _playerRoles[player.UserId] == "owner"
 end
 
+-- Action button callback registry: maps Part → callback function
+local _interactionCallbacks = {}
+
 -- Helper: deduct resources from player, sync HUD, return true/false
 local function deductPlayerResources(player, costs, contextMsg)
     if not DataService then
@@ -324,12 +327,15 @@ local function createInteraction(part, actionText, objectText, holdDuration, cal
     local prompt = Instance.new("ProximityPrompt")
     prompt.ActionText = actionText or "Interact"
     prompt.ObjectText = objectText or ""
-    prompt.HoldDuration = holdDuration or 0.5
+    prompt.HoldDuration = 0 -- Instant activation for both ProximityPrompt and action button
     prompt.MaxActivationDistance = 8
     prompt.RequiresLineOfSight = false
     prompt.Parent = part
 
     if callback then
+        -- Register callback for action button RemoteEvent
+        _interactionCallbacks[part] = callback
+
         prompt.Triggered:Connect(function(player)
             -- Visitor guard: only the village owner can interact with buildings
             if not isVillageOwner(player) then
@@ -341,6 +347,28 @@ local function createInteraction(part, actionText, objectText, holdDuration, cal
 
     return prompt
 end
+
+-- Action button: handle instant interaction from client button
+task.defer(function()
+    local Events = ReplicatedStorage:WaitForChild("Events", 10)
+    if not Events then return end
+    local ActionButtonPressed = Events:WaitForChild("ActionButtonPressed", 10)
+    if not ActionButtonPressed then return end
+
+    ActionButtonPressed.OnServerEvent:Connect(function(player, targetPart)
+        if not isVillageOwner(player) then return end
+        if typeof(targetPart) ~= "Instance" then return end
+        local callback = _interactionCallbacks[targetPart]
+        if not callback then return end
+        -- Validate distance (MaxActivationDistance=8 + 4 tolerance)
+        local char = player.Character
+        if not char then return end
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        if not hrp then return end
+        if (hrp.Position - targetPart.Position).Magnitude > 12 then return end
+        callback(player)
+    end)
+end)
 
 -- ============================================================================
 -- TELEPORT SYSTEM

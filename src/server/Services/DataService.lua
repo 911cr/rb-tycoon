@@ -185,6 +185,15 @@ local function validatePlayerData(data: Types.PlayerData): Types.PlayerData
     data.resources.wood = math.max(0, sanitizeNumber(data.resources.wood, 0))
     data.resources.food = math.max(0, sanitizeNumber(data.resources.food, 0))
 
+    -- If ALL resources are 0, grant starting resources so the player isn't stuck
+    if data.resources.gold == 0 and data.resources.wood == 0 and data.resources.food == 0 then
+        local startingResources = BalanceConfig.Economy.StartingResources
+        data.resources.gold = startingResources.gold
+        data.resources.wood = startingResources.wood
+        data.resources.food = startingResources.food
+        print(string.format("[DataService] Granted starting resources to player %d (all were 0)", data.userId or 0))
+    end
+
     -- Ensure progression is valid
     data.townHallLevel = math.clamp(data.townHallLevel or 1, 1, 10)
 
@@ -348,6 +357,16 @@ end
 function DataService:LoadPlayerData(player: Player): Types.PlayerDataResult
     local userId = player.UserId
     local username = player.Name
+
+    -- Already loaded (e.g., player joined before handler was connected and was
+    -- loaded via the existing-players loop in Init). Return cached data.
+    if _playerData[userId] then
+        return {
+            success = true,
+            data = _playerData[userId],
+            error = nil,
+        }
+    end
 
     -- In local mode, skip session lock and just create default data
     if _useLocalData then
@@ -701,6 +720,29 @@ function DataService:Init()
             player:Kick("Failed to load data: " .. (result.error or "Unknown error"))
         end
     end)
+
+    -- Load data for players who joined BEFORE this handler was connected.
+    -- This happens in reserved servers (Players.PlayerAdded:Wait() in Main
+    -- captures the first player before Init runs) and can happen in Studio
+    -- if the player loads faster than service initialization.
+    for _, player in Players:GetPlayers() do
+        if not _playerData[player.UserId] then
+            local result = self:LoadPlayerData(player)
+            if result.success and result.data then
+                -- Sync to client in case they already requested data and got nil
+                local Events = ReplicatedStorage:FindFirstChild("Events")
+                if Events then
+                    local SyncPlayerData = Events:FindFirstChild("SyncPlayerData")
+                    if SyncPlayerData then
+                        SyncPlayerData:FireClient(player, result.data)
+                    end
+                end
+                print(string.format("[DataService] Loaded data for existing player: %s", player.Name))
+            else
+                warn(string.format("[DataService] Failed to load data for existing player: %s", player.Name))
+            end
+        end
+    end
 
     -- Handle player leave (ALWAYS release lock, even if data wasn't loaded)
     Players.PlayerRemoving:Connect(function(player)

@@ -359,6 +359,28 @@ do
 end
 
 -- ═══════════════════════════════════════════════════════════════════════════════
+-- INITIALIZE ACTION BUTTON
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+do
+    local uiFolder = script:FindFirstChild("UI")
+    if uiFolder then
+        local actionButtonModule = uiFolder:FindFirstChild("ActionButton")
+        if actionButtonModule then
+            local success, err = pcall(function()
+                local ActionButtonMod = require(actionButtonModule)
+                ActionButtonMod:Init()
+            end)
+            if success then
+                print("[CLIENT] ActionButton initialized")
+            else
+                warn("[CLIENT] Failed to initialize ActionButton:", err)
+            end
+        end
+    end
+end
+
+-- ═══════════════════════════════════════════════════════════════════════════════
 -- WIRE UP RENDERERS TO DATA AND CONTROLLERS
 -- ═══════════════════════════════════════════════════════════════════════════════
 
