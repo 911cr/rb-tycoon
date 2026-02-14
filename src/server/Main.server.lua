@@ -140,6 +140,60 @@ local RequestTeleportToOverworld = createRemoteEvent("RequestTeleportToOverworld
 print("[SERVER] Events folder created with all RemoteEvents")
 
 -- ═══════════════════════════════════════════════════════════════════════════════
+-- STEP 2.5: Detect Reserved Server + Initialize VillageStateService
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+local TeleportService_main = game:GetService("TeleportService")
+local _isReservedServer = (game.PrivateServerId ~= "" and game.PrivateServerOwnerId == 0)
+local _villageOwnerUserId: number? = nil
+
+if _isReservedServer then
+    print("[SERVER] Running as RESERVED SERVER (per-player village instance)")
+
+    -- Wait for the first player to arrive to read their teleport data
+    local firstPlayer = Players.PlayerAdded:Wait()
+    local joinData = firstPlayer:GetJoinData()
+    local teleportData = joinData and joinData.TeleportData
+
+    if teleportData and teleportData.ownerUserId then
+        _villageOwnerUserId = teleportData.ownerUserId
+        print(string.format("[SERVER] Village owner: %d (from teleport data)", _villageOwnerUserId))
+    else
+        -- Fallback: first player is owner
+        _villageOwnerUserId = firstPlayer.UserId
+        print(string.format("[SERVER] Village owner: %d (first player fallback)", _villageOwnerUserId))
+    end
+else
+    print("[SERVER] Running as STANDARD SERVER (Studio or shared)")
+    -- In Studio/standard mode, first player will become owner (handled in SimpleTest)
+end
+
+-- Initialize VillageStateService early (before other services) if we have an owner
+local VillageStateService_main = nil
+do
+    local ServicesFolder_check = ServerScriptService:FindFirstChild("Services")
+    if ServicesFolder_check then
+        local vssModule = ServicesFolder_check:FindFirstChild("VillageStateService")
+        if vssModule then
+            local vssSuccess, vssResult = pcall(function()
+                return require(vssModule)
+            end)
+            if vssSuccess then
+                VillageStateService_main = vssResult
+                if _villageOwnerUserId then
+                    pcall(function()
+                        VillageStateService_main:Init(_villageOwnerUserId)
+                    end)
+                    print(string.format("[SERVER] VillageStateService initialized for owner %d", _villageOwnerUserId))
+                end
+            else
+                warn("[SERVER] Failed to load VillageStateService:", vssResult)
+            end
+        end
+    end
+end
+
+-- ═══════════════════════════════════════════════════════════════════════════════
 -- STEP 3: Load and initialize services
 -- ═══════════════════════════════════════════════════════════════════════════════
 print("[SERVER] Loading services...")
@@ -717,15 +771,22 @@ Players.PlayerRemoving:Connect(function(player)
     end
 end)
 
--- Handle game shutdown - save all data
+-- Handle game shutdown - save all data + village state
 game:BindToClose(function()
     print("[SERVER] Game closing, saving all player data...")
+
+    -- Save village state first
+    if VillageStateService_main then
+        pcall(function()
+            VillageStateService_main:Shutdown()
+        end)
+    end
 
     if DataService and DataService.SaveAllData then
         DataService:SaveAllData()
     end
 
-    task.wait(2) -- Give time for saves to complete
+    task.wait(3) -- Give time for saves to complete
 end)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -754,6 +815,13 @@ connectEvent(RequestTeleportToOverworld, function(player)
             success = false, error = "Overworld not configured",
         })
         return
+    end
+
+    -- Save village state before teleport (if owner is leaving)
+    if player.UserId == _villageOwnerUserId and VillageStateService_main then
+        pcall(function()
+            VillageStateService_main:SaveState()
+        end)
     end
 
     -- Save player data before teleport

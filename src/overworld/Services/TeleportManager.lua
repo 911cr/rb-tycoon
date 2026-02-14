@@ -215,7 +215,10 @@ function TeleportManager:Init()
 end
 
 --[[
-    Teleports a player from overworld to their village.
+    Teleports a player from overworld to their OWN village (private reserved server).
+
+    Uses ReserveServer to create a private server per player. The access code
+    is saved in PlayerData so subsequent visits reuse the same server.
 
     @param player Player - The player to teleport
     @param currentPosition Vector3 - Their current position in overworld (for return)
@@ -224,10 +227,42 @@ end
 function TeleportManager:TeleportToVillage(player: Player, currentPosition: Vector3): (boolean, string?)
     local config = OverworldConfig.Teleport
 
-    -- Validate place ID is configured
     if config.VillagePlaceId == 0 then
         warn("[TeleportManager] Village PlaceId not configured!")
         return false, "PLACE_NOT_CONFIGURED"
+    end
+
+    -- Get or create access code for this player's private village server
+    local dataService = getDataService()
+    local accessCode = nil
+
+    if dataService then
+        local playerData = dataService:GetPlayerData(player)
+        if playerData then
+            accessCode = playerData.villageAccessCode
+        end
+    end
+
+    -- If no access code, reserve a new server
+    if not accessCode then
+        local reserveSuccess, reserveResult = pcall(function()
+            return TeleportService:ReserveServer(config.VillagePlaceId)
+        end)
+
+        if reserveSuccess and reserveResult then
+            accessCode = reserveResult
+            -- Save access code to player data
+            if dataService then
+                local playerData = dataService:GetPlayerData(player)
+                if playerData then
+                    playerData.villageAccessCode = accessCode
+                end
+            end
+            print(string.format("[TeleportManager] Reserved new village server for %s", player.Name))
+        else
+            warn(string.format("[TeleportManager] Failed to reserve server: %s", tostring(reserveResult)))
+            return false, "RESERVE_FAILED"
+        end
     end
 
     -- Save data + release session lock before teleport
@@ -235,12 +270,123 @@ function TeleportManager:TeleportToVillage(player: Player, currentPosition: Vect
         return false, "SAVE_FAILED"
     end
 
-    -- Create teleport data
+    -- Create teleport data with owner info
     local teleportData = createTeleportData("Overworld", player, currentPosition, nil)
+    teleportData[config.DataKeys.OwnerUserId] = player.UserId
+    teleportData[config.DataKeys.IsOwner] = true
 
-    print(string.format("[TeleportManager] Teleporting %s to Village", player.Name))
+    print(string.format("[TeleportManager] Teleporting %s to their village (private server)", player.Name))
 
-    return performTeleport(player, config.VillagePlaceId, teleportData, "Village")
+    -- Use TeleportToPrivateServer instead of TeleportAsync
+    local teleportSuccess, teleportErr = pcall(function()
+        local teleportOptions = Instance.new("TeleportOptions")
+        teleportOptions:SetTeleportData(teleportData)
+        teleportOptions.ReservedServerAccessCode = accessCode
+        return TeleportService:TeleportAsync(config.VillagePlaceId, {player}, teleportOptions)
+    end)
+
+    if teleportSuccess then
+        TeleportManager.TeleportCompleted:Fire(player, "Village")
+        return true
+    end
+
+    -- If teleport failed, the access code might be stale — regenerate and retry
+    warn(string.format("[TeleportManager] Teleport failed (stale code?): %s. Regenerating...", tostring(teleportErr)))
+
+    local retrySuccess, retryResult = pcall(function()
+        return TeleportService:ReserveServer(config.VillagePlaceId)
+    end)
+
+    if retrySuccess and retryResult then
+        accessCode = retryResult
+        if dataService then
+            local playerData = dataService:GetPlayerData(player)
+            if playerData then
+                playerData.villageAccessCode = accessCode
+                -- Re-save with new code
+                pcall(function() dataService:SavePlayerData(player) end)
+            end
+        end
+
+        local retryTeleport, retryErr2 = pcall(function()
+            local teleportOptions = Instance.new("TeleportOptions")
+            teleportOptions:SetTeleportData(teleportData)
+            teleportOptions.ReservedServerAccessCode = accessCode
+            return TeleportService:TeleportAsync(config.VillagePlaceId, {player}, teleportOptions)
+        end)
+
+        if retryTeleport then
+            TeleportManager.TeleportCompleted:Fire(player, "Village")
+            return true
+        else
+            warn(string.format("[TeleportManager] Retry also failed: %s", tostring(retryErr2)))
+        end
+    end
+
+    TeleportManager.TeleportFailed:Fire(player, "Village", "TELEPORT_FAILED")
+    return false, "TELEPORT_FAILED"
+end
+
+--[[
+    Teleports a player to visit another player's village (as a visitor).
+
+    @param player Player - The visiting player
+    @param targetOwnerUserId number - The village owner's user ID
+    @param currentPosition Vector3 - Visitor's current position for return
+    @return boolean, string? - Success and optional error
+]]
+function TeleportManager:TeleportToVillageAsVisitor(
+    player: Player,
+    targetOwnerUserId: number,
+    currentPosition: Vector3
+): (boolean, string?)
+    local config = OverworldConfig.Teleport
+
+    if config.VillagePlaceId == 0 then
+        return false, "PLACE_NOT_CONFIGURED"
+    end
+
+    -- Load target player's data to get their access code
+    local dataService = getDataService()
+    if not dataService then
+        return false, "DATASERVICE_UNAVAILABLE"
+    end
+
+    local targetData = dataService:GetPlayerDataById(targetOwnerUserId)
+    if not targetData or not targetData.villageAccessCode then
+        warn(string.format("[TeleportManager] Target %d has no village access code", targetOwnerUserId))
+        return false, "NO_VILLAGE"
+    end
+
+    local accessCode = targetData.villageAccessCode
+
+    -- Save visitor's data before teleport
+    if not preparePlayerForTeleport(player) then
+        return false, "SAVE_FAILED"
+    end
+
+    -- Create teleport data (visitor, not owner)
+    local teleportData = createTeleportData("Overworld", player, currentPosition, nil)
+    teleportData[config.DataKeys.OwnerUserId] = targetOwnerUserId
+    teleportData[config.DataKeys.IsOwner] = false
+
+    print(string.format("[TeleportManager] Teleporting %s to visit %d's village", player.Name, targetOwnerUserId))
+
+    local teleportSuccess, teleportErr = pcall(function()
+        local teleportOptions = Instance.new("TeleportOptions")
+        teleportOptions:SetTeleportData(teleportData)
+        teleportOptions.ReservedServerAccessCode = accessCode
+        return TeleportService:TeleportAsync(config.VillagePlaceId, {player}, teleportOptions)
+    end)
+
+    if teleportSuccess then
+        TeleportManager.TeleportCompleted:Fire(player, "VillageVisit")
+        return true
+    end
+
+    warn(string.format("[TeleportManager] Visitor teleport failed: %s", tostring(teleportErr)))
+    TeleportManager.TeleportFailed:Fire(player, "VillageVisit", "TELEPORT_FAILED")
+    return false, "TELEPORT_FAILED"
 end
 
 --[[

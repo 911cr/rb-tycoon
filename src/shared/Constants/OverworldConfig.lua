@@ -167,6 +167,8 @@ OverworldConfig.Teleport = {
         ReturnPosition = "returnPosition",
         Timestamp = "timestamp",
         TargetBase = "targetBaseId",
+        OwnerUserId = "ownerUserId",
+        IsOwner = "isOwner",
     },
 }
 

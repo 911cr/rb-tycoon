@@ -28,6 +28,19 @@ task.defer(function()
     end
 end)
 
+-- VillageStateService for per-player village persistence
+local VillageStateService = nil
+local _villageOwnerUserId = nil -- Set by Main.server.lua or first player
+local _playerRoles = {} -- [userId] = "owner" | "visitor"
+pcall(function()
+    VillageStateService = require(ServerScriptService.Services.VillageStateService)
+end)
+
+-- Helper: check if player is the village owner
+local function isVillageOwner(player)
+    return _playerRoles[player.UserId] == "owner"
+end
+
 -- Helper: deduct resources from player, sync HUD, return true/false
 local function deductPlayerResources(player, costs, contextMsg)
     if not DataService then
@@ -316,7 +329,13 @@ local function createInteraction(part, actionText, objectText, holdDuration, cal
     prompt.Parent = part
 
     if callback then
-        prompt.Triggered:Connect(callback)
+        prompt.Triggered:Connect(function(player)
+            -- Visitor guard: only the village owner can interact with buildings
+            if not isVillageOwner(player) then
+                return
+            end
+            callback(player)
+        end)
     end
 
     return prompt
@@ -4331,8 +4350,8 @@ local function createGoldMine()
             end
         end
 
-        -- Create visible miner NPC
-        local spawnPos = GoldMineState.positions.workerSpawn + Vector3.new(minerCount * 3, 0, 0)
+        -- Create visible miner NPC (spawn at hiring booth so player sees them walk to work)
+        local spawnPos = GoldMineState.positions.hireMiner
         local miner = createWorkerNPC(
             "Miner " .. minerId,
             spawnPos,
@@ -4602,8 +4621,8 @@ local function createGoldMine()
             end
         end
 
-        -- Create visible collector NPC
-        local spawnPos = GoldMineState.positions.workerSpawn + Vector3.new(collectorCount * 3 + 10, 0, 0)
+        -- Create visible collector NPC (spawn at hiring booth so player sees them walk to work)
+        local spawnPos = GoldMineState.positions.hireCollector
         local collector = createWorkerNPC(
             "Collector " .. collectorId,
             spawnPos,
@@ -5449,6 +5468,9 @@ local function createGoldMine()
     startProspectPrompt.Parent = prospectingTable
 
     startProspectPrompt.Triggered:Connect(function(player)
+        -- Visitor guard
+        if not isVillageOwner(player) then return end
+
         -- Check if GUI already open
         if activeProspectingGuis[player.UserId] then
             activeProspectingGuis[player.UserId]:Destroy()
@@ -5465,6 +5487,7 @@ local function createGoldMine()
 
     -- Parent the mine interior
     mineModel.Parent = interiorsFolder
+    GoldMineState.model = mineModel
 
     print("  ✓ Gold Mine created (REDESIGNED SPACIOUS LAYOUT):")
     print("    BACK WALL: Smelter (left) + Gold Chest (right)")
@@ -7022,8 +7045,8 @@ local function createLumberMill()
             print("[LumberMill] Logger booth is now empty!")
         end
 
-        -- Create visible logger NPC at spawn position
-        local spawnPos = LumberMillState.positions.workerSpawn + Vector3.new(loggerCount * 3, 0, 0)
+        -- Create visible logger NPC at hiring booth (walks to work from there)
+        local spawnPos = LumberMillState.positions.hireLogger
         local logger = createWorkerNPC(
             "Logger " .. loggerId,
             spawnPos,
@@ -7233,8 +7256,8 @@ local function createLumberMill()
             print("[LumberMill] Hauler booth is now empty!")
         end
 
-        -- Create visible hauler NPC at spawn position
-        local spawnPos = LumberMillState.positions.workerSpawn + Vector3.new(haulerCount * 3 + 10, 0, 0)
+        -- Create visible hauler NPC at hiring booth (walks to work from there)
+        local spawnPos = LumberMillState.positions.hireHauler
         local hauler = createWorkerNPC(
             "Hauler " .. haulerId,
             spawnPos,
@@ -9427,8 +9450,8 @@ local function createFarm(farmNumber)
             end
         end
 
-        -- Create visible farmer NPC
-        local spawnPos = FarmState.positions.workerSpawn + Vector3.new(farmerCount * 3, 0, 0)
+        -- Create visible farmer NPC at hiring booth (walks to work from there)
+        local spawnPos = FarmState.positions.hireFarmer
         local farmer = createWorkerNPC(
             "Farmer " .. farmerId,
             spawnPos,
@@ -9679,8 +9702,8 @@ local function createFarm(farmNumber)
         end
         local carrierId = carrierCount + 1
 
-        -- Create visible carrier NPC
-        local spawnPos = FarmState.positions.workerSpawn + Vector3.new(carrierCount * 3 + 10, 0, 0)
+        -- Create visible carrier NPC at hiring booth (walks to work from there)
+        local spawnPos = FarmState.positions.hireCarrier
         local carrier = createWorkerNPC(
             "Carrier " .. carrierId,
             spawnPos,
@@ -10095,6 +10118,7 @@ local function createFarm(farmNumber)
 
     -- Parent the farm interior
     farmModel.Parent = interiorsFolder
+    currentFarmState.model = farmModel
 
     print(string.format("  ✓ %s created (REDESIGNED LAYOUT):", farmName))
     print("    - Crop fields on BOTH sides (24 plots total)")
@@ -11716,6 +11740,7 @@ local function createBarracks()
 
     -- Parent the barracks interior
     barracksModel.Parent = interiorsFolder
+    BarracksState.model = barracksModel
 
     print("  ✓ Barracks created (MILITARY TRAINING GROUNDS interior):")
     print("    - Enter building in village to teleport inside")
@@ -12558,6 +12583,7 @@ local function createTownHall()
                 prompt.Parent = pedestal
 
                 prompt.Triggered:Connect(function(player)
+                    if not isVillageOwner(player) then return end
                     -- Check if player has a held gem
                     local heldGem = GoldMineState.playerHeldGem[player.UserId]
                     if heldGem then
@@ -12621,6 +12647,7 @@ local function createTownHall()
                     unlockPrompt.Parent = pedestal
 
                     unlockPrompt.Triggered:Connect(function(player)
+                        if not isVillageOwner(player) then return end
                         -- Check if previous slots are unlocked
                         if TownHallState.jewelCase.maxSlots < slotNum - 1 then
                             print(string.format("[TownHall] Must unlock slot %d first!", slotNum - 1))
@@ -12790,6 +12817,7 @@ local function createTownHall()
     end
 
     upgradePrompt.Triggered:Connect(function(player)
+        if not isVillageOwner(player) then return end
         local now = tick()
         local lastTime = lastInteractionTime[player.UserId] or 0
         local selected = selectedBuildingForUpgrade[player.UserId]
@@ -12966,6 +12994,7 @@ local function createTownHall()
     shieldPrompt.Parent = shieldPanel
 
     shieldPrompt.Triggered:Connect(function(player)
+        if not isVillageOwner(player) then return end
         print("[TownHall] === SHIELD CONTROL CENTER ===")
         if TownHallState.shields.isActive then
             local remaining = TownHallState.shields.endTime - tick()
@@ -13394,6 +13423,7 @@ local function createTownHall()
     -- See commit history for original implementation
     -- Parent the town hall interior
     townHallModel.Parent = interiorsFolder
+    TownHallState.model = townHallModel
 
     print("  ✓ Town Hall created (CITY COMMAND CENTER):")
     print("    - Enter building in village to teleport inside")
@@ -13540,72 +13570,988 @@ local function createDecorations()
 end
 
 -- ============================================================================
+-- WORKER SPAWN FUNCTIONS (extracted for reconstruction from saved state)
+-- These create the NPC + start AI loop, without deducting cost.
+-- ============================================================================
+
+-- Spawn a miner NPC and start its AI loop (no cost deduction)
+local function spawnMinerWorker(ownerUserId)
+    local model = GoldMineState.model
+    if not model then return end
+
+    local minerCount = #GoldMineState.miners
+    local minerId = minerCount + 1
+
+    local spawnPos = GoldMineState.positions.workerSpawn + Vector3.new(minerCount * 3, 0, 0)
+    local miner = createWorkerNPC(
+        "Miner " .. minerId,
+        spawnPos,
+        Color3.fromRGB(139, 90, 43),
+        "Miner"
+    )
+    miner.Parent = model
+
+    local isR15Miner = miner:FindFirstChild("HumanoidRootPart") ~= nil
+    local pickaxe, pickaxeHead
+    if not isR15Miner then
+        pickaxe = Instance.new("Part")
+        pickaxe.Name = "Pickaxe"
+        pickaxe.Size = Vector3.new(0.2, 2, 0.2)
+        pickaxe.Anchored = true
+        pickaxe.CanCollide = false
+        pickaxe.Material = Enum.Material.Wood
+        pickaxe.Color = Color3.fromRGB(100, 70, 45)
+        pickaxe.Parent = miner
+
+        pickaxeHead = Instance.new("Part")
+        pickaxeHead.Name = "PickaxeHead"
+        pickaxeHead.Size = Vector3.new(0.8, 0.3, 0.2)
+        pickaxeHead.Anchored = true
+        pickaxeHead.CanCollide = false
+        pickaxeHead.Material = Enum.Material.Metal
+        pickaxeHead.Color = Color3.fromRGB(140, 140, 150)
+        pickaxeHead.Parent = miner
+    end
+
+    local minerData = {
+        npc = miner,
+        state = "idle",
+        carrying = 0,
+        pickaxe = pickaxe,
+        pickaxeHead = pickaxeHead,
+    }
+    table.insert(GoldMineState.miners, minerData)
+
+    local function updatePickaxePosition()
+        if isR15Miner then return end
+        local torso = miner:FindFirstChild("Torso")
+        if torso then
+            pickaxe.Position = torso.Position + Vector3.new(1, 0.5, 0)
+            pickaxeHead.Position = pickaxe.Position + Vector3.new(0.5, 0.8, 0)
+        end
+    end
+
+    task.spawn(function()
+        while minerData.npc and minerData.npc.Parent do
+            local cycleComplete = false
+            local minerStats = getMinerStats(GoldMineState.equipment.minerLevel)
+            local oreCapacity = minerStats.oreCapacity
+            local walkSpeed = minerStats.walkSpeed
+            local miningTime = minerStats.miningTime
+
+            minerData.state = "walking_to_ore"
+            setNPCStatus(miner, "Walking to ore...")
+            local orePos = GoldMineState.positions.oreVein + Vector3.new(math.random(-3, 3), 0, math.random(-2, 2))
+            walkNPCTo(miner, orePos, walkSpeed, function()
+                minerData.state = "mining"
+                updatePickaxePosition()
+                local oreMined = 0
+                for swing = 1, oreCapacity do
+                    oreMined = swing
+                    setNPCStatus(miner, string.format("Mining %d/%d", oreMined, oreCapacity))
+                    local torso = miner:FindFirstChild("UpperTorso") or miner:FindFirstChild("Torso")
+                    if torso then
+                        local rockParticles = Instance.new("ParticleEmitter")
+                        rockParticles.Color = ColorSequence.new(Color3.fromRGB(120, 100, 80))
+                        rockParticles.Size = NumberSequence.new(0.3)
+                        rockParticles.Lifetime = NumberRange.new(0.3, 0.5)
+                        rockParticles.Rate = 20
+                        rockParticles.Speed = NumberRange.new(3, 6)
+                        rockParticles.SpreadAngle = Vector2.new(30, 30)
+                        rockParticles.Parent = torso
+                        task.delay(0.4, function() rockParticles:Destroy() end)
+                    end
+                    task.wait(miningTime)
+                end
+                minerData.carrying = oreCapacity
+                setNPCCarrying(miner, "ore", math.min(5, math.ceil(oreCapacity / 5)))
+                setNPCStatus(miner, string.format("Carrying %d ore", oreCapacity))
+
+                minerData.state = "walking_to_smelter"
+                setNPCStatus(miner, "Delivering ore...")
+                walkNPCTo(miner, GoldMineState.positions.smelter + Vector3.new(-4, 0, 0), walkSpeed, function()
+                    minerData.state = "depositing"
+                    setNPCStatus(miner, "Depositing ore...")
+                    task.wait(0.5)
+                    local oreDeposited = minerData.carrying
+                    GoldMineState.smelterOre = GoldMineState.smelterOre + oreDeposited
+                    minerData.carrying = 0
+                    setNPCCarrying(miner, nil, 0)
+                    minerData.state = "idle"
+                    setNPCStatus(miner, "Returning...")
+                    cycleComplete = true
+                end)
+            end)
+
+            while not cycleComplete and minerData.npc and minerData.npc.Parent do
+                task.wait(0.5)
+            end
+            task.wait(1)
+        end
+    end)
+
+    print(string.format("[Reconstruct] Spawned Miner #%d", minerId))
+end
+
+-- Spawn a collector NPC and start its AI loop (no cost deduction)
+local function spawnCollectorWorker(ownerUserId)
+    local model = GoldMineState.model
+    if not model then return end
+
+    local collectorCount = #GoldMineState.collectors
+    local collectorId = collectorCount + 1
+
+    local spawnPos = GoldMineState.positions.workerSpawn + Vector3.new(collectorCount * 3 + 10, 0, 0)
+    local collector = createWorkerNPC(
+        "Collector " .. collectorId,
+        spawnPos,
+        Color3.fromRGB(60, 100, 60),
+        "Collector"
+    )
+    collector.Parent = model
+
+    local collectorData = {
+        npc = collector,
+        state = "idle",
+        carrying = 0,
+        owner = ownerUserId,
+    }
+    table.insert(GoldMineState.collectors, collectorData)
+
+    task.spawn(function()
+        setNPCStatus(collector, "Waiting for gold...")
+        while collectorData.npc and collectorData.npc.Parent do
+            local collectorStats = getCollectorStats(GoldMineState.equipment.collectorLevel)
+            local goldCapacity = collectorStats.goldCapacity
+            local walkSpeed = collectorStats.walkSpeed
+
+            if GoldMineState.smelterGold >= 1 then
+                local cycleComplete = false
+                collectorData.state = "walking_to_smelter"
+                setNPCStatus(collector, "Going to smelter...")
+                walkNPCTo(collector, GoldMineState.positions.smelter + Vector3.new(6, 0, 0), walkSpeed, function()
+                    collectorData.state = "picking_up"
+                    setNPCStatus(collector, "Picking up gold...")
+                    task.wait(1)
+                    local goldToCollect = math.min(GoldMineState.smelterGold, goldCapacity)
+                    GoldMineState.smelterGold = GoldMineState.smelterGold - goldToCollect
+                    collectorData.carrying = goldToCollect
+                    setNPCCarrying(collector, "gold", math.min(5, goldToCollect))
+                    setNPCStatus(collector, string.format("Carrying %d gold", goldToCollect))
+                    if GoldMineState.updateGoldBarVisuals then GoldMineState.updateGoldBarVisuals() end
+
+                    collectorData.state = "walking_to_chest"
+                    setNPCStatus(collector, "Delivering to chest...")
+                    walkNPCTo(collector, GoldMineState.positions.goldChest + Vector3.new(-4, 0, 0), walkSpeed, function()
+                        collectorData.state = "depositing"
+                        setNPCStatus(collector, "Depositing gold...")
+                        task.wait(1.5)
+                        local goldDelivered = collectorData.carrying
+                        GoldMineState.chestGold = GoldMineState.chestGold + goldDelivered
+                        if GoldMineState.updateChestGoldVisuals then GoldMineState.updateChestGoldVisuals() end
+
+                        local ownerPlayer = nil
+                        for _, p in Players:GetPlayers() do
+                            if p.UserId == collectorData.owner then
+                                ownerPlayer = p
+                                break
+                            end
+                        end
+                        if ownerPlayer then
+                            rewardPlayer(ownerPlayer, "gold", goldDelivered, "GoldMine")
+                        end
+
+                        collectorData.carrying = 0
+                        setNPCCarrying(collector, nil, 0)
+                        collectorData.state = "idle"
+                        setNPCStatus(collector, "Waiting for gold...")
+                        cycleComplete = true
+                    end)
+                end)
+                while not cycleComplete and collectorData.npc and collectorData.npc.Parent do
+                    task.wait(0.5)
+                end
+                task.wait(1)
+            else
+                setNPCStatus(collector, "Waiting for gold...")
+                task.wait(2)
+            end
+        end
+    end)
+
+    print(string.format("[Reconstruct] Spawned Collector #%d", collectorId))
+end
+
+-- Spawn a logger NPC and start its AI loop (no cost deduction)
+local function spawnLoggerWorker()
+    local model = LumberMillState.millModel
+    if not model then return end
+
+    local loggerCount = #LumberMillState.loggers
+    local loggerId = loggerCount + 1
+
+    local spawnPos = LumberMillState.positions.workerSpawn + Vector3.new(loggerCount * 3, 0, 0)
+    local logger = createWorkerNPC(
+        "Logger " .. loggerId,
+        spawnPos,
+        Color3.fromRGB(180, 50, 50),
+        "Logger"
+    )
+    logger.Parent = model
+
+    local loggerData = {
+        npc = logger,
+        state = "idle",
+        carrying = 0,
+    }
+    table.insert(LumberMillState.loggers, loggerData)
+
+    task.spawn(function()
+        while loggerData.npc and loggerData.npc.Parent do
+            local cycleComplete = false
+            local loggerStats = getLoggerStats(LumberMillState.equipment.loggerLevel)
+            local logCapacity = loggerStats.logCapacity
+            local walkSpeed = loggerStats.walkSpeed
+            local choppingTime = loggerStats.choppingTime
+
+            local targetTreeId = nil
+            local targetTreePos = nil
+            for treeId, stage in pairs(LumberMillState.treeStage) do
+                if stage and stage >= 1 and stage <= 4 then
+                    targetTreeId = treeId
+                    targetTreePos = LumberMillState.treePositions[treeId]
+                    break
+                end
+            end
+
+            if targetTreeId and targetTreePos then
+                loggerData.state = "walking_to_trees"
+                setNPCStatus(logger, string.format("Going to tree #%d...", targetTreeId))
+                local treePos = Vector3.new(targetTreePos.x, GROUND_Y, targetTreePos.z)
+                walkNPCTo(logger, treePos + Vector3.new(2, 0, 0), walkSpeed, function()
+                    loggerData.state = "chopping"
+                    local logsCollected = 0
+                    local woodPerStage = { 1, 2, 3, 5 }
+                    while logsCollected < logCapacity do
+                        local currentStage = LumberMillState.treeStage[targetTreeId]
+                        if not currentStage or currentStage == 0 then break end
+                        setNPCStatus(logger, string.format("Chopping tree #%d (%d logs)", targetTreeId, logsCollected))
+                        local torso = logger:FindFirstChild("UpperTorso") or logger:FindFirstChild("Torso")
+                        if torso then
+                            local chips = Instance.new("ParticleEmitter")
+                            chips.Color = ColorSequence.new(Color3.fromRGB(180, 140, 90))
+                            chips.Size = NumberSequence.new(0.3)
+                            chips.Lifetime = NumberRange.new(0.3, 0.5)
+                            chips.Rate = 20
+                            chips.Speed = NumberRange.new(3, 6)
+                            chips.SpreadAngle = Vector2.new(30, 30)
+                            chips.Parent = torso
+                            task.delay(0.4, function() chips:Destroy() end)
+                        end
+                        task.wait(choppingTime)
+                        local newStage = currentStage + 1
+                        local logsFromChop = woodPerStage[currentStage] or 1
+                        logsCollected = logsCollected + logsFromChop
+                        if newStage > 4 then
+                            newStage = 0
+                            LumberMillState.treeRespawn[targetTreeId] = os.time() + 15
+                        end
+                        LumberMillState.treeStage[targetTreeId] = newStage
+                        if LumberMillState.updateTreeVisual then
+                            LumberMillState.updateTreeVisual(targetTreeId, newStage)
+                        end
+                    end
+                    loggerData.carrying = logsCollected
+                    setNPCCarrying(logger, "logs", math.min(5, math.ceil(logsCollected / 3)))
+                    setNPCStatus(logger, string.format("Carrying %d logs", logsCollected))
+
+                    loggerData.state = "walking_to_sawmill"
+                    setNPCStatus(logger, "Delivering logs...")
+                    walkNPCTo(logger, LumberMillState.positions.sawmill + Vector3.new(-4, 0, 0), walkSpeed, function()
+                        loggerData.state = "depositing"
+                        setNPCStatus(logger, "Depositing logs...")
+                        task.wait(0.5)
+                        LumberMillState.sawmillLogs = LumberMillState.sawmillLogs + loggerData.carrying
+                        loggerData.carrying = 0
+                        setNPCCarrying(logger, nil, 0)
+                        loggerData.state = "idle"
+                        setNPCStatus(logger, "Returning...")
+                        cycleComplete = true
+                    end)
+                end)
+                while not cycleComplete and loggerData.npc and loggerData.npc.Parent do
+                    task.wait(0.5)
+                end
+                task.wait(1)
+            else
+                setNPCStatus(logger, "No trees available...")
+                task.wait(3)
+            end
+        end
+    end)
+
+    print(string.format("[Reconstruct] Spawned Logger #%d", loggerId))
+end
+
+-- Spawn a hauler NPC and start its AI loop (no cost deduction)
+local function spawnHaulerWorker(ownerUserId)
+    local model = LumberMillState.millModel
+    if not model then return end
+
+    local haulerCount = #LumberMillState.haulers
+    local haulerId = haulerCount + 1
+
+    local spawnPos = LumberMillState.positions.workerSpawn + Vector3.new(haulerCount * 3 + 10, 0, 0)
+    local hauler = createWorkerNPC(
+        "Hauler " .. haulerId,
+        spawnPos,
+        Color3.fromRGB(50, 80, 140),
+        "Hauler"
+    )
+    hauler.Parent = model
+
+    local haulerData = {
+        npc = hauler,
+        state = "idle",
+        carrying = 0,
+        owner = ownerUserId,
+    }
+    table.insert(LumberMillState.haulers, haulerData)
+
+    task.spawn(function()
+        setNPCStatus(hauler, "Waiting for planks...")
+        while haulerData.npc and haulerData.npc.Parent do
+            local haulerStats = getHaulerStats(LumberMillState.equipment.haulerLevel)
+            local plankCapacity = haulerStats.plankCapacity
+            local walkSpeed = haulerStats.walkSpeed
+
+            if LumberMillState.woodStorage >= 1 then
+                local cycleComplete = false
+                haulerData.state = "walking_to_sawmill"
+                setNPCStatus(hauler, "Going to sawmill...")
+                walkNPCTo(hauler, LumberMillState.positions.sawmill + Vector3.new(6, 0, 0), walkSpeed, function()
+                    haulerData.state = "picking_up"
+                    setNPCStatus(hauler, "Picking up planks...")
+                    task.wait(1)
+                    local planksToCollect = math.min(LumberMillState.woodStorage, plankCapacity)
+                    LumberMillState.woodStorage = LumberMillState.woodStorage - planksToCollect
+                    haulerData.carrying = planksToCollect
+                    setNPCCarrying(hauler, "planks", math.min(5, math.ceil(planksToCollect / 5)))
+                    setNPCStatus(hauler, string.format("Carrying %d planks", planksToCollect))
+                    if LumberMillState.updatePlankPileVisuals then LumberMillState.updatePlankPileVisuals() end
+
+                    haulerData.state = "walking_to_storage"
+                    setNPCStatus(hauler, "Delivering planks...")
+                    walkNPCTo(hauler, LumberMillState.positions.storage + Vector3.new(-4, 0, 0), walkSpeed, function()
+                        haulerData.state = "depositing"
+                        setNPCStatus(hauler, "Depositing planks...")
+                        task.wait(1.5)
+                        local planksDelivered = haulerData.carrying
+
+                        local ownerPlayer = nil
+                        for _, p in Players:GetPlayers() do
+                            if p.UserId == haulerData.owner then
+                                ownerPlayer = p
+                                break
+                            end
+                        end
+                        if ownerPlayer then
+                            rewardPlayer(ownerPlayer, "wood", planksDelivered, "LumberMill")
+                        end
+
+                        haulerData.carrying = 0
+                        setNPCCarrying(hauler, nil, 0)
+                        haulerData.state = "idle"
+                        setNPCStatus(hauler, "Waiting for planks...")
+                        cycleComplete = true
+                    end)
+                end)
+                while not cycleComplete and haulerData.npc and haulerData.npc.Parent do
+                    task.wait(0.5)
+                end
+                task.wait(1)
+            else
+                setNPCStatus(hauler, "Waiting for planks...")
+                task.wait(2)
+            end
+        end
+    end)
+
+    print(string.format("[Reconstruct] Spawned Hauler #%d", haulerId))
+end
+
+-- Spawn a farmer NPC and start its AI loop (no cost deduction)
+local function spawnFarmerWorker(farmNumber)
+    local farmState = FarmStates[farmNumber]
+    if not farmState or not farmState.model then return end
+
+    local farmerCount = #farmState.farmers
+    local farmerId = farmerCount + 1
+
+    local spawnPos = farmState.positions.workerSpawn + Vector3.new(farmerCount * 3, 0, 0)
+    local farmer = createWorkerNPC(
+        "Farmer " .. farmerId,
+        spawnPos,
+        Color3.fromRGB(180, 160, 50),
+        "Farmer"
+    )
+    farmer.Parent = farmState.model
+
+    local farmerData = {
+        npc = farmer,
+        state = "idle",
+        carrying = 0,
+    }
+    table.insert(farmState.farmers, farmerData)
+
+    task.spawn(function()
+        while farmerData.npc and farmerData.npc.Parent do
+            local cycleComplete = false
+            local farmerStats = getFarmerStats(farmState.equipment.farmerLevel)
+            local cropCapacity = farmerStats.cropCapacity
+            local walkSpeed = farmerStats.walkSpeed
+            local harvestTime = farmerStats.harvestTime
+
+            -- Find harvestable plots
+            local readyPlots = {}
+            for plotId, plotData in farmState.plots do
+                if plotData.stage and plotData.stage >= 3 then
+                    table.insert(readyPlots, plotId)
+                end
+            end
+
+            if #readyPlots > 0 then
+                farmerData.state = "walking_to_field"
+                setNPCStatus(farmer, "Going to harvest...")
+                local fieldPos = farmState.positions.cropField or farmState.positions.workerSpawn
+                walkNPCTo(farmer, fieldPos + Vector3.new(math.random(-3, 3), 0, math.random(-2, 2)), walkSpeed, function()
+                    farmerData.state = "harvesting"
+                    local cropsHarvested = 0
+                    for _, plotId in readyPlots do
+                        if cropsHarvested >= cropCapacity then break end
+                        setNPCStatus(farmer, string.format("Harvesting %d/%d", cropsHarvested, cropCapacity))
+                        task.wait(harvestTime)
+                        cropsHarvested = cropsHarvested + 1
+                        farmState.plots[plotId].stage = 0
+                    end
+
+                    farmerData.carrying = cropsHarvested
+                    setNPCCarrying(farmer, "crops", math.min(5, math.ceil(cropsHarvested / 3)))
+                    setNPCStatus(farmer, string.format("Carrying %d crops", cropsHarvested))
+
+                    farmerData.state = "walking_to_basket"
+                    setNPCStatus(farmer, "Delivering crops...")
+                    local basketPos = farmState.positions.harvestBasket or farmState.positions.workerSpawn
+                    walkNPCTo(farmer, basketPos + Vector3.new(-2, 0, 0), walkSpeed, function()
+                        farmerData.state = "depositing"
+                        setNPCStatus(farmer, "Depositing crops...")
+                        task.wait(0.5)
+                        farmState.harvestPile = farmState.harvestPile + farmerData.carrying
+                        farmerData.carrying = 0
+                        setNPCCarrying(farmer, nil, 0)
+                        if farmState.updateHarvestPileVisuals then farmState.updateHarvestPileVisuals() end
+                        farmerData.state = "idle"
+                        setNPCStatus(farmer, "Returning...")
+                        cycleComplete = true
+                    end)
+                end)
+                while not cycleComplete and farmerData.npc and farmerData.npc.Parent do
+                    task.wait(0.5)
+                end
+                task.wait(1)
+            else
+                setNPCStatus(farmer, "Waiting for crops...")
+                task.wait(3)
+            end
+        end
+    end)
+
+    print(string.format("[Reconstruct] Spawned Farmer #%d for Farm %d", farmerId, farmNumber))
+end
+
+-- Spawn a carrier NPC and start its AI loop (no cost deduction)
+local function spawnCarrierWorker(farmNumber, ownerUserId)
+    local farmState = FarmStates[farmNumber]
+    if not farmState or not farmState.model then return end
+
+    local carrierCount = #farmState.carriers
+    local carrierId = carrierCount + 1
+
+    local spawnPos = farmState.positions.workerSpawn + Vector3.new(carrierCount * 3 + 10, 0, 0)
+    local carrier = createWorkerNPC(
+        "Carrier " .. carrierId,
+        spawnPos,
+        Color3.fromRGB(100, 140, 60),
+        "Carrier"
+    )
+    carrier.Parent = farmState.model
+
+    local carrierData = {
+        npc = carrier,
+        state = "idle",
+        carrying = 0,
+        owner = ownerUserId,
+    }
+    table.insert(farmState.carriers, carrierData)
+
+    task.spawn(function()
+        setNPCStatus(carrier, "Waiting for food...")
+        while carrierData.npc and carrierData.npc.Parent do
+            local carrierStats = getCarrierStats(farmState.equipment.carrierLevel)
+            local grainCapacity = carrierStats.grainCapacity
+            local walkSpeed = carrierStats.walkSpeed
+
+            if farmState.foodStorage >= 1 then
+                local cycleComplete = false
+                carrierData.state = "walking_to_silo"
+                setNPCStatus(carrier, "Going to silo...")
+                local siloPos = farmState.positions.foodSilo or farmState.positions.workerSpawn
+                walkNPCTo(carrier, siloPos + Vector3.new(2, 0, 0), walkSpeed, function()
+                    carrierData.state = "picking_up"
+                    setNPCStatus(carrier, "Picking up food...")
+                    task.wait(1)
+                    local foodToCollect = math.min(farmState.foodStorage, grainCapacity)
+                    farmState.foodStorage = farmState.foodStorage - foodToCollect
+                    carrierData.carrying = foodToCollect
+                    setNPCCarrying(carrier, "food", math.min(5, math.ceil(foodToCollect / 5)))
+                    setNPCStatus(carrier, string.format("Carrying %d food", foodToCollect))
+                    if farmState.updateFoodStorageVisuals then farmState.updateFoodStorageVisuals() end
+
+                    carrierData.state = "walking_to_barn"
+                    setNPCStatus(carrier, "Delivering food...")
+                    local barnPos = farmState.positions.barn or farmState.positions.workerSpawn
+                    walkNPCTo(carrier, barnPos + Vector3.new(-2, 0, 0), walkSpeed, function()
+                        carrierData.state = "depositing"
+                        setNPCStatus(carrier, "Depositing food...")
+                        task.wait(1.5)
+                        local foodDelivered = carrierData.carrying
+
+                        local ownerPlayer = nil
+                        for _, p in Players:GetPlayers() do
+                            if p.UserId == carrierData.owner then
+                                ownerPlayer = p
+                                break
+                            end
+                        end
+                        if ownerPlayer then
+                            rewardPlayer(ownerPlayer, "food", foodDelivered, "Farm")
+                        end
+
+                        carrierData.carrying = 0
+                        setNPCCarrying(carrier, nil, 0)
+                        carrierData.state = "idle"
+                        setNPCStatus(carrier, "Waiting for food...")
+                        cycleComplete = true
+                    end)
+                end)
+                while not cycleComplete and carrierData.npc and carrierData.npc.Parent do
+                    task.wait(0.5)
+                end
+                task.wait(1)
+            else
+                setNPCStatus(carrier, "Waiting for food...")
+                task.wait(2)
+            end
+        end
+    end)
+
+    print(string.format("[Reconstruct] Spawned Carrier #%d for Farm %d", carrierId, farmNumber))
+end
+
+-- Spawn a drill sergeant (data entry + visual only, no full AI loop)
+local function spawnDrillSergeant()
+    local model = BarracksState.model
+    if not model then return end
+
+    local numSergeants = #BarracksState.drillSergeants
+    local basePos = INTERIOR_POSITIONS.Barracks
+    local baseX = basePos and basePos.X or 0
+    local baseZ = basePos and basePos.Z or 0
+
+    table.insert(BarracksState.drillSergeants, {
+        id = numSergeants + 1,
+        efficiency = 1.0 + numSergeants * 0.1,
+        hiredAt = tick(),
+    })
+
+    local sergeantVisual = Instance.new("Part")
+    sergeantVisual.Name = "Sergeant" .. numSergeants + 1
+    sergeantVisual.Size = Vector3.new(1.5, 4, 1.5)
+    sergeantVisual.Position = Vector3.new(baseX - 8 + numSergeants * 2, GROUND_Y + 2, baseZ + 8)
+    sergeantVisual.Anchored = true
+    sergeantVisual.Material = Enum.Material.SmoothPlastic
+    sergeantVisual.Color = Color3.fromRGB(70, 70, 90)
+    sergeantVisual.Parent = model
+
+    local sergeantHead = Instance.new("Part")
+    sergeantHead.Name = "SergeantHead" .. numSergeants + 1
+    sergeantHead.Shape = Enum.PartType.Ball
+    sergeantHead.Size = Vector3.new(1.2, 1.2, 1.2)
+    sergeantHead.Position = Vector3.new(baseX - 8 + numSergeants * 2, GROUND_Y + 4.6, baseZ + 8)
+    sergeantHead.Anchored = true
+    sergeantHead.Material = Enum.Material.SmoothPlastic
+    sergeantHead.Color = Color3.fromRGB(227, 183, 151)
+    sergeantHead.Parent = model
+
+    print(string.format("[Reconstruct] Spawned Drill Sergeant #%d", numSergeants + 1))
+end
+
+-- ============================================================================
+-- VILLAGE STATE OVERRIDE (apply saved state before building creation reads it)
+-- ============================================================================
+
+local function applyLoadedState(savedState)
+    if not savedState then return end
+    print("[SimpleTest] Applying saved village state...")
+
+    -- Gold Mine
+    if savedState.goldMine then
+        local gm = savedState.goldMine
+        GoldMineState.level = gm.level or 1
+        GoldMineState.xp = gm.xp or 0
+        GoldMineState.equipment.pickaxeLevel = gm.equipment and gm.equipment.pickaxeLevel or 1
+        GoldMineState.equipment.smelterLevel = gm.equipment and gm.equipment.smelterLevel or 1
+        GoldMineState.equipment.minerLevel = gm.equipment and gm.equipment.minerLevel or 1
+        GoldMineState.equipment.collectorLevel = gm.equipment and gm.equipment.collectorLevel or 1
+        GoldMineState.smelterOre = gm.smelterOre or 0
+        GoldMineState.smelterGold = gm.smelterGold or 0
+        GoldMineState.chestGold = gm.chestGold or 0
+        if gm.prospecting then
+            GoldMineState.prospecting.isActive = gm.prospecting.isActive or false
+            GoldMineState.prospecting.tier = gm.prospecting.tier
+            GoldMineState.prospecting.startTime = gm.prospecting.startTime or 0
+            GoldMineState.prospecting.endTime = gm.prospecting.endTime or 0
+            -- Time reconciliation: if prospecting completed while offline
+            if GoldMineState.prospecting.isActive and GoldMineState.prospecting.endTime > 0 then
+                if os.time() >= GoldMineState.prospecting.endTime then
+                    GoldMineState.prospecting.isActive = false
+                    print("[Reconstruct] Prospecting completed while offline")
+                end
+            end
+        end
+    end
+
+    -- Lumber Mill
+    if savedState.lumberMill then
+        local lm = savedState.lumberMill
+        LumberMillState.level = lm.level or 1
+        LumberMillState.xp = lm.xp or 0
+        LumberMillState.equipment.axeLevel = lm.equipment and lm.equipment.axeLevel or 1
+        LumberMillState.equipment.sawmillLevel = lm.equipment and lm.equipment.sawmillLevel or 1
+        LumberMillState.equipment.loggerLevel = lm.equipment and lm.equipment.loggerLevel or 1
+        LumberMillState.equipment.haulerLevel = lm.equipment and lm.equipment.haulerLevel or 1
+        LumberMillState.sawmillLogs = lm.sawmillLogs or 0
+        LumberMillState.woodStorage = lm.woodStorage or 0
+        -- Restore tree stages
+        if lm.treeStages then
+            for treeIdStr, stage in lm.treeStages do
+                local treeId = tonumber(treeIdStr) or treeIdStr
+                LumberMillState.treeStage[treeId] = stage
+            end
+        end
+        -- Time reconciliation: respawn trees that should have regrown
+        if lm.treeRespawnTimes then
+            local now = os.time()
+            for treeIdStr, respawnTime in lm.treeRespawnTimes do
+                local treeId = tonumber(treeIdStr) or treeIdStr
+                if now >= respawnTime then
+                    LumberMillState.treeStage[treeId] = 1
+                    print(string.format("[Reconstruct] Tree #%s regrew while offline", tostring(treeId)))
+                else
+                    LumberMillState.treeRespawn[treeId] = respawnTime
+                end
+            end
+        end
+    end
+
+    -- Farms
+    if savedState.farms then
+        for farmNumStr, farmData in savedState.farms do
+            local farmNumber = tonumber(farmNumStr)
+            if farmNumber then
+                local farmState = getFarmState(farmNumber)
+                farmState.level = farmData.level or 1
+                farmState.xp = farmData.xp or 0
+                if farmData.equipment then
+                    farmState.equipment.hoeLevel = farmData.equipment.hoeLevel or 1
+                    farmState.equipment.wateringCanLevel = farmData.equipment.wateringCanLevel or 1
+                    farmState.equipment.windmillLevel = farmData.equipment.windmillLevel or 1
+                    farmState.equipment.farmerLevel = farmData.equipment.farmerLevel or 1
+                    farmState.equipment.carrierLevel = farmData.equipment.carrierLevel or 1
+                end
+                farmState.harvestPile = farmData.harvestPile or 0
+                farmState.windmillCrops = farmData.windmillCrops or 0
+                farmState.foodStorage = farmData.foodStorage or 0
+                -- Restore plots with time reconciliation
+                if farmData.plots then
+                    for plotIdStr, plotInfo in farmData.plots do
+                        local plotId = tonumber(plotIdStr) or plotIdStr
+                        farmState.plots[plotId] = {
+                            crop = plotInfo.crop,
+                            stage = plotInfo.stage or 0,
+                            watered = plotInfo.watered or false,
+                            plantedAt = plotInfo.plantedAt,
+                        }
+                        -- Time reconciliation: advance crop stage if enough time passed
+                        if plotInfo.plantedAt and plotInfo.stage and plotInfo.stage < 3 then
+                            local elapsed = os.time() - plotInfo.plantedAt
+                            local growthPerStage = 60 -- 60 seconds per stage
+                            local stagesGrown = math.floor(elapsed / growthPerStage)
+                            if stagesGrown > 0 then
+                                farmState.plots[plotId].stage = math.min(3, plotInfo.stage + stagesGrown)
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    -- Barracks
+    if savedState.barracks then
+        local br = savedState.barracks
+        BarracksState.level = br.level or 1
+        BarracksState.xp = br.xp or 0
+        BarracksState.xpToNextLevel = br.xpToNextLevel or 100
+        if br.equipment then
+            BarracksState.equipment.dummies = br.equipment.dummies or "Basic"
+            BarracksState.equipment.weapons = br.equipment.weapons or "Basic"
+            BarracksState.equipment.armor = br.equipment.armor or "Basic"
+        end
+        BarracksState.totalTroopsTrained = br.totalTroopsTrained or 0
+    end
+
+    -- Town Hall
+    if savedState.townHall then
+        local th = savedState.townHall
+        TownHallState.level = th.level or 1
+        TownHallState.xp = th.xp or 0
+        TownHallState.xpToNextLevel = th.xpToNextLevel or 100
+        TownHallState.population = th.population or 10
+        if th.jewelCase then
+            TownHallState.jewelCase.maxSlots = th.jewelCase.maxSlots or 3
+            if th.jewelCase.slots then
+                for slotIdStr, slotData in th.jewelCase.slots do
+                    local slotIdx = tonumber(slotIdStr) or slotIdStr
+                    TownHallState.jewelCase.slots[slotIdx] = {
+                        type = slotData.type,
+                        size = slotData.size,
+                        boost = slotData.boost,
+                        multiplier = slotData.multiplier,
+                        color = slotData.color and Color3.fromRGB(
+                            slotData.color.r or 255,
+                            slotData.color.g or 255,
+                            slotData.color.b or 255
+                        ) or nil,
+                    }
+                end
+            end
+        end
+        if th.buildingLevels then
+            for k, v in th.buildingLevels do
+                TownHallState.buildingLevels[k] = v
+            end
+        end
+        if th.shields then
+            TownHallState.shields.isActive = th.shields.isActive or false
+            TownHallState.shields.duration = th.shields.duration or 0
+            TownHallState.shields.endTime = th.shields.endTime or 0
+        end
+        if th.research then
+            TownHallState.research.completed = th.research.completed or {}
+            TownHallState.research.inProgress = th.research.inProgress
+        end
+    end
+
+    -- Farm Data (plot purchases)
+    if savedState.farmData then
+        if _villageOwnerUserId then
+            PlayerFarmData[_villageOwnerUserId] = {
+                farmPlots = savedState.farmData.farmPlots or 1,
+                builtFarms = {},
+            }
+            if savedState.farmData.builtFarms then
+                for k, v in savedState.farmData.builtFarms do
+                    local num = tonumber(k)
+                    if num then
+                        PlayerFarmData[_villageOwnerUserId].builtFarms[num] = v
+                    end
+                end
+            end
+        end
+    end
+
+    print("[SimpleTest] Saved state applied successfully")
+end
+
+-- Reconstruct workers from saved counts (call AFTER buildings are created)
+local function reconstructWorkers(savedState, ownerUserId)
+    if not savedState then return end
+    print("[SimpleTest] Reconstructing workers from saved state...")
+
+    -- Clear waiting NPCs at hiring stands (they represent unfilled slots)
+    -- We'll remove as many waiting workers as we have saved workers
+
+    -- Gold Mine miners
+    local minerCount = savedState.goldMine and savedState.goldMine.minerCount or 0
+    for i = 1, minerCount do
+        -- Remove a waiting miner (visual at hiring stand)
+        if #GoldMineState.waitingMiners > 0 then
+            local waitingWorker = table.remove(GoldMineState.waitingMiners, 1)
+            _npcAnimTracks[waitingWorker] = nil
+            waitingWorker:Destroy()
+        end
+        spawnMinerWorker(ownerUserId)
+    end
+    -- Update hiring sign if all slots filled
+    if #GoldMineState.waitingMiners == 0 and GoldMineState.minerSign then
+        GoldMineState.minerSign.Text = "FULLY STAFFED"
+        GoldMineState.minerSign.TextColor3 = Color3.fromRGB(150, 150, 150)
+    end
+
+    -- Gold Mine collectors
+    local collectorCount = savedState.goldMine and savedState.goldMine.collectorCount or 0
+    for i = 1, collectorCount do
+        if #GoldMineState.waitingCollectors > 0 then
+            local waitingWorker = table.remove(GoldMineState.waitingCollectors, 1)
+            _npcAnimTracks[waitingWorker] = nil
+            waitingWorker:Destroy()
+        end
+        spawnCollectorWorker(ownerUserId)
+    end
+    if #GoldMineState.waitingCollectors == 0 and GoldMineState.collectorSign then
+        GoldMineState.collectorSign.Text = "FULLY STAFFED"
+        GoldMineState.collectorSign.TextColor3 = Color3.fromRGB(150, 150, 150)
+    end
+
+    -- Loggers
+    local loggerCount = savedState.lumberMill and savedState.lumberMill.loggerCount or 0
+    for i = 1, loggerCount do
+        if #LumberMillState.waitingLoggers > 0 then
+            local waitingWorker = table.remove(LumberMillState.waitingLoggers, 1)
+            _npcAnimTracks[waitingWorker] = nil
+            waitingWorker:Destroy()
+        end
+        spawnLoggerWorker()
+    end
+
+    -- Haulers
+    local haulerCount = savedState.lumberMill and savedState.lumberMill.haulerCount or 0
+    for i = 1, haulerCount do
+        if #LumberMillState.waitingHaulers > 0 then
+            local waitingWorker = table.remove(LumberMillState.waitingHaulers, 1)
+            _npcAnimTracks[waitingWorker] = nil
+            waitingWorker:Destroy()
+        end
+        spawnHaulerWorker(ownerUserId)
+    end
+
+    -- Farmers and Carriers (per farm)
+    if savedState.farms then
+        for farmNumStr, farmData in savedState.farms do
+            local farmNumber = tonumber(farmNumStr)
+            if farmNumber and FarmStates[farmNumber] then
+                local farmerCount = farmData.farmerCount or 0
+                for i = 1, farmerCount do
+                    local fs = FarmStates[farmNumber]
+                    if fs.waitingFarmers and #fs.waitingFarmers > 0 then
+                        local waitingWorker = table.remove(fs.waitingFarmers, 1)
+                        _npcAnimTracks[waitingWorker] = nil
+                        waitingWorker:Destroy()
+                    end
+                    spawnFarmerWorker(farmNumber)
+                end
+                if FarmStates[farmNumber].waitingFarmers and #FarmStates[farmNumber].waitingFarmers == 0 and FarmStates[farmNumber].farmerSign then
+                    FarmStates[farmNumber].farmerSign.Text = "FULLY STAFFED"
+                    FarmStates[farmNumber].farmerSign.TextColor3 = Color3.fromRGB(150, 150, 150)
+                end
+
+                local carrierCount = farmData.carrierCount or 0
+                for i = 1, carrierCount do
+                    local fs = FarmStates[farmNumber]
+                    if fs.waitingCarriers and #fs.waitingCarriers > 0 then
+                        local waitingWorker = table.remove(fs.waitingCarriers, 1)
+                        _npcAnimTracks[waitingWorker] = nil
+                        waitingWorker:Destroy()
+                    end
+                    spawnCarrierWorker(farmNumber, ownerUserId)
+                end
+                if FarmStates[farmNumber].waitingCarriers and #FarmStates[farmNumber].waitingCarriers == 0 and FarmStates[farmNumber].carrierSign then
+                    FarmStates[farmNumber].carrierSign.Text = "FULLY STAFFED"
+                    FarmStates[farmNumber].carrierSign.TextColor3 = Color3.fromRGB(150, 150, 150)
+                end
+            end
+        end
+    end
+
+    -- Drill Sergeants
+    local drillCount = savedState.barracks and savedState.barracks.drillSergeantCount or 0
+    for i = 1, drillCount do
+        spawnDrillSergeant()
+    end
+
+    print(string.format("[SimpleTest] Worker reconstruction complete: %d miners, %d collectors, %d loggers, %d haulers, %d sergeants",
+        minerCount, collectorCount, loggerCount, haulerCount, drillCount))
+end
+
+-- ============================================================================
 -- MAIN EXECUTION
 -- ============================================================================
+
+-- Load saved state BEFORE building creation (so state tables have correct values)
+local savedState = nil
+if VillageStateService then
+    savedState = VillageStateService:GetLoadedState()
+    if savedState then
+        applyLoadedState(savedState)
+    end
+end
 
 local success, errorMsg = pcall(function()
     createGround()
     createEntranceGate()
     createGoldMine()
     createLumberMill()
-    createFarm(1) -- Farm 1 is created by default (additional farms purchased in shop)
+
+    -- Build farms: Farm 1 always, additional farms from saved state
+    createFarm(1)
+    if savedState and savedState.farmData and savedState.farmData.builtFarms then
+        for farmNumStr, built in savedState.farmData.builtFarms do
+            local farmNum = tonumber(farmNumStr)
+            if farmNum and farmNum > 1 and built then
+                createFarm(farmNum)
+            end
+        end
+    end
+
     createBarracks()
     createTownHall()
     createDecorations()
 end)
 
 if success then
+    -- Reconstruct workers AFTER buildings are created (need model references + positions)
+    if savedState and _villageOwnerUserId then
+        pcall(function()
+            reconstructWorkers(savedState, _villageOwnerUserId)
+        end)
+    end
+
+    -- Expose state tables for VillageStateService serialization
+    if VillageStateService then
+        VillageStateService:SetStateTables({
+            GoldMineState = GoldMineState,
+            LumberMillState = LumberMillState,
+            FarmStates = FarmStates,
+            BarracksState = BarracksState,
+            TownHallState = TownHallState,
+            PlayerFarmData = PlayerFarmData,
+        })
+        VillageStateService:StartAutoSave()
+    end
+
     print("========================================")
     print("GAMEPLAY VILLAGE BUILT SUCCESSFULLY!")
-    print("========================================")
-    print("")
-    print("=== GOLD MINE (FULL PROTOTYPE) ===")
-    print("  1. MINE ORE - Click vein, carry up to 10")
-    print("  2. LOAD REFINER - Dump ore into hopper")
-    print("  3. SMELT GOLD - Work furnace to create gold")
-    print("  4. COLLECT - Grab gold from output chest")
-    print("  5. HIRE WORKERS - Automate (Level 3+)")
-    print("  6. UPGRADE - Better tools = more output")
-    print("")
-    print("")
-    print("=== LUMBER MILL (FULL PROTOTYPE) ===")
-    print("  1. CHOP TREES - 4 stages per tree (more wood each stage)")
-    print("  2. CARRY LOGS - Transport up to 8 logs")
-    print("  3. SAWMILL - Walk through to load (progress bar)")
-    print("  4. COLLECT - Grab planks from output")
-    print("  5. STORE - Deposit in chest for wood!")
-    print("  6. HIRE LOGGERS - Automate tree chopping")
-    print("  7. UPGRADE - Better axe/sawmill = more wood")
-    print("")
-    print("=== FARM (FULL PROTOTYPE) ===")
-    print("  1. GET SEEDS - Grab from seed shed")
-    print("  2. PLANT - Click empty plots")
-    print("  3. WATER - Draw water, speeds growth")
-    print("  4. HARVEST - Click grown crops")
-    print("  5. LOAD - Dump in harvest basket")
-    print("  6. PROCESS - Grind at windmill")
-    print("  7. COLLECT - Grab food from silo")
-    print("  8. HIRE WORKERS - Automate (Level 3+)")
-    print("  9. UPGRADE - Hoe, watering can, windmill")
-    print("")
-    print("=== BARRACKS (FULL PROTOTYPE) ===")
-    print("  1. RECRUIT - Get trainees (costs food)")
-    print("  2. TRAIN - Practice at combat dummies")
-    print("  3. EQUIP - Weapon + armor at armory")
-    print("  4. DEPLOY - Send to army camp")
-    print("  5. HIRE SERGEANTS - Automate (Level 3+)")
-    print("  6. UPGRADE - Better dummies, weapons, armor")
-    print("")
-    print("=== TOWN HALL (FULL PROTOTYPE) ===")
-    print("  1. COLLECT TAXES - Get gold from citizens")
-    print("  2. REGISTER CITIZENS - Grow population")
-    print("  3. STUDY SCROLLS - Earn research points")
-    print("  4. DEPOSIT GOLD - Store in treasury vault")
-    print("  5. HIRE ADVISORS - Automate (Level 3+)")
-    print("  6. UPGRADE - Better ledgers, scrolls, vault")
-    print("")
-    print("Walk around and find [E] prompts to play!")
-    print("Mini-games give resources and level up buildings!")
     print("========================================")
 else
     warn("========================================")
@@ -13613,3 +14559,84 @@ else
     warn("Error: " .. tostring(errorMsg))
     warn("========================================")
 end
+
+-- ============================================================================
+-- PLAYER ROLE MANAGEMENT & SAVE TRIGGERS
+-- ============================================================================
+
+-- Detect player roles on join (owner vs visitor)
+Players.PlayerAdded:Connect(function(player)
+    local joinData = player:GetJoinData()
+    local teleportData = joinData and joinData.TeleportData
+
+    if teleportData and teleportData.isOwner then
+        _playerRoles[player.UserId] = "owner"
+        _villageOwnerUserId = player.UserId
+        print(string.format("[Village] %s joined as OWNER", player.Name))
+    elseif teleportData and teleportData.ownerUserId then
+        _playerRoles[player.UserId] = "visitor"
+        print(string.format("[Village] %s joined as VISITOR", player.Name))
+    else
+        -- No teleport data (Studio/direct join): first player is owner
+        if not _villageOwnerUserId then
+            _villageOwnerUserId = player.UserId
+            _playerRoles[player.UserId] = "owner"
+            print(string.format("[Village] %s is OWNER (first player, no teleport data)", player.Name))
+
+            -- If VillageStateService exists but wasn't initialized (Studio mode),
+            -- initialize it now with the first player as owner
+            if VillageStateService and not VillageStateService:GetOwnerUserId() then
+                pcall(function()
+                    VillageStateService:Init(player.UserId)
+                    local savedState2 = VillageStateService:GetLoadedState()
+                    if savedState2 then
+                        applyLoadedState(savedState2)
+                        reconstructWorkers(savedState2, player.UserId)
+                    end
+                    VillageStateService:SetStateTables({
+                        GoldMineState = GoldMineState,
+                        LumberMillState = LumberMillState,
+                        FarmStates = FarmStates,
+                        BarracksState = BarracksState,
+                        TownHallState = TownHallState,
+                        PlayerFarmData = PlayerFarmData,
+                    })
+                    VillageStateService:StartAutoSave()
+                end)
+            end
+        else
+            _playerRoles[player.UserId] = "visitor"
+            print(string.format("[Village] %s is VISITOR (no teleport data, owner already set)", player.Name))
+        end
+    end
+end)
+
+-- Save village state when owner leaves
+Players.PlayerRemoving:Connect(function(player)
+    if player.UserId == _villageOwnerUserId then
+        print(string.format("[Village] Owner %s leaving, saving village state...", player.Name))
+        if VillageStateService then
+            pcall(function()
+                VillageStateService:SaveState()
+            end)
+        end
+    end
+    _playerRoles[player.UserId] = nil
+    -- Clean up per-player transient state
+    PlayerReturnPositions[player.UserId] = nil
+    PlayerCurrentBuilding[player.UserId] = nil
+    TeleportCooldown[player.UserId] = nil
+    PlayerFarmData[player.UserId] = nil
+end)
+
+-- Save village state on server shutdown
+game:BindToClose(function()
+    if VillageStateService then
+        print("[Village] Server shutting down, saving village state...")
+        pcall(function()
+            VillageStateService:SaveState()
+        end)
+        -- Give time for DataStore write
+        task.wait(3)
+    end
+end)

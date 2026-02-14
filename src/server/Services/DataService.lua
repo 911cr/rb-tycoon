@@ -168,6 +168,9 @@ local function createDefaultData(userId: number, username: string): Types.Player
         mapPosition = WorldMapData.GenerateStartingPosition(),
         lastMoveTime = 0,
         friends = {},
+
+        -- Village Instance
+        villageAccessCode = nil, -- Reserved server access code for private village
     }
 end
 
