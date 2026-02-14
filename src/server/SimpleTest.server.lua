@@ -1935,7 +1935,9 @@ local function createWorkerNPC(name, position, color, workerType)
             humanoid.WalkSpeed = 8
         end
 
-        -- Set all parts non-collidable except HumanoidRootPart
+        -- Set all parts non-collidable (NPCs ghost through objects like old system)
+        -- Only anchor HumanoidRootPart; other parts stay unanchored so Motor6D joints
+        -- and the Animator can move them for animations (idle, walk)
         for _, part in npc:GetDescendants() do
             if part:IsA("BasePart") then
                 part.CanCollide = false
@@ -1943,9 +1945,7 @@ local function createWorkerNPC(name, position, color, workerType)
         end
         local rootPart = npc:FindFirstChild("HumanoidRootPart")
         if rootPart then
-            rootPart.CanCollide = true
-            rootPart.Anchored = false
-            -- SetNetworkOwner deferred until after NPC is parented to Workspace
+            rootPart.Anchored = true
         end
 
         -- Position the NPC
@@ -2038,17 +2038,6 @@ local function createWorkerNPC(name, position, color, workerType)
     -- Add worker-type-specific accessories (hats, tools, etc.)
     addWorkerAccessories(npc, workerType)
 
-    -- Defer SetNetworkOwner until after caller parents NPC into Workspace
-    local npcRef = npc
-    task.defer(function()
-        if npcRef and npcRef.Parent then
-            local root = npcRef:FindFirstChild("HumanoidRootPart")
-            if root then
-                pcall(function() root:SetNetworkOwner(nil) end)
-            end
-        end
-    end)
-
     return npc
 end
 
@@ -2077,38 +2066,53 @@ local function moveNPC(npc, newPosition)
     moveNPCLegacy(npc, newPosition)
 end
 
--- Animate NPC walking to a destination (R15 uses Humanoid:MoveTo, legacy uses lerp)
+-- Animate NPC walking to a destination (R15 uses anchored CFrame lerp + animations, legacy uses lerp)
 local function walkNPCTo(npc, destination, speed, callback)
-    -- Check if this is an R15 NPC (has Humanoid)
-    local humanoid = npc:FindFirstChildOfClass("Humanoid")
+    -- Check if this is an R15 NPC (has HumanoidRootPart)
     local rootPart = npc:FindFirstChild("HumanoidRootPart")
 
-    if humanoid and rootPart then
-        -- R15 path: use Humanoid:MoveTo() with walk animation
-        humanoid.WalkSpeed = speed or 8
+    if rootPart then
+        -- R15 path: CFrame lerp (anchored, ghosts through objects) with R15 animations
+        local startPos = rootPart.Position - Vector3.new(0, 3, 0)
+        local endPos = Vector3.new(destination.X, startPos.Y, destination.Z)
+        local distance = (endPos - startPos).Magnitude
+        local duration = distance / (speed or 8)
 
-        -- Get animation tracks from module-level table
+        -- Start walk animation
         local tracks = _npcAnimTracks[npc]
-        if tracks and tracks.walk then
-            tracks.walk:Play()
+        if tracks then
+            if tracks.walk then tracks.walk:Play() end
+            if tracks.idle and tracks.idle.IsPlaying then tracks.idle:Stop() end
         end
 
-        -- MoveTo has an 8-second timeout, so we loop until actually arrived
-        local arrived = false
-        local moveConn
-
-        local function doMoveTo()
-            if not npc.Parent then return end -- NPC was destroyed
-            humanoid:MoveTo(Vector3.new(destination.X, rootPart.Position.Y, destination.Z))
+        -- Face the destination
+        local direction = (endPos - startPos)
+        if direction.Magnitude > 0.1 then
+            local lookAt = CFrame.lookAt(startPos + Vector3.new(0, 3, 0), endPos + Vector3.new(0, 3, 0))
+            rootPart.CFrame = lookAt
         end
 
-        moveConn = humanoid.MoveToFinished:Connect(function(reached)
-            local dist = (Vector3.new(rootPart.Position.X, 0, rootPart.Position.Z)
-                - Vector3.new(destination.X, 0, destination.Z)).Magnitude
-            if dist < 2 then
-                -- Close enough, we've arrived
-                arrived = true
-                moveConn:Disconnect()
+        local elapsed = 0
+        local walkConnection
+        walkConnection = RunService.Heartbeat:Connect(function(dt)
+            if not npc.Parent then
+                walkConnection:Disconnect()
+                return
+            end
+
+            elapsed = elapsed + dt
+            local alpha = math.min(elapsed / duration, 1)
+
+            local currentPos = startPos:Lerp(endPos, alpha)
+            -- Face direction of travel
+            if direction.Magnitude > 0.1 then
+                rootPart.CFrame = CFrame.lookAt(currentPos + Vector3.new(0, 3, 0), endPos + Vector3.new(0, 3, 0))
+            else
+                rootPart.CFrame = CFrame.new(currentPos + Vector3.new(0, 3, 0))
+            end
+
+            if alpha >= 1 then
+                walkConnection:Disconnect()
 
                 -- Stop walk animation, resume idle
                 if tracks then
@@ -2117,20 +2121,17 @@ local function walkNPCTo(npc, destination, speed, callback)
                 end
 
                 if callback then callback() end
-            else
-                -- Not there yet (hit 8-sec timeout), re-issue MoveTo
-                doMoveTo()
             end
         end)
-
-        doMoveTo()
 
         -- Return a disconnect-able object for API compatibility
         return {
             Disconnect = function()
-                if moveConn then moveConn:Disconnect() end
-                if tracks and tracks.walk then tracks.walk:Stop() end
-                if tracks and tracks.idle and not tracks.idle.IsPlaying then tracks.idle:Play() end
+                if walkConnection then walkConnection:Disconnect() end
+                if tracks then
+                    if tracks.walk then tracks.walk:Stop() end
+                    if tracks.idle and not tracks.idle.IsPlaying then tracks.idle:Play() end
+                end
             end
         }
     end
