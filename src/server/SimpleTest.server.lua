@@ -1945,7 +1945,7 @@ local function createWorkerNPC(name, position, color, workerType)
         if rootPart then
             rootPart.CanCollide = true
             rootPart.Anchored = false
-            rootPart:SetNetworkOwner(nil) -- Server authority
+            -- SetNetworkOwner deferred until after NPC is parented to Workspace
         end
 
         -- Position the NPC
@@ -2037,6 +2037,17 @@ local function createWorkerNPC(name, position, color, workerType)
 
     -- Add worker-type-specific accessories (hats, tools, etc.)
     addWorkerAccessories(npc, workerType)
+
+    -- Defer SetNetworkOwner until after caller parents NPC into Workspace
+    local npcRef = npc
+    task.defer(function()
+        if npcRef and npcRef.Parent then
+            local root = npcRef:FindFirstChild("HumanoidRootPart")
+            if root then
+                pcall(function() root:SetNetworkOwner(nil) end)
+            end
+        end
+    end)
 
     return npc
 end
