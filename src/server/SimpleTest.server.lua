@@ -3292,7 +3292,7 @@ local function createGoldMine()
         smelter = Vector3.new(baseX - 15, GROUND_Y, baseZ - 20),     -- Back-left: smelter
         goldChest = Vector3.new(baseX + 15, GROUND_Y, baseZ - 20),   -- Back-right: chest (near smelter)
         -- Front-left area (walls at baseX +/- 40, so positions must be inside that range)
-        oreVein = Vector3.new(baseX - 37, GROUND_Y, baseZ + 10),     -- Left wall: ore vein embedded in wall (wall at -40)
+        oreVein = Vector3.new(baseX - 33, GROUND_Y, baseZ + 10),     -- Left wall: ore vein near wall (wall at -40, 7 stud gap for miners)
         -- Front-right area (upgrades)
         upgradeKiosk = Vector3.new(baseX + 32, GROUND_Y, baseZ + 10), -- Right side: upgrade kiosk INSIDE room (walls at +40)
         -- Hire stations on SIDES of entrance portal, AGAINST entrance wall
@@ -3943,6 +3943,7 @@ local function createGoldMine()
         if not humanoid then return end
         local player = Players:GetPlayerFromCharacter(character)
         if not player then return end
+        if not isVillageOwner(player) then return end
         if inputDebounce[player.UserId] then return end
 
         local currentOre = getPlayerOre(player)
@@ -3990,6 +3991,7 @@ local function createGoldMine()
         if not humanoid then return end
         local player = Players:GetPlayerFromCharacter(character)
         if not player then return end
+        if not isVillageOwner(player) then return end
         if outputDebounce[player.UserId] then return end
 
         -- Check if player is carrying gold (limit: 10 per trip)
@@ -4155,6 +4157,7 @@ local function createGoldMine()
         if not humanoid then return end
         local player = Players:GetPlayerFromCharacter(character)
         if not player then return end
+        if not isVillageOwner(player) then return end
         if chestDebounce[player.UserId] then return end
 
         -- Check if player is carrying gold bars
@@ -4417,7 +4420,7 @@ local function createGoldMine()
                 -- Walk to ore vein
                 minerData.state = "walking_to_ore"
                 setNPCStatus(miner, "Walking to ore...")
-                local orePos = GoldMineState.positions.oreVein + Vector3.new(math.random(-3, 3), 0, math.random(-2, 2))
+                local orePos = GoldMineState.positions.oreVein + Vector3.new(math.random(2, 5), 0, math.random(-2, 2))
                 walkNPCTo(miner, orePos, walkSpeed, function()
                     -- Mining with visual swing animation
                     minerData.state = "mining"
@@ -6750,6 +6753,7 @@ local function createLumberMill()
         if not humanoid then return end
         local player = Players:GetPlayerFromCharacter(character)
         if not player then return end
+        if not isVillageOwner(player) then return end
         if sawmillInputDebounce[player.UserId] then return end
 
         local currentLogs = getPlayerLogs(player)
@@ -6855,6 +6859,7 @@ local function createLumberMill()
         if not humanoid then return end
         local player = Players:GetPlayerFromCharacter(character)
         if not player then return end
+        if not isVillageOwner(player) then return end
         if plankPickupDebounce[player.UserId] then return end
 
         local currentPlanks = getPlayerPlanks(player)
@@ -12198,7 +12203,7 @@ local function createTownHall()
     local doorway = Instance.new("Part")
     doorway.Name = "Doorway"
     doorway.Size = Vector3.new(6, 7, 2)
-    doorway.Position = Vector3.new(exteriorX, extGround + 6, exteriorZ - 9)
+    doorway.Position = Vector3.new(exteriorX, extGround + 6, exteriorZ - 9.15)
     doorway.Anchored = true
     doorway.Material = Enum.Material.Slate
     doorway.Color = Color3.fromRGB(30, 25, 20)
@@ -12208,7 +12213,7 @@ local function createTownHall()
     local leftDoor = Instance.new("Part")
     leftDoor.Name = "LeftDoor"
     leftDoor.Size = Vector3.new(2.5, 6, 0.3)
-    leftDoor.Position = Vector3.new(exteriorX - 1.3, extGround + 5.5, exteriorZ - 8.5)
+    leftDoor.Position = Vector3.new(exteriorX - 1.3, extGround + 5.5, exteriorZ - 8.65)
     leftDoor.Anchored = true
     leftDoor.Material = Enum.Material.Wood
     leftDoor.Color = woodColor
@@ -12217,7 +12222,7 @@ local function createTownHall()
     local rightDoor = Instance.new("Part")
     rightDoor.Name = "RightDoor"
     rightDoor.Size = Vector3.new(2.5, 6, 0.3)
-    rightDoor.Position = Vector3.new(exteriorX + 1.3, extGround + 5.5, exteriorZ - 8.5)
+    rightDoor.Position = Vector3.new(exteriorX + 1.3, extGround + 5.5, exteriorZ - 8.65)
     rightDoor.Anchored = true
     rightDoor.Material = Enum.Material.Wood
     rightDoor.Color = woodColor
@@ -12229,7 +12234,7 @@ local function createTownHall()
         handle.Name = "DoorHandle"
         handle.Shape = Enum.PartType.Ball
         handle.Size = Vector3.new(0.4, 0.4, 0.4)
-        handle.Position = Vector3.new(exteriorX + xOff - 1, extGround + 5.5, exteriorZ - 8.3)
+        handle.Position = Vector3.new(exteriorX + xOff - 1, extGround + 5.5, exteriorZ - 8.45)
         handle.Anchored = true
         handle.Material = Enum.Material.Metal
         handle.Color = goldAccent
@@ -13248,6 +13253,7 @@ local function createTownHall()
     end)
 
     researchPrompt.Triggered:Connect(function(player)
+        if not isVillageOwner(player) then return end
         -- Gather research data to send to client
         local researchData = {
             townHallLevel = TownHallState.level,
@@ -13326,6 +13332,7 @@ local function createTownHall()
     -- Handle research start request from client UI
     if ResearchEvents.StartResearchRequest then
         ResearchEvents.StartResearchRequest.OnServerEvent:Connect(function(player, researchId)
+            if not isVillageOwner(player) then return end
             if typeof(researchId) ~= "string" then return end
 
             local success = startResearch(player, researchId)
@@ -13370,6 +13377,7 @@ local function createTownHall()
                 local startEvent = Events:FindFirstChild("StartResearchRequest")
                 if startEvent then
                     startEvent.OnServerEvent:Connect(function(player, researchId)
+                        if not isVillageOwner(player) then return end
                         if typeof(researchId) ~= "string" then return end
 
                         local success = startResearch(player, researchId)
