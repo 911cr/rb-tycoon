@@ -63,7 +63,7 @@
         "$className": "SpawnLocation",
         "$properties": {
           "Size": [8, 1, 8],
-          "Position": [500, 5, 500],
+          "Position": [500, 0.5, 500],
           "Anchored": true,
           "Material": "Cobblestone",
           "Color": [0.471, 0.451, 0.431],

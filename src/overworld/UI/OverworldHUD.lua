@@ -25,6 +25,7 @@ OverworldHUD.__index = OverworldHUD
 -- Signals
 OverworldHUD.GoToCityClicked = Signal.new()
 OverworldHUD.FindBattleClicked = Signal.new()
+OverworldHUD.DefenseLogClicked = Signal.new()
 
 -- ============================================================================
 -- PRIVATE STATE
@@ -41,6 +42,7 @@ local _loadingFrame: Frame? = nil
 local _errorFrame: Frame? = nil
 local _goToCityButton: TextButton? = nil
 local _findBattleButton: TextButton? = nil
+local _defenseLogButton: TextButton? = nil
 
 -- ============================================================================
 -- UI CREATION
@@ -271,6 +273,48 @@ local function createHUD(): ScreenGui
     end)
 
     _findBattleButton = findBattleButton
+
+    -- Defense Log button (bottom center, to the left of Go to City)
+    local defenseLogButton = Instance.new("TextButton")
+    defenseLogButton.Name = "DefenseLogButton"
+    defenseLogButton.Size = UDim2.new(0, 160, 0, 50)
+    defenseLogButton.Position = UDim2.new(0.5, -270, 1, -70)
+    defenseLogButton.BackgroundColor3 = Color3.fromRGB(100, 40, 40)
+    defenseLogButton.BorderSizePixel = 0
+    defenseLogButton.Text = "Defense Log"
+    defenseLogButton.TextColor3 = Color3.fromRGB(255, 220, 200)
+    defenseLogButton.TextSize = 20
+    defenseLogButton.Font = Enum.Font.GothamBold
+    defenseLogButton.Parent = screenGui
+
+    local dlCorner = Instance.new("UICorner")
+    dlCorner.CornerRadius = UDim.new(0, 10)
+    dlCorner.Parent = defenseLogButton
+
+    local dlStroke = Instance.new("UIStroke")
+    dlStroke.Color = Color3.fromRGB(160, 60, 60)
+    dlStroke.Thickness = 3
+    dlStroke.Parent = defenseLogButton
+
+    -- Hover effect
+    defenseLogButton.MouseEnter:Connect(function()
+        TweenService:Create(defenseLogButton, TweenInfo.new(0.2), {
+            BackgroundColor3 = Color3.fromRGB(130, 55, 55)
+        }):Play()
+    end)
+
+    defenseLogButton.MouseLeave:Connect(function()
+        TweenService:Create(defenseLogButton, TweenInfo.new(0.2), {
+            BackgroundColor3 = Color3.fromRGB(100, 40, 40)
+        }):Play()
+    end)
+
+    -- Click handler
+    defenseLogButton.MouseButton1Click:Connect(function()
+        OverworldHUD.DefenseLogClicked:Fire()
+    end)
+
+    _defenseLogButton = defenseLogButton
 
     -- Loading screen (for teleports)
     local loadingFrame = Instance.new("Frame")

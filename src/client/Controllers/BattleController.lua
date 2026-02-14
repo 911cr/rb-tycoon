@@ -52,6 +52,10 @@ local _battleResults: any = nil
 
 -- RemoteEvent references (resolved in Init)
 local _returnToOverworldEvent: RemoteEvent? = nil
+local _requestSurrenderEvent: RemoteEvent? = nil
+
+-- Ordered list of available troop types (for number key selection)
+local _orderedTroops: {string} = {}
 
 -- Constants
 local GRID_SIZE = 40
@@ -222,8 +226,11 @@ function BattleController:Surrender()
         return
     end
 
-    -- TODO: Implement surrender event via CombatService
-    print("[Battle] Surrender requested")
+    if _requestSurrenderEvent then
+        _requestSurrenderEvent:FireServer({ battleId = _currentBattleId })
+    end
+
+    print("[Battle] Surrender requested for battle:", tostring(_currentBattleId))
 end
 
 --[[
@@ -331,6 +338,21 @@ function BattleController:Init()
     -- Resolve ReturnToOverworld event reference for firing later
     _returnToOverworldEvent = Events:WaitForChild("ReturnToOverworld", 2) :: RemoteEvent?
 
+    -- Resolve RequestSurrender event reference for firing later
+    _requestSurrenderEvent = Events:FindFirstChild("RequestSurrender") :: RemoteEvent?
+
+    -- Connect BattleUI.SurrenderRequested signal to trigger surrender
+    local UIFolder = script.Parent.Parent:FindFirstChild("UI")
+    if UIFolder then
+        local BattleUIModule = UIFolder:FindFirstChild("BattleUI")
+        if BattleUIModule then
+            local BattleUI = require(BattleUIModule)
+            BattleUI.SurrenderRequested:Connect(function()
+                self:Surrender()
+            end)
+        end
+    end
+
     -- ========================================================================
     -- BattleArenaReady: Server notifies that the arena has been spawned.
     -- Transition the camera to the arena and show battle UI.
@@ -384,6 +406,24 @@ function BattleController:Init()
             if not state or state.battleId ~= _currentBattleId then return end
 
             _battleState = state
+
+            -- Build ordered troop list from state.troops (array of troop objects)
+            if state.troops then
+                local troopCounts: {[string]: number} = {}
+                for _, troop in state.troops do
+                    if troop.type and troop.state ~= "dead" then
+                        troopCounts[troop.type] = (troopCounts[troop.type] or 0) + 1
+                    end
+                end
+
+                _orderedTroops = {}
+                for troopType, count in troopCounts do
+                    if count > 0 then
+                        table.insert(_orderedTroops, troopType)
+                    end
+                end
+                table.sort(_orderedTroops) -- Alphabetical for consistent ordering
+            end
 
             -- TODO: Update battle UI with new state
             -- - Update destruction meter (state.destruction)
@@ -483,9 +523,9 @@ function BattleController:Init()
         elseif input.KeyCode == Enum.KeyCode.Nine then keyNumber = 9
         end
 
-        if keyNumber then
-            -- TODO: Select troop from player's available troops by index
-            print("[Battle] Troop slot", keyNumber, "selected")
+        if keyNumber and keyNumber <= #_orderedTroops then
+            local troopType = _orderedTroops[keyNumber]
+            self:SelectTroop(troopType)
         end
     end)
 

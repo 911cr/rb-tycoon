@@ -11,6 +11,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local ServerScriptService = game:GetService("ServerScriptService")
+local PathfindingService = game:GetService("PathfindingService")
 
 -- DataService for persisting player resources
 local DataService = nil
@@ -1967,10 +1968,9 @@ local function createWorkerNPC(name, position, color, workerType)
             rootPart.Anchored = true
         end
 
-        -- Position the NPC
-        if rootPart then
-            rootPart.CFrame = CFrame.new(position + Vector3.new(0, 3, 0))
-        end
+        -- Position the NPC (PivotTo moves ALL parts, not just rootPart,
+        -- avoiding Motor6D desync where body parts stay at origin)
+        npc:PivotTo(CFrame.new(position + Vector3.new(0, 3, 0)))
 
         -- Remove default Animate LocalScript (won't work on server NPCs)
         local animScript = npc:FindFirstChild("Animate")
@@ -2074,10 +2074,10 @@ end
 
 -- Move all parts of an NPC to a new position (including carried items)
 local function moveNPC(npc, newPosition)
-    -- R15 path: move via HumanoidRootPart CFrame (joints handle all other parts)
+    -- R15 path: PivotTo moves entire model (avoids Motor6D desync)
     local rootPart = npc:FindFirstChild("HumanoidRootPart")
     if rootPart then
-        rootPart.CFrame = CFrame.new(newPosition + Vector3.new(0, 3, 0))
+        npc:PivotTo(CFrame.new(newPosition + Vector3.new(0, 3, 0)))
         return
     end
 
@@ -2085,17 +2085,41 @@ local function moveNPC(npc, newPosition)
     moveNPCLegacy(npc, newPosition)
 end
 
--- Animate NPC walking to a destination (R15 uses anchored CFrame lerp + animations, legacy uses lerp)
+-- Animate NPC walking to a destination using PathfindingService waypoints
+-- R15 NPCs use pathfinding to navigate around walls, then CFrame lerp along waypoints
+-- Legacy box-part NPCs fall back to direct lerp
 local function walkNPCTo(npc, destination, speed, callback)
     -- Check if this is an R15 NPC (has HumanoidRootPart)
     local rootPart = npc:FindFirstChild("HumanoidRootPart")
 
     if rootPart then
-        -- R15 path: CFrame lerp (anchored, ghosts through objects) with R15 animations
         local startPos = rootPart.Position - Vector3.new(0, 3, 0)
         local endPos = Vector3.new(destination.X, startPos.Y, destination.Z)
-        local distance = (endPos - startPos).Magnitude
-        local duration = distance / (speed or 8)
+
+        -- Build waypoint list using PathfindingService (navigates around walls)
+        local waypoints = { endPos } -- fallback: direct path
+        local pathOk, pathErr = pcall(function()
+            local path = PathfindingService:CreatePath({
+                AgentRadius = 2,
+                AgentHeight = 5,
+                AgentCanJump = false,
+            })
+            path:ComputeAsync(rootPart.Position, endPos + Vector3.new(0, 3, 0))
+            if path.Status == Enum.PathStatus.Success then
+                local pts = path:GetWaypoints()
+                if #pts > 1 then
+                    waypoints = {}
+                    for i = 2, #pts do -- skip first waypoint (current position)
+                        table.insert(waypoints, Vector3.new(pts[i].Position.X, startPos.Y, pts[i].Position.Z))
+                    end
+                end
+            end
+        end)
+
+        if not pathOk then
+            -- PathfindingService failed, use direct path (single waypoint)
+            waypoints = { endPos }
+        end
 
         -- Start walk animation
         local tracks = _npcAnimTracks[npc]
@@ -2104,14 +2128,20 @@ local function walkNPCTo(npc, destination, speed, callback)
             if tracks.idle and tracks.idle.IsPlaying then tracks.idle:Stop() end
         end
 
-        -- Face the destination
-        local direction = (endPos - startPos)
-        if direction.Magnitude > 0.1 then
-            local lookAt = CFrame.lookAt(startPos + Vector3.new(0, 3, 0), endPos + Vector3.new(0, 3, 0))
-            rootPart.CFrame = lookAt
+        -- Walk through waypoints sequentially via CFrame lerp
+        local wpIndex = 1
+        local segStart = startPos
+        local segEnd = waypoints[1]
+        local segDist = (segEnd - segStart).Magnitude
+        local segDuration = segDist / math.max(speed or 8, 0.1)
+        local segElapsed = 0
+
+        -- Face initial direction (PivotTo moves ALL body parts, not just rootPart)
+        local segDir = (segEnd - segStart)
+        if segDir.Magnitude > 0.1 then
+            npc:PivotTo(CFrame.lookAt(segStart + Vector3.new(0, 3, 0), segEnd + Vector3.new(0, 3, 0)))
         end
 
-        local elapsed = 0
         local walkConnection
         walkConnection = RunService.Heartbeat:Connect(function(dt)
             if not npc.Parent then
@@ -2119,27 +2149,41 @@ local function walkNPCTo(npc, destination, speed, callback)
                 return
             end
 
-            elapsed = elapsed + dt
-            local alpha = math.min(elapsed / duration, 1)
+            segElapsed = segElapsed + dt
+            local alpha = math.min(segElapsed / math.max(segDuration, 0.01), 1)
 
-            local currentPos = startPos:Lerp(endPos, alpha)
-            -- Face direction of travel
-            if direction.Magnitude > 0.1 then
-                rootPart.CFrame = CFrame.lookAt(currentPos + Vector3.new(0, 3, 0), endPos + Vector3.new(0, 3, 0))
+            local currentPos = segStart:Lerp(segEnd, alpha)
+            local dir = (segEnd - segStart)
+            if dir.Magnitude > 0.1 then
+                npc:PivotTo(CFrame.lookAt(currentPos + Vector3.new(0, 3, 0), segEnd + Vector3.new(0, 3, 0)))
             else
-                rootPart.CFrame = CFrame.new(currentPos + Vector3.new(0, 3, 0))
+                npc:PivotTo(CFrame.new(currentPos + Vector3.new(0, 3, 0)))
             end
 
             if alpha >= 1 then
-                walkConnection:Disconnect()
+                -- Move to next waypoint
+                wpIndex = wpIndex + 1
+                if wpIndex <= #waypoints then
+                    segStart = segEnd
+                    segEnd = waypoints[wpIndex]
+                    segDist = (segEnd - segStart).Magnitude
+                    segDuration = segDist / math.max(speed or 8, 0.1)
+                    segElapsed = 0
 
-                -- Stop walk animation, resume idle
-                if tracks then
-                    if tracks.walk then tracks.walk:Stop() end
-                    if tracks.idle and not tracks.idle.IsPlaying then tracks.idle:Play() end
+                    -- Face new direction
+                    dir = (segEnd - segStart)
+                    if dir.Magnitude > 0.1 then
+                        npc:PivotTo(CFrame.lookAt(segStart + Vector3.new(0, 3, 0), segEnd + Vector3.new(0, 3, 0)))
+                    end
+                else
+                    -- All waypoints reached
+                    walkConnection:Disconnect()
+                    if tracks then
+                        if tracks.walk then tracks.walk:Stop() end
+                        if tracks.idle and not tracks.idle.IsPlaying then tracks.idle:Play() end
+                    end
+                    if callback then callback() end
                 end
-
-                if callback then callback() end
             end
         end)
 
@@ -6947,6 +6991,7 @@ local function createLumberMill()
         if not humanoid then return end
         local player = Players:GetPlayerFromCharacter(character)
         if not player then return end
+        if not isVillageOwner(player) then return end
         if storageChestDebounce[player.UserId] then return end
 
         local playerCarriedPlanks = getPlayerPlanks(player)
@@ -8687,6 +8732,7 @@ local function createFarm(farmNumber)
         if not humanoid then return end
         local player = Players:GetPlayerFromCharacter(character)
         if not player then return end
+        if not isVillageOwner(player) then return end
         if basketDebounce[player.UserId] then return end
 
         local currentCrops = getPlayerCrops(player)
@@ -9000,6 +9046,7 @@ local function createFarm(farmNumber)
         if not humanoid then return end
         local player = Players:GetPlayerFromCharacter(character)
         if not player then return end
+        if not isVillageOwner(player) then return end
         if windmillInputDebounce[player.UserId] then return end
 
         -- Check if player is carrying crops OR if harvest pile has crops
@@ -9133,6 +9180,7 @@ local function createFarm(farmNumber)
         if not humanoid then return end
         local player = Players:GetPlayerFromCharacter(character)
         if not player then return end
+        if not isVillageOwner(player) then return end
         if siloPickupDebounce[player.UserId] then return end
 
         local currentFood = getPlayerFood(player)
@@ -9240,6 +9288,7 @@ local function createFarm(farmNumber)
         if not humanoid then return end
         local player = Players:GetPlayerFromCharacter(character)
         if not player then return end
+        if not isVillageOwner(player) then return end
         if storageShedDebounce[player.UserId] then return end
 
         local playerCarriedFood = getPlayerFood(player)
@@ -10838,6 +10887,7 @@ local function createBarracks()
         if not humanoid then return end
         local player = Players:GetPlayerFromCharacter(character)
         if not player then return end
+        if not isVillageOwner(player) then return end
         if recruitDebounce[player.UserId] then return end
         recruitDebounce[player.UserId] = true
 
@@ -11016,6 +11066,7 @@ local function createBarracks()
         if not humanoid then return end
         local player = Players:GetPlayerFromCharacter(character)
         if not player then return end
+        if not isVillageOwner(player) then return end
         if trainingInputDebounce[player.UserId] then return end
         trainingInputDebounce[player.UserId] = true
 
@@ -11065,6 +11116,7 @@ local function createBarracks()
         if not humanoid then return end
         local player = Players:GetPlayerFromCharacter(character)
         if not player then return end
+        if not isVillageOwner(player) then return end
         if trainingOutputDebounce[player.UserId] then return end
         trainingOutputDebounce[player.UserId] = true
 
@@ -11285,6 +11337,7 @@ local function createBarracks()
         if not humanoid then return end
         local player = Players:GetPlayerFromCharacter(character)
         if not player then return end
+        if not isVillageOwner(player) then return end
         if armoryInputDebounce[player.UserId] then return end
         armoryInputDebounce[player.UserId] = true
 
@@ -11323,6 +11376,7 @@ local function createBarracks()
         if not humanoid then return end
         local player = Players:GetPlayerFromCharacter(character)
         if not player then return end
+        if not isVillageOwner(player) then return end
         if armoryOutputDebounce[player.UserId] then return end
         armoryOutputDebounce[player.UserId] = true
 
@@ -11505,6 +11559,7 @@ local function createBarracks()
         if not humanoid then return end
         local player = Players:GetPlayerFromCharacter(character)
         if not player then return end
+        if not isVillageOwner(player) then return end
         if deployDebounce[player.UserId] then return end
         deployDebounce[player.UserId] = true
 
@@ -14364,10 +14419,44 @@ local function applyLoadedState(savedState)
             TownHallState.shields.isActive = th.shields.isActive or false
             TownHallState.shields.duration = th.shields.duration or 0
             TownHallState.shields.endTime = th.shields.endTime or 0
+            -- Time reconciliation: expire shields that ended while offline
+            if TownHallState.shields.isActive and TownHallState.shields.endTime > 0 then
+                if os.time() >= TownHallState.shields.endTime then
+                    TownHallState.shields.isActive = false
+                    TownHallState.shields.duration = 0
+                    TownHallState.shields.endTime = 0
+                    print("[Reconstruct] Shield expired while offline")
+                end
+            end
         end
         if th.research then
             TownHallState.research.completed = th.research.completed or {}
-            TownHallState.research.inProgress = th.research.inProgress
+            -- Convert saved research time back to tick()-based for the running timer
+            if th.research.inProgress and th.research.inProgress.id then
+                local ip = th.research.inProgress
+                local elapsed = os.time() - (ip.savedAt or os.time())
+                local remaining = math.max(0, (ip.remainingTime or 0) - elapsed)
+                if remaining > 0 then
+                    local now = tick()
+                    TownHallState.research.inProgress = {
+                        id = ip.id,
+                        startTime = now,
+                        endTime = now + remaining,
+                    }
+                    print(string.format("[Reconstruct] Research '%s' resuming with %.0fs remaining", ip.id, remaining))
+                else
+                    -- Research completed while offline — will be completed by the timer loop
+                    local now = tick()
+                    TownHallState.research.inProgress = {
+                        id = ip.id,
+                        startTime = now - 1,
+                        endTime = now - 1, -- Already expired, timer will call completeResearch()
+                    }
+                    print(string.format("[Reconstruct] Research '%s' completed while offline", ip.id))
+                end
+            else
+                TownHallState.research.inProgress = nil
+            end
         end
     end
 
@@ -14644,7 +14733,7 @@ game:BindToClose(function()
         pcall(function()
             VillageStateService:SaveState()
         end)
-        -- Give time for DataStore write
-        task.wait(3)
+        -- Give time for DataStore write with retry backoff
+        task.wait(5)
     end
 end)

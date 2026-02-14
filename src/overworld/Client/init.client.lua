@@ -154,6 +154,285 @@ if OverworldHUD and OverworldHUD.GoToCityClicked then
     end)
 end
 
+-- Connect Defense Log button -> show defense log popup
+if OverworldHUD and OverworldHUD.DefenseLogClicked then
+    -- Defense log popup state
+    local _defenseLogGui: ScreenGui? = nil
+    local _defenseLogVisible = false
+
+    local function formatNumber(num: number): string
+        local formatted = tostring(math.floor(num))
+        local k
+        while true do
+            formatted, k = string.gsub(formatted, "^(-?%d+)(%d%d%d)", '%1,%2')
+            if k == 0 then break end
+        end
+        return formatted
+    end
+
+    local function formatTimeAgo(timestamp: number): string
+        local now = os.time()
+        local diff = now - timestamp
+        if diff < 60 then return "Just now"
+        elseif diff < 3600 then return math.floor(diff / 60) .. "m ago"
+        elseif diff < 86400 then return math.floor(diff / 3600) .. "h ago"
+        else return math.floor(diff / 86400) .. "d ago"
+        end
+    end
+
+    local function showDefenseLog()
+        if _defenseLogVisible and _defenseLogGui then
+            _defenseLogGui.Enabled = false
+            _defenseLogVisible = false
+            return
+        end
+
+        -- Fetch defense log from server
+        local GetDefenseLog = Events:FindFirstChild("GetDefenseLog") :: RemoteFunction?
+        if not GetDefenseLog then
+            if OverworldHUD and OverworldHUD.ShowError then
+                OverworldHUD:ShowError("Defense log unavailable")
+            end
+            return
+        end
+
+        local logData = GetDefenseLog:InvokeServer()
+
+        -- Create or reuse ScreenGui
+        if not _defenseLogGui then
+            _defenseLogGui = Instance.new("ScreenGui")
+            _defenseLogGui.Name = "DefenseLogPopup"
+            _defenseLogGui.ResetOnSpawn = false
+            _defenseLogGui.DisplayOrder = 50
+            _defenseLogGui.Parent = PlayerGui
+        end
+
+        -- Clear previous content
+        for _, child in _defenseLogGui:GetChildren() do
+            child:Destroy()
+        end
+
+        -- Dark overlay
+        local overlay = Instance.new("Frame")
+        overlay.Name = "Overlay"
+        overlay.Size = UDim2.new(1, 0, 1, 0)
+        overlay.BackgroundColor3 = Color3.new(0, 0, 0)
+        overlay.BackgroundTransparency = 0.5
+        overlay.Parent = _defenseLogGui
+
+        -- Main panel
+        local panel = Instance.new("Frame")
+        panel.Name = "Panel"
+        panel.Size = UDim2.new(0, 420, 0, 500)
+        panel.Position = UDim2.new(0.5, 0, 0.5, 0)
+        panel.AnchorPoint = Vector2.new(0.5, 0.5)
+        panel.BackgroundColor3 = Color3.fromRGB(30, 25, 22)
+        panel.BorderSizePixel = 0
+        panel.Parent = _defenseLogGui
+
+        local panelCorner = Instance.new("UICorner")
+        panelCorner.CornerRadius = UDim.new(0, 12)
+        panelCorner.Parent = panel
+
+        local panelStroke = Instance.new("UIStroke")
+        panelStroke.Color = Color3.fromRGB(160, 60, 60)
+        panelStroke.Thickness = 2
+        panelStroke.Parent = panel
+
+        -- Header
+        local header = Instance.new("TextLabel")
+        header.Name = "Header"
+        header.Size = UDim2.new(1, 0, 0, 50)
+        header.Position = UDim2.new(0, 0, 0, 8)
+        header.BackgroundTransparency = 1
+        header.Text = "Defense Log"
+        header.TextColor3 = Color3.fromRGB(240, 220, 180)
+        header.TextSize = 24
+        header.Font = Enum.Font.GothamBold
+        header.Parent = panel
+
+        -- Close button
+        local closeButton = Instance.new("TextButton")
+        closeButton.Name = "Close"
+        closeButton.Size = UDim2.new(0, 36, 0, 36)
+        closeButton.Position = UDim2.new(1, -12, 0, 12)
+        closeButton.AnchorPoint = Vector2.new(1, 0)
+        closeButton.BackgroundColor3 = Color3.fromRGB(160, 50, 50)
+        closeButton.Text = "X"
+        closeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+        closeButton.TextSize = 18
+        closeButton.Font = Enum.Font.GothamBold
+        closeButton.BorderSizePixel = 0
+        closeButton.Parent = panel
+
+        local closeCorner = Instance.new("UICorner")
+        closeCorner.CornerRadius = UDim.new(0, 6)
+        closeCorner.Parent = closeButton
+
+        closeButton.MouseButton1Click:Connect(function()
+            _defenseLogGui.Enabled = false
+            _defenseLogVisible = false
+        end)
+
+        -- Also close on overlay click
+        local overlayButton = Instance.new("TextButton")
+        overlayButton.Size = UDim2.new(1, 0, 1, 0)
+        overlayButton.BackgroundTransparency = 1
+        overlayButton.Text = ""
+        overlayButton.Parent = overlay
+        overlayButton.MouseButton1Click:Connect(function()
+            _defenseLogGui.Enabled = false
+            _defenseLogVisible = false
+        end)
+
+        -- Log scroll container
+        local scrollFrame = Instance.new("ScrollingFrame")
+        scrollFrame.Name = "LogScroll"
+        scrollFrame.Size = UDim2.new(1, -24, 1, -80)
+        scrollFrame.Position = UDim2.new(0, 12, 0, 68)
+        scrollFrame.BackgroundColor3 = Color3.fromRGB(40, 35, 30)
+        scrollFrame.BorderSizePixel = 0
+        scrollFrame.ScrollBarThickness = 6
+        scrollFrame.ScrollBarImageColor3 = Color3.fromRGB(120, 80, 60)
+        scrollFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+        scrollFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
+        scrollFrame.Parent = panel
+
+        local scrollCorner = Instance.new("UICorner")
+        scrollCorner.CornerRadius = UDim.new(0, 8)
+        scrollCorner.Parent = scrollFrame
+
+        local listLayout = Instance.new("UIListLayout")
+        listLayout.Padding = UDim.new(0, 6)
+        listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+        listLayout.Parent = scrollFrame
+
+        local listPadding = Instance.new("UIPadding")
+        listPadding.PaddingTop = UDim.new(0, 4)
+        listPadding.PaddingLeft = UDim.new(0, 4)
+        listPadding.PaddingRight = UDim.new(0, 4)
+        listPadding.Parent = scrollFrame
+
+        -- Populate entries
+        if logData and #logData > 0 then
+            -- Sort by timestamp descending
+            local sorted = table.clone(logData)
+            table.sort(sorted, function(a, b)
+                return (a.timestamp or 0) > (b.timestamp or 0)
+            end)
+
+            for i, entry in sorted do
+                local entryFrame = Instance.new("Frame")
+                entryFrame.Name = "Entry_" .. i
+                entryFrame.Size = UDim2.new(1, -8, 0, 70)
+                entryFrame.BackgroundColor3 = Color3.fromRGB(50, 45, 38)
+                entryFrame.BorderSizePixel = 0
+                entryFrame.LayoutOrder = i
+                entryFrame.Parent = scrollFrame
+
+                local entryCorner = Instance.new("UICorner")
+                entryCorner.CornerRadius = UDim.new(0, 6)
+                entryCorner.Parent = entryFrame
+
+                -- Attacker name
+                local nameLabel = Instance.new("TextLabel")
+                nameLabel.Size = UDim2.new(0.5, 0, 0, 22)
+                nameLabel.Position = UDim2.new(0, 12, 0, 6)
+                nameLabel.BackgroundTransparency = 1
+                nameLabel.Text = entry.attackerName or "Unknown"
+                nameLabel.TextColor3 = Color3.fromRGB(240, 220, 180)
+                nameLabel.TextSize = 14
+                nameLabel.Font = Enum.Font.GothamBold
+                nameLabel.TextXAlignment = Enum.TextXAlignment.Left
+                nameLabel.Parent = entryFrame
+
+                -- Time ago
+                local timeLabel = Instance.new("TextLabel")
+                timeLabel.Size = UDim2.new(0.5, -12, 0, 22)
+                timeLabel.Position = UDim2.new(0.5, 0, 0, 6)
+                timeLabel.BackgroundTransparency = 1
+                timeLabel.Text = formatTimeAgo(entry.timestamp or 0)
+                timeLabel.TextColor3 = Color3.fromRGB(150, 140, 120)
+                timeLabel.TextSize = 12
+                timeLabel.Font = Enum.Font.Gotham
+                timeLabel.TextXAlignment = Enum.TextXAlignment.Right
+                timeLabel.Parent = entryFrame
+
+                -- Stars
+                local stars = entry.stars or 0
+                local starText = ""
+                for s = 1, 3 do
+                    starText = starText .. (s <= stars and "★" or "☆")
+                end
+                local starLabel = Instance.new("TextLabel")
+                starLabel.Size = UDim2.new(0, 60, 0, 20)
+                starLabel.Position = UDim2.new(0, 12, 0, 30)
+                starLabel.BackgroundTransparency = 1
+                starLabel.Text = starText
+                starLabel.TextColor3 = Color3.fromRGB(255, 200, 50)
+                starLabel.TextSize = 14
+                starLabel.Font = Enum.Font.GothamBold
+                starLabel.TextXAlignment = Enum.TextXAlignment.Left
+                starLabel.Parent = entryFrame
+
+                -- Destruction
+                local destLabel = Instance.new("TextLabel")
+                destLabel.Size = UDim2.new(0, 60, 0, 20)
+                destLabel.Position = UDim2.new(0, 80, 0, 30)
+                destLabel.BackgroundTransparency = 1
+                destLabel.Text = math.floor(entry.destruction or 0) .. "%"
+                destLabel.TextColor3 = Color3.fromRGB(200, 80, 60)
+                destLabel.TextSize = 12
+                destLabel.Font = Enum.Font.Gotham
+                destLabel.TextXAlignment = Enum.TextXAlignment.Left
+                destLabel.Parent = entryFrame
+
+                -- Loot stolen
+                local lootLabel = Instance.new("TextLabel")
+                lootLabel.Size = UDim2.new(0.5, -12, 0, 20)
+                lootLabel.Position = UDim2.new(0, 12, 0, 48)
+                lootLabel.BackgroundTransparency = 1
+                lootLabel.Text = "-" .. formatNumber(entry.goldStolen or 0) .. " Gold"
+                lootLabel.TextColor3 = Color3.fromRGB(200, 80, 60)
+                lootLabel.TextSize = 12
+                lootLabel.Font = Enum.Font.Gotham
+                lootLabel.TextXAlignment = Enum.TextXAlignment.Left
+                lootLabel.Parent = entryFrame
+
+                -- Trophy change
+                local trophyChange = entry.trophyChange or 0
+                local trophyLabel = Instance.new("TextLabel")
+                trophyLabel.Size = UDim2.new(0.5, -12, 0, 20)
+                trophyLabel.Position = UDim2.new(0.5, 0, 0, 48)
+                trophyLabel.BackgroundTransparency = 1
+                trophyLabel.Text = (trophyChange >= 0 and "+" or "") .. trophyChange .. " Trophies"
+                trophyLabel.TextColor3 = trophyChange >= 0 and Color3.fromRGB(80, 200, 80) or Color3.fromRGB(200, 80, 60)
+                trophyLabel.TextSize = 12
+                trophyLabel.Font = Enum.Font.Gotham
+                trophyLabel.TextXAlignment = Enum.TextXAlignment.Right
+                trophyLabel.Parent = entryFrame
+            end
+        else
+            local emptyLabel = Instance.new("TextLabel")
+            emptyLabel.Size = UDim2.new(1, 0, 0, 60)
+            emptyLabel.BackgroundTransparency = 1
+            emptyLabel.Text = "No attacks on your base yet!"
+            emptyLabel.TextColor3 = Color3.fromRGB(150, 140, 120)
+            emptyLabel.TextSize = 16
+            emptyLabel.Font = Enum.Font.Gotham
+            emptyLabel.Parent = scrollFrame
+        end
+
+        _defenseLogGui.Enabled = true
+        _defenseLogVisible = true
+    end
+
+    OverworldHUD.DefenseLogClicked:Connect(function()
+        print("[CLIENT] Defense Log clicked")
+        showDefenseLog()
+    end)
+end
+
 -- Connect Find Battle button -> open MatchmakingUI
 if OverworldHUD and OverworldHUD.FindBattleClicked then
     OverworldHUD.FindBattleClicked:Connect(function()

@@ -26,6 +26,8 @@ local LOCK_DATASTORE_NAME = "BattleTycoon_VillageLock"
 local AUTO_SAVE_INTERVAL = 300 -- 5 minutes
 local SESSION_LOCK_TIMEOUT = 120 -- 2 minutes
 local CURRENT_VERSION = 1
+local SAVE_MAX_RETRIES = 3
+local SAVE_RETRY_BASE_DELAY = 1 -- seconds (exponential backoff: 1, 2, 4)
 
 -- Private state
 local _initialized = false
@@ -37,6 +39,7 @@ local _useLocalData = false
 local _sessionLocked = false
 local _autoSaveThread: thread? = nil
 local _stateTablesRef: any = nil -- Reference to SimpleTest state tables
+local _loadFailed = false -- True if DataStore load errored (prevents overwriting saved data)
 
 -- Try to get DataStore
 local success, result = pcall(function()
@@ -421,8 +424,19 @@ function VillageStateService:SerializeState(): any
         if TownHallState.research then
             state.townHall.research = {
                 completed = TownHallState.research.completed or {},
-                inProgress = TownHallState.research.inProgress,
+                inProgress = nil,
             }
+            -- Convert tick()-based research times to os.time() for cross-session persistence
+            if TownHallState.research.inProgress then
+                local ip = TownHallState.research.inProgress
+                local now = tick()
+                local remainingTime = math.max(0, (ip.endTime or 0) - now)
+                state.townHall.research.inProgress = {
+                    id = ip.id,
+                    remainingTime = remainingTime, -- seconds left (tick-independent)
+                    savedAt = os.time(),
+                }
+            end
         end
     end
 
@@ -497,6 +511,7 @@ function VillageStateService:Init(ownerUserId: number)
     else
         warn(string.format("[VillageStateService] DataStore load error: %s", tostring(loadResult)))
         _loadedState = nil
+        _loadFailed = true -- Prevent overwriting potentially valid saved data
     end
 
     _initialized = true
@@ -534,6 +549,13 @@ function VillageStateService:SaveState(): boolean
         return false
     end
 
+    -- Guard: If the initial DataStore load failed, do NOT overwrite
+    -- potentially valid saved data with a fresh default state
+    if _loadFailed then
+        warn("[VillageStateService] Skipping save: initial load failed, refusing to overwrite potential saved data")
+        return false
+    end
+
     local state = self:SerializeState()
     if not state then
         warn("[VillageStateService] Serialization failed, cannot save")
@@ -545,19 +567,29 @@ function VillageStateService:SaveState(): boolean
         return true
     end
 
-    local saveSuccess, saveErr = pcall(function()
-        _dataStore:SetAsync(tostring(_ownerUserId), state)
-    end)
+    -- Retry with exponential backoff
+    for attempt = 1, SAVE_MAX_RETRIES do
+        local saveSuccess, saveErr = pcall(function()
+            _dataStore:SetAsync(tostring(_ownerUserId), state)
+        end)
 
-    if saveSuccess then
-        print(string.format("[VillageStateService] Saved village state for %d", _ownerUserId))
-        -- Refresh lock to prevent it from expiring during long sessions
-        refreshVillageLock(_ownerUserId)
-        return true
-    else
-        warn(string.format("[VillageStateService] Save failed: %s", tostring(saveErr)))
-        return false
+        if saveSuccess then
+            print(string.format("[VillageStateService] Saved village state for %d (attempt %d)", _ownerUserId, attempt))
+            -- Refresh lock to prevent it from expiring during long sessions
+            refreshVillageLock(_ownerUserId)
+            return true
+        else
+            warn(string.format("[VillageStateService] Save attempt %d/%d failed: %s",
+                attempt, SAVE_MAX_RETRIES, tostring(saveErr)))
+            if attempt < SAVE_MAX_RETRIES then
+                local delay = SAVE_RETRY_BASE_DELAY * (2 ^ (attempt - 1))
+                task.wait(delay)
+            end
+        end
     end
+
+    warn(string.format("[VillageStateService] All %d save attempts failed for %d", SAVE_MAX_RETRIES, _ownerUserId))
+    return false
 end
 
 --[[

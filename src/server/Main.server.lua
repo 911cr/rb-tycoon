@@ -786,7 +786,7 @@ game:BindToClose(function()
         DataService:SaveAllData()
     end
 
-    task.wait(3) -- Give time for saves to complete
+    task.wait(5) -- Give time for saves with retry backoff to complete
 end)
 
 -- ═══════════════════════════════════════════════════════════════════════════════

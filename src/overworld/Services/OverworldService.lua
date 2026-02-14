@@ -116,7 +116,7 @@ local function getSpawnPosition(player: Player): Vector3
 
     -- Default spawn at map center
     local mapConfig = OverworldConfig.Map
-    return Vector3.new(mapConfig.CenterX, 5, mapConfig.CenterZ)
+    return Vector3.new(mapConfig.CenterX, 0, mapConfig.CenterZ)
 end
 
 --[[
@@ -341,7 +341,7 @@ function OverworldService:GetBaseData(targetUserId: number, viewerPlayer: Player
             if targetPlayer then
                 local targetData = dataService:GetPlayerData(targetPlayer)
                 if targetData and targetData.resources then
-                    local lootPercent = 0.20
+                    local lootPercent = 0.85
                     lootEstimate = {
                         gold = math.floor((targetData.resources.gold or 0) * lootPercent),
                         wood = math.floor((targetData.resources.wood or 0) * lootPercent),

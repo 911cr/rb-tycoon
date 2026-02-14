@@ -24,7 +24,7 @@ BalanceConfig.Economy = {
 
     -- Loot percentages
     Loot = {
-        AvailablePercent = 0.20, -- 20% of stored resources available as loot
+        AvailablePercent = 0.85, -- 85% of stored resources available as loot
         TownHallBonus = 0.10, -- +10% if TH destroyed
         StorageProtection = 0.05, -- 5% of resources protected per storage level
     },

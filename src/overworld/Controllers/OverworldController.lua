@@ -238,26 +238,11 @@ function OverworldController:Init()
         _updatePosition = events:FindFirstChild("UpdatePosition") :: RemoteEvent?
     end
 
-    -- Setup camera
+    -- Use default Roblox camera (Custom) so players can look around freely
     _camera = workspace.CurrentCamera
     if _camera then
-        _camera.CameraType = Enum.CameraType.Scriptable
+        _camera.CameraType = Enum.CameraType.Custom
     end
-
-    -- Handle zoom with mouse wheel
-    UserInputService.InputChanged:Connect(function(input, gameProcessed)
-        if gameProcessed then return end
-
-        if input.UserInputType == Enum.UserInputType.MouseWheel then
-            local zoomDelta = input.Position.Z * -5
-            _cameraZoom = math.clamp(
-                _cameraZoom + zoomDelta,
-                OverworldConfig.Camera.MinZoom,
-                OverworldConfig.Camera.MaxZoom
-            )
-            _cameraOffset = Vector3.new(0, _cameraZoom * 0.75, _cameraZoom)
-        end
-    end)
 
     _initialized = true
     print("[OverworldController] Initialized")
@@ -280,9 +265,6 @@ function OverworldController:StartPositionUpdates(humanoidRootPart: Part)
     -- Start update loop
     _updateConnection = RunService.Heartbeat:Connect(function(dt)
         if not _humanoidRootPart then return end
-
-        -- Update camera
-        updateCamera()
 
         -- Check if position changed significantly
         local currentPos = _humanoidRootPart.Position

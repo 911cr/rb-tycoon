@@ -30,6 +30,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local CombatTypes = require(ReplicatedStorage.Shared.Types.CombatTypes)
 local TroopData = require(ReplicatedStorage.Shared.Constants.TroopData)
+local SpellData = require(ReplicatedStorage.Shared.Constants.SpellData)
 local BalanceConfig = require(ReplicatedStorage.Shared.Constants.BalanceConfig)
 local Signal = require(ReplicatedStorage.Shared.Modules.Signal)
 
@@ -84,6 +85,17 @@ type SpellDeployResult = {
     success: boolean,
     deployedSpell: CombatTypes.DeployedSpell?,
     error: string?,
+}
+
+type ActiveSpell = {
+    id: string,
+    type: string,
+    level: number,
+    position: Vector3,
+    radius: number,
+    startTime: number,
+    duration: number,
+    levelData: any,
 }
 
 --[[
@@ -272,10 +284,21 @@ function CombatService:StartBattle(attacker: Player, defenderUserId: number): St
         starsEarned = 0,
         townHallDestroyed = false,
         remainingTroops = table.clone(availableTroops),
-        remainingSpells = {}, -- TODO: Add spell support
+        remainingSpells = {}, -- Populated below from player data
         lootAvailable = lootAvailable,
         lootClaimed = { gold = 0, wood = 0, food = 0 },
     }
+
+    -- Populate remaining spells from player data
+    local availableSpells = attackerData.spells or {}
+    for spellType, count in availableSpells do
+        if typeof(count) == "number" and count > 0 then
+            local spellDef = SpellData.GetByType(spellType)
+            if spellDef then
+                battleState.remainingSpells[spellType] = count
+            end
+        end
+    end
 
     -- Store battle state
     _activeBattles[battleId] = battleState
@@ -306,6 +329,7 @@ function CombatService:StartBattle(attacker: Player, defenderUserId: number): St
     _activeBattles[battleId .. "_defenderData"] = defenderData :: any
     _activeBattles[battleId .. "_defenderResearch"] = (defenderData.research and defenderData.research.completed) or {} :: any
     _activeBattles[battleId .. "_buildingLastAttack"] = {} :: any
+    _activeBattles[battleId .. "_activeSpells"] = {} :: any
 
     -- Fire event
     CombatService.BattleStarted:Fire(attacker.UserId, defenderUserId, battleId)
@@ -457,9 +481,154 @@ function CombatService:DeploySpell(
         return { success = false, deployedSpell = nil, error = "INVALID_SPELL_TYPE" }
     end
 
-    -- TODO: Load SpellData similar to TroopData
-    -- For now, return not implemented
-    return { success = false, deployedSpell = nil, error = "SPELLS_NOT_IMPLEMENTED" }
+    -- Validate position
+    if typeof(position) ~= "Vector3" then
+        return { success = false, deployedSpell = nil, error = "INVALID_POSITION" }
+    end
+
+    -- Look up spell data
+    local spellDef = SpellData.GetByType(spellType)
+    if not spellDef then
+        return { success = false, deployedSpell = nil, error = "INVALID_SPELL_TYPE" }
+    end
+
+    -- Get level data (default level 1 for now)
+    local spellLevel = 1
+    local levelData = SpellData.GetLevelData(spellType, spellLevel)
+    if not levelData then
+        return { success = false, deployedSpell = nil, error = "INVALID_SPELL_LEVEL" }
+    end
+
+    -- Check the player has this spell available
+    local remaining = battle.remainingSpells[spellType]
+    if not remaining or remaining <= 0 then
+        return { success = false, deployedSpell = nil, error = "NO_SPELLS_REMAINING" }
+    end
+
+    -- Decrement remaining count
+    battle.remainingSpells[spellType] = remaining - 1
+    if battle.remainingSpells[spellType] <= 0 then
+        battle.remainingSpells[spellType] = nil
+    end
+
+    -- Switch to battle phase if needed
+    if battle.phase == "scout" then
+        battle.phase = "deploy"
+    end
+    if battle.phase == "deploy" then
+        battle.phase = "battle"
+    end
+
+    local radius = levelData.radius or 3
+    local duration = levelData.duration or 0
+
+    -- Apply instant spells immediately
+    if spellType == "Lightning" then
+        -- Lightning: instant AoE damage to buildings in radius
+        local targets = _activeBattles[battleId .. "_targets"] :: {BuildingTarget}
+        if targets then
+            local totalDamage = levelData.totalDamage or 150
+            local numberOfStrikes = levelData.numberOfStrikes or 6
+            local damagePerStrike = totalDamage / numberOfStrikes
+
+            for _, target in targets do
+                if target.isDestroyed then continue end
+                local dist = (target.position - position).Magnitude
+                if dist <= radius then
+                    -- Apply all strikes as instant damage
+                    local totalDmg = damagePerStrike * numberOfStrikes
+                    target.currentHp -= totalDmg
+
+                    if target.currentHp <= 0 then
+                        if target.type == "Farm" then
+                            target.isDestroyed = false
+                            target.currentHp = 1
+                            target.wasDowngraded = true
+                        else
+                            target.isDestroyed = true
+                            if target.type == "TownHall" then
+                                battle.townHallDestroyed = true
+                            end
+                        end
+                    end
+                end
+            end
+        end
+
+    elseif spellType == "Earthquake" then
+        -- Earthquake: instant % HP damage to buildings in radius
+        local targets = _activeBattles[battleId .. "_targets"] :: {BuildingTarget}
+        if targets then
+            local damagePercent = (levelData.buildingDamagePercent or 14) / 100
+            local wallMultiplier = levelData.wallDamageMultiplier or 4
+
+            for _, target in targets do
+                if target.isDestroyed then continue end
+                local dist = (target.position - position).Magnitude
+                if dist <= radius then
+                    local percentDmg = damagePercent
+                    if target.category == "wall" then
+                        percentDmg = percentDmg * wallMultiplier
+                    end
+
+                    -- Earthquake deals % of max HP as damage
+                    local damage = target.maxHp * percentDmg
+                    target.currentHp -= damage
+
+                    -- Earthquake cannot fully destroy buildings (minimum 1 HP)
+                    -- but walls can be destroyed
+                    if target.currentHp <= 0 then
+                        if target.category == "wall" then
+                            target.isDestroyed = true
+                        elseif target.type == "Farm" then
+                            target.isDestroyed = false
+                            target.currentHp = 1
+                            target.wasDowngraded = true
+                        else
+                            -- Earthquake leaves buildings at minimum 1 HP
+                            target.currentHp = 1
+                        end
+                    end
+                end
+            end
+        end
+
+    else
+        -- Duration-based spells: Heal, Rage, Freeze, Jump
+        -- Add to active spells list for per-tick processing
+        local activeSpells = _activeBattles[battleId .. "_activeSpells"] :: {ActiveSpell}
+        if activeSpells then
+            local activeSpell: ActiveSpell = {
+                id = HttpService:GenerateGUID(false),
+                type = spellType,
+                level = spellLevel,
+                position = position,
+                radius = radius,
+                startTime = now,
+                duration = duration,
+                levelData = levelData,
+            }
+            table.insert(activeSpells, activeSpell)
+        end
+    end
+
+    -- Create deployed spell record
+    local deployedSpell: CombatTypes.DeployedSpell = {
+        id = HttpService:GenerateGUID(false),
+        type = spellType,
+        level = spellLevel,
+        position = position,
+        radius = radius,
+        deployedAt = now,
+        expiresAt = now + duration,
+    }
+
+    table.insert(battle.spells, deployedSpell)
+
+    -- Fire event
+    CombatService.SpellDeployed:Fire(battleId, deployedSpell)
+
+    return { success = true, deployedSpell = deployedSpell, error = nil }
 end
 
 --[[
@@ -480,6 +649,81 @@ function CombatService:SimulateTick(battleId: string)
 
     local targets = _activeBattles[battleId .. "_targets"] :: {BuildingTarget}
     local totalHp = _activeBattles[battleId .. "_totalHp"] :: number
+    local activeSpells = _activeBattles[battleId .. "_activeSpells"] :: {ActiveSpell}
+
+    -- === PROCESS ACTIVE SPELLS: compute per-tick flags ===
+    -- Clear per-tick spell flags on troops
+    local troopRageBuff: {[string]: {damageBoost: number, speedBoost: number}} = {}
+    local troopIgnoreWalls: {[string]: boolean} = {}
+    local frozenBuildings: {[string]: boolean} = {}
+
+    if activeSpells then
+        -- Remove expired spells (iterate in reverse for safe removal)
+        local i = #activeSpells
+        while i >= 1 do
+            local spell = activeSpells[i]
+            if now >= spell.startTime + spell.duration then
+                table.remove(activeSpells, i)
+            end
+            i -= 1
+        end
+
+        -- Apply per-tick effects for each active spell
+        for _, spell in activeSpells do
+            local ld = spell.levelData
+
+            if spell.type == "Heal" then
+                -- Heal: restore HP to troops within radius
+                local healAmount = (ld.healPerSecond or 35) * TICK_RATE
+                for _, troop in battle.troops do
+                    if troop.state == "dead" then continue end
+                    local dist = (troop.position - spell.position).Magnitude
+                    if dist <= spell.radius then
+                        troop.currentHp = math.min(troop.currentHp + healAmount, troop.maxHp)
+                    end
+                end
+
+            elseif spell.type == "Rage" then
+                -- Rage: flag troops in radius for damage/speed boost
+                local damageBoost = ld.damageBoost or 1.3
+                local speedBoost = ld.speedBoost or 1.2
+                for _, troop in battle.troops do
+                    if troop.state == "dead" then continue end
+                    local dist = (troop.position - spell.position).Magnitude
+                    if dist <= spell.radius then
+                        -- Use the strongest rage buff if multiple overlap
+                        local existing = troopRageBuff[troop.id]
+                        if not existing or damageBoost > existing.damageBoost then
+                            troopRageBuff[troop.id] = {
+                                damageBoost = damageBoost,
+                                speedBoost = speedBoost,
+                            }
+                        end
+                    end
+                end
+
+            elseif spell.type == "Freeze" then
+                -- Freeze: flag buildings in radius as frozen (skip defense firing)
+                for _, building in targets do
+                    if building.isDestroyed then continue end
+                    local dist = (building.position - spell.position).Magnitude
+                    if dist <= spell.radius then
+                        frozenBuildings[building.id] = true
+                    end
+                end
+
+            elseif spell.type == "Jump" then
+                -- Jump: flag troops in radius to ignore walls
+                for _, troop in battle.troops do
+                    if troop.state == "dead" then continue end
+                    local dist = (troop.position - spell.position).Magnitude
+                    if dist <= spell.radius then
+                        troopIgnoreWalls[troop.id] = true
+                    end
+                end
+            end
+        end
+    end
 
     -- Simulate each troop
     for _, troop in battle.troops do
@@ -491,8 +735,30 @@ function CombatService:SimulateTick(battleId: string)
         local levelData = TroopData.GetLevelData(troop.type, troop.level)
         if not levelData then continue end
 
-        -- Find target
-        local target = findNearestTarget(troop, targets, levelData)
+        -- Find target (Jump spell makes troops ignore walls)
+        local effectiveTargets = targets
+        if troopIgnoreWalls[troop.id] then
+            -- Filter out walls for troops under Jump spell effect
+            effectiveTargets = {}
+            for _, t in targets do
+                if t.category ~= "wall" or t.isDestroyed then
+                    table.insert(effectiveTargets, t)
+                end
+            end
+            -- If all non-wall targets are destroyed, fall back to all targets
+            local hasNonWall = false
+            for _, t in effectiveTargets do
+                if not t.isDestroyed then
+                    hasNonWall = true
+                    break
+                end
+            end
+            if not hasNonWall then
+                effectiveTargets = targets
+            end
+        end
+
+        local target = findNearestTarget(troop, effectiveTargets, levelData)
         if not target then
             -- No targets left, battle complete
             troop.state = "moving"
@@ -517,6 +783,12 @@ function CombatService:SimulateTick(battleId: string)
 
             -- Deal damage
             local damage = levelData.dps * attackInterval
+
+            -- Apply Rage spell damage boost
+            local rageBuff = troopRageBuff[troop.id]
+            if rageBuff then
+                damage = damage * rageBuff.damageBoost
+            end
 
             -- Wall breaker bonus
             if target.category == "wall" and levelData.wallDamageMultiplier then
@@ -563,6 +835,13 @@ function CombatService:SimulateTick(battleId: string)
 
             local direction = (target.position - troop.position).Unit
             local moveSpeed = levelData.moveSpeed or 16
+
+            -- Apply Rage spell speed boost
+            local rageBuff = troopRageBuff[troop.id]
+            if rageBuff then
+                moveSpeed = moveSpeed * rageBuff.speedBoost
+            end
+
             local moveDistance = moveSpeed * TICK_RATE
 
             troop.position = troop.position + (direction * moveDistance)
@@ -601,6 +880,9 @@ function CombatService:SimulateTick(battleId: string)
 
         for _, building in targets do
             if building.isDestroyed then continue end
+
+            -- Skip frozen buildings (Freeze spell effect)
+            if frozenBuildings[building.id] then continue end
 
             -- Check if this is a defense building
             local requiredResearch = buildingToResearch[building.type]
@@ -853,6 +1135,12 @@ function CombatService:EndBattle(battleId: string): CombatTypes.BattleResult?
         end
     end
 
+    -- Count spells used
+    local spellsUsed: {[string]: number} = {}
+    for _, spell in battle.spells do
+        spellsUsed[spell.type] = (spellsUsed[spell.type] or 0) + 1
+    end
+
     -- Count buildings destroyed
     local buildingsDestroyed = 0
     local targets = _activeBattles[battleId .. "_targets"] :: {BuildingTarget}
@@ -874,7 +1162,7 @@ function CombatService:EndBattle(battleId: string): CombatTypes.BattleResult?
         xpGained = xpGained,
         duration = now - battle.startedAt,
         troopsLost = troopsLost,
-        spellsUsed = {},
+        spellsUsed = spellsUsed,
         buildingsDestroyed = buildingsDestroyed,
     }
 
@@ -1028,6 +1316,7 @@ function CombatService:EndBattle(battleId: string): CombatTypes.BattleResult?
         _activeBattles[battleId .. "_defenderData"] = nil
         _activeBattles[battleId .. "_defenderResearch"] = nil
         _activeBattles[battleId .. "_buildingLastAttack"] = nil
+        _activeBattles[battleId .. "_activeSpells"] = nil
     end)
 
     -- Fire event

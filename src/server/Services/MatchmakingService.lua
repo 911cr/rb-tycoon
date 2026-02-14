@@ -416,7 +416,19 @@ function MatchmakingService:GetOpponentBattleData(opponentUserId: number): any?
         end
     end
 
-    -- TODO: Load offline player data from DataStore
+    -- Load offline player data from DataStore
+    local offlineData = DataService:GetPlayerDataById(opponentUserId)
+    if offlineData then
+        return {
+            userId = opponentUserId,
+            username = offlineData.username or ("Player_" .. opponentUserId),
+            trophies = offlineData.trophies,
+            townHallLevel = offlineData.townHallLevel,
+            resources = offlineData.resources,
+            buildings = offlineData.buildings,
+        }
+    end
+
     return nil
 end
 

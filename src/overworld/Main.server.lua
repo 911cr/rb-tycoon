@@ -84,9 +84,13 @@ local RequestMatchmaking = createRemoteEvent("RequestMatchmaking")
 local MatchmakingResult = createRemoteEvent("MatchmakingResult")
 local ConfirmMatchmaking = createRemoteEvent("ConfirmMatchmaking")
 
+-- Battle events
+local RequestSurrender = createRemoteEvent("RequestSurrender")
+
 -- UI data
 local GetOwnBaseData = createRemoteFunction("GetOwnBaseData")
 local GetPlayerResources = createRemoteFunction("GetPlayerResources")
+local GetDefenseLog = createRemoteFunction("GetDefenseLog")
 
 print("[OVERWORLD] Events folder created")
 
@@ -269,13 +273,77 @@ end
 
 -- Get player resources (for HUD)
 GetPlayerResources.OnServerInvoke = function(player)
-    -- This would connect to DataService in a full implementation
+    if OverworldService then
+        -- OverworldService uses DataService internally via getDataService()
+        -- Access DataService the same way: load from ServerScriptService.Services
+        local dataServiceModule = ServerScriptService:FindFirstChild("Services")
+            and ServerScriptService.Services:FindFirstChild("DataService")
+        if dataServiceModule then
+            local success, DataService = pcall(require, dataServiceModule)
+            if success and DataService and DataService.GetPlayerData then
+                local data = DataService:GetPlayerData(player)
+                if data and data.resources then
+                    return {
+                        gold = data.resources.gold or 0,
+                        wood = data.resources.wood or 0,
+                        food = data.resources.food or 0,
+                    }
+                end
+            end
+        end
+    end
+
+    -- Fallback if DataService unavailable or player data not loaded yet
     return {
-        gold = 1000,
-        wood = 500,
-        food = 300,
+        gold = 0,
+        wood = 0,
+        food = 0,
     }
 end
+
+-- Get player defense log
+GetDefenseLog.OnServerInvoke = function(player)
+    local dataServiceModule = ServerScriptService:FindFirstChild("Services")
+        and ServerScriptService.Services:FindFirstChild("DataService")
+    if dataServiceModule then
+        local success, DataService = pcall(require, dataServiceModule)
+        if success and DataService and DataService.GetPlayerData then
+            local data = DataService:GetPlayerData(player)
+            if data and data.defenseLog then
+                return data.defenseLog
+            end
+        end
+    end
+    return {}
+end
+
+-- Surrender: client requests to surrender the current battle
+connectEvent(RequestSurrender, function(player, data)
+    if not BattleArenaService then return end
+
+    -- Validate player is in a battle
+    if not BattleArenaService:IsPlayerInBattle(player) then return end
+
+    local battleId = BattleArenaService:GetPlayerBattleId(player)
+    if not battleId then return end
+
+    -- Validate battleId from client matches (if provided)
+    if data and typeof(data) == "table" and data.battleId then
+        if data.battleId ~= battleId then return end
+    end
+
+    -- End the battle via CombatService
+    local CombatServiceModule = ServerScriptService:FindFirstChild("Services")
+        and ServerScriptService.Services:FindFirstChild("CombatService")
+    if CombatServiceModule then
+        local success, CombatService = pcall(require, CombatServiceModule)
+        if success and CombatService and CombatService.EndBattle then
+            CombatService:EndBattle(battleId)
+        end
+    end
+
+    print(string.format("[OVERWORLD] Player %s surrendered battle %s", player.Name, battleId))
+end)
 
 -- Base interaction (approach/leave)
 connectEvent(ApproachBase, function(player, targetUserId)
@@ -414,7 +482,7 @@ connectEvent(RequestMatchmaking, function(player)
     }
     if opponent.resources then
         -- Loot formula: attacker can steal a percentage of defender resources
-        local lootPercent = 0.2 -- 20% of stored resources
+        local lootPercent = 0.85 -- 85% of stored resources
         lootAvailable.gold = math.floor((opponent.resources.gold or 0) * lootPercent)
         lootAvailable.wood = math.floor((opponent.resources.wood or 0) * lootPercent)
         lootAvailable.food = math.floor((opponent.resources.food or 0) * lootPercent)
@@ -543,7 +611,7 @@ Players.PlayerAdded:Connect(function(player)
 
             local humanoidRootPart = character:WaitForChild("HumanoidRootPart", 5)
             if humanoidRootPart then
-                humanoidRootPart.CFrame = CFrame.new(spawnPos + Vector3.new(0, 5, 0))
+                humanoidRootPart.CFrame = CFrame.new(spawnPos + Vector3.new(0, 3, 0))
             end
 
             -- Set walk speed
@@ -558,7 +626,7 @@ Players.PlayerAdded:Connect(function(player)
         if player.Character then
             local humanoidRootPart = player.Character:FindFirstChild("HumanoidRootPart")
             if humanoidRootPart then
-                humanoidRootPart.CFrame = CFrame.new(spawnPos + Vector3.new(0, 5, 0))
+                humanoidRootPart.CFrame = CFrame.new(spawnPos + Vector3.new(0, 3, 0))
             end
         end
     end
@@ -603,7 +671,7 @@ for _, player in Players:GetPlayers() do
             if player.Character then
                 local humanoidRootPart = player.Character:FindFirstChild("HumanoidRootPart")
                 if humanoidRootPart then
-                    humanoidRootPart.CFrame = CFrame.new(spawnPos + Vector3.new(0, 5, 0))
+                    humanoidRootPart.CFrame = CFrame.new(spawnPos + Vector3.new(0, 3, 0))
                 end
 
                 local humanoid = player.Character:FindFirstChild("Humanoid") :: Humanoid?
