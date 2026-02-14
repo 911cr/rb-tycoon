@@ -166,13 +166,26 @@ if OverworldHUD and OverworldHUD.GoToCityClicked then
     end)
 end
 
--- Resource refresh loop (updates resource display and raid risk indicator)
+-- Resource sync: listen for SyncPlayerData event (fires after trades, battles, etc.)
+-- AND poll periodically as a fallback
 if OverworldHUD and OverworldHUD.UpdateResources then
+    -- Listen for server push updates (immediate sync after trades, resource changes)
+    local SyncPlayerData = Events:FindFirstChild("SyncPlayerData") :: RemoteEvent?
+    if SyncPlayerData then
+        SyncPlayerData.OnClientEvent:Connect(function(playerData)
+            if playerData and playerData.resources then
+                OverworldHUD:UpdateResources(playerData.resources)
+            end
+        end)
+        print("[CLIENT] SyncPlayerData listener connected")
+    end
+
+    -- Also poll via GetPlayerResources as a fallback
     local GetPlayerResources = Events:FindFirstChild("GetPlayerResources") :: RemoteFunction?
     if GetPlayerResources then
         -- Initial fetch
         task.spawn(function()
-            task.wait(1)
+            task.wait(2)
             local success, resources = pcall(function()
                 return GetPlayerResources:InvokeServer()
             end)

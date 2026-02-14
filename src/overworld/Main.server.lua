@@ -147,6 +147,9 @@ local function loadService(name: string)
     end
 end
 
+-- Load DataService first (other services depend on it for player resources)
+local DataService = loadService("DataService")
+
 -- Load overworld services
 local OverworldService = loadService("OverworldService")
 local TeleportManager = loadService("TeleportManager")
@@ -177,6 +180,7 @@ local function initService(service, name: string)
     end
 end
 
+initService(DataService, "DataService") -- Must be first: loads player data, sets up auto-save
 initService(TeleportManager, "TeleportManager")
 initService(OverworldService, "OverworldService")
 initService(MatchmakingService, "MatchmakingService")
@@ -326,23 +330,14 @@ end
 
 -- Get player resources (for HUD)
 GetPlayerResources.OnServerInvoke = function(player)
-    if OverworldService then
-        -- OverworldService uses DataService internally via getDataService()
-        -- Access DataService the same way: load from ServerScriptService.Services
-        local dataServiceModule = ServerScriptService:FindFirstChild("Services")
-            and ServerScriptService.Services:FindFirstChild("DataService")
-        if dataServiceModule then
-            local success, DataService = pcall(require, dataServiceModule)
-            if success and DataService and DataService.GetPlayerData then
-                local data = DataService:GetPlayerData(player)
-                if data and data.resources then
-                    return {
-                        gold = data.resources.gold or 0,
-                        wood = data.resources.wood or 0,
-                        food = data.resources.food or 0,
-                    }
-                end
-            end
+    if DataService and DataService.GetPlayerData then
+        local data = DataService:GetPlayerData(player)
+        if data and data.resources then
+            return {
+                gold = data.resources.gold or 0,
+                wood = data.resources.wood or 0,
+                food = data.resources.food or 0,
+            }
         end
     end
 
@@ -356,15 +351,10 @@ end
 
 -- Get player defense log
 GetDefenseLog.OnServerInvoke = function(player)
-    local dataServiceModule = ServerScriptService:FindFirstChild("Services")
-        and ServerScriptService.Services:FindFirstChild("DataService")
-    if dataServiceModule then
-        local success, DataService = pcall(require, dataServiceModule)
-        if success and DataService and DataService.GetPlayerData then
-            local data = DataService:GetPlayerData(player)
-            if data and data.defenseLog then
-                return data.defenseLog
-            end
+    if DataService and DataService.GetPlayerData then
+        local data = DataService:GetPlayerData(player)
+        if data and data.defenseLog then
+            return data.defenseLog
         end
     end
     return {}
@@ -372,29 +362,24 @@ end
 
 -- Get unread attacks (attacks since last login) and update lastLoginTime
 GetUnreadAttacks.OnServerInvoke = function(player)
-    local dataServiceModule = ServerScriptService:FindFirstChild("Services")
-        and ServerScriptService.Services:FindFirstChild("DataService")
-    if dataServiceModule then
-        local success, DataService = pcall(require, dataServiceModule)
-        if success and DataService and DataService.GetPlayerData then
-            local data = DataService:GetPlayerData(player)
-            if data then
-                local lastLogin = data.lastLoginTime or 0
-                local unreadAttacks = {}
+    if DataService and DataService.GetPlayerData then
+        local data = DataService:GetPlayerData(player)
+        if data then
+            local lastLogin = data.lastLoginTime or 0
+            local unreadAttacks = {}
 
-                if data.defenseLog then
-                    for _, entry in data.defenseLog do
-                        if (entry.timestamp or 0) > lastLogin then
-                            table.insert(unreadAttacks, entry)
-                        end
+            if data.defenseLog then
+                for _, entry in data.defenseLog do
+                    if (entry.timestamp or 0) > lastLogin then
+                        table.insert(unreadAttacks, entry)
                     end
                 end
-
-                -- Update lastLoginTime to current time
-                data.lastLoginTime = os.time()
-
-                return unreadAttacks
             end
+
+            -- Update lastLoginTime to current time
+            data.lastLoginTime = os.time()
+
+            return unreadAttacks
         end
     end
     return {}
@@ -402,33 +387,28 @@ end
 
 -- Get shield status (for Shield Timer HUD)
 GetShieldStatus.OnServerInvoke = function(player)
-    local dataServiceModule = ServerScriptService:FindFirstChild("Services")
-        and ServerScriptService.Services:FindFirstChild("DataService")
-    if dataServiceModule then
-        local success, DataService = pcall(require, dataServiceModule)
-        if success and DataService and DataService.GetPlayerData then
-            local data = DataService:GetPlayerData(player)
-            if data and data.shield then
-                local shield = data.shield
-                -- Shield can be a table with active + expiresAt fields
-                if typeof(shield) == "table" then
-                    local isActive = shield.active == true
-                    local expiresAt = shield.expiresAt or 0
+    if DataService and DataService.GetPlayerData then
+        local data = DataService:GetPlayerData(player)
+        if data and data.shield then
+            local shield = data.shield
+            -- Shield can be a table with active + expiresAt fields
+            if typeof(shield) == "table" then
+                local isActive = shield.active == true
+                local expiresAt = shield.expiresAt or 0
 
-                    -- Check if shield has expired
-                    if isActive and expiresAt > 0 and os.time() >= expiresAt then
-                        -- Shield expired, deactivate it
-                        shield.active = false
-                        isActive = false
-                    end
+                -- Check if shield has expired
+                if isActive and expiresAt > 0 and os.time() >= expiresAt then
+                    -- Shield expired, deactivate it
+                    shield.active = false
+                    isActive = false
+                end
 
-                    if isActive and expiresAt > os.time() then
-                        return {
-                            active = true,
-                            expiresAt = expiresAt,
-                            remainingSeconds = expiresAt - os.time(),
-                        }
-                    end
+                if isActive and expiresAt > os.time() then
+                    return {
+                        active = true,
+                        expiresAt = expiresAt,
+                        remainingSeconds = expiresAt - os.time(),
+                    }
                 end
             end
         end
@@ -736,15 +716,7 @@ connectEvent(RequestRevenge, function(player, data)
     end
 
     -- 4. VERIFY PLAYER WAS ATTACKED BY THIS TARGET (via defenseLog)
-    local dataServiceModule = ServerScriptService:FindFirstChild("Services")
-        and ServerScriptService.Services:FindFirstChild("DataService")
-    if not dataServiceModule then
-        ServerResponse:FireClient(player, "RequestRevenge", { success = false, error = "SERVICE_UNAVAILABLE" })
-        return
-    end
-
-    local dsSuccess, DataService = pcall(require, dataServiceModule)
-    if not dsSuccess or not DataService then
+    if not DataService then
         ServerResponse:FireClient(player, "RequestRevenge", { success = false, error = "SERVICE_UNAVAILABLE" })
         return
     end
@@ -1052,6 +1024,19 @@ Players.PlayerAdded:Connect(function(player)
             print(string.format("[OVERWORLD] Player arrived from: %s", source or "unknown"))
         end
     end
+
+    -- Sync player resources to client HUD (DataService.Init() auto-loads on PlayerAdded,
+    -- but we need to explicitly fire SyncPlayerData so the overworld client HUD updates)
+    task.delay(2, function()
+        if player.Parent == nil then return end -- Player already left
+        if DataService and DataService.GetPlayerData then
+            local playerData = DataService:GetPlayerData(player)
+            if playerData then
+                SyncPlayerData:FireClient(player, playerData)
+                print(string.format("[OVERWORLD] Synced player data to %s", player.Name))
+            end
+        end
+    end)
 
     -- Register player in overworld
     if OverworldService then

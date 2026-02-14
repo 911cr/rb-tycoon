@@ -3502,6 +3502,7 @@ local function createGoldMine()
     goldMineProductionLabel.TextScaled = true
     goldMineProductionLabel.Font = Enum.Font.GothamBold
     goldMineProductionLabel.Parent = goldMineGui
+    makeSignDoubleSided(signBoard)
 
     -- Function to update production rate display
     local function updateGoldMineProduction()
@@ -4424,6 +4425,7 @@ local function createGoldMine()
     chestSignLabel.TextScaled = true
     chestSignLabel.Font = Enum.Font.GothamBold
     chestSignLabel.Parent = chestSignGui
+    makeSignDoubleSided(chestSign)
 
     -- Gold glow (brightness based on amount)
     local chestGlow = Instance.new("PointLight")
@@ -4556,6 +4558,7 @@ local function createGoldMine()
 
     -- Store reference for updating later
     GoldMineState.minerSign = minerSignLabel
+    makeSignDoubleSided(minerWallSign)
 
     -- Table/counter in front of workers (player approaches from -Z)
     local minerTable = Instance.new("Part")
@@ -4827,6 +4830,7 @@ local function createGoldMine()
 
     -- Store reference for updating later
     GoldMineState.collectorSign = collectorSignLabel
+    makeSignDoubleSided(collectorWallSign)
 
     -- Table/counter in front of workers (player approaches from -Z)
     local collectorTable = Instance.new("Part")
@@ -5130,6 +5134,7 @@ local function createGoldMine()
     kioskSignLabel.TextScaled = true
     kioskSignLabel.Font = Enum.Font.GothamBold
     kioskSignLabel.Parent = kioskSignGui
+    makeSignDoubleSided(kioskSign)
 
     -- Small billboard showing quick stats
     local kioskBillboard = Instance.new("BillboardGui")
@@ -6292,6 +6297,7 @@ local function createLumberMill()
     productionLabel.TextScaled = true
     productionLabel.Font = Enum.Font.GothamBold
     productionLabel.Parent = gui
+    makeSignDoubleSided(signBoard)
 
     -- Function to update production rate display
     local function updateLumberYardProduction()
@@ -7735,6 +7741,7 @@ local function createLumberMill()
     kioskSignLabel.TextScaled = true
     kioskSignLabel.Font = Enum.Font.GothamBold
     kioskSignLabel.Parent = kioskSignGui
+    makeSignDoubleSided(kioskSign)
 
     -- Billboard showing "Press E to Open Upgrades"
     local kioskBillboard = Instance.new("BillboardGui")
@@ -8608,6 +8615,7 @@ local function createFarm(farmNumber)
     seedSignLabel.TextScaled = true
     seedSignLabel.Font = Enum.Font.GothamBold
     seedSignLabel.Parent = seedSignGui
+    makeSignDoubleSided(seedSign)
 
     -- INTERACTION: Get Seeds
     createInteraction(seedShed, "Get Seeds", "Seed Shed", 0.5, function(player)
@@ -9107,6 +9115,7 @@ local function createFarm(farmNumber)
     windmillSignLabel.TextScaled = true
     windmillSignLabel.Font = Enum.Font.GothamBold
     windmillSignLabel.Parent = windmillSignGui
+    makeSignDoubleSided(windmillSign)
 
     -- ===== WINDMILL PROGRESS BAR UI =====
     local windmillBillboard = Instance.new("BillboardGui")
@@ -9511,6 +9520,7 @@ local function createFarm(farmNumber)
     storageSignLabel.TextScaled = true
     storageSignLabel.Font = Enum.Font.GothamBold
     storageSignLabel.Parent = storageSignGui
+    makeSignDoubleSided(storageSign)
 
     -- WALK-THROUGH: Deposit Food for Reward
     local storageShedTrigger = Instance.new("Part")
@@ -9657,6 +9667,7 @@ local function createFarm(farmNumber)
 
     -- Store reference for updating later (like Gold Mine pattern)
     FarmState.farmerSign = farmHireSignLabel
+    makeSignDoubleSided(farmHireSign)
 
     -- Table/counter in front of workers (player approaches from center)
     local farmerTable = Instance.new("Part")
@@ -9909,6 +9920,7 @@ local function createFarm(farmNumber)
 
     -- Store reference for updating later (like Gold Mine pattern)
     FarmState.carrierSign = carrierHireSignLabel
+    makeSignDoubleSided(carrierHireSign)
 
     -- Table/counter in front of workers (player approaches from center)
     local carrierTable = Instance.new("Part")
@@ -10186,6 +10198,7 @@ local function createFarm(farmNumber)
     farmKioskSignLabel.TextScaled = true
     farmKioskSignLabel.Font = Enum.Font.GothamBold
     farmKioskSignLabel.Parent = farmKioskSignGui
+    makeSignDoubleSided(farmKioskSign)
 
     -- Small billboard showing quick stats
     local farmKioskBillboard = Instance.new("BillboardGui")
@@ -12602,6 +12615,7 @@ local function createTownHall()
     signLabel.TextScaled = true
     signLabel.Font = Enum.Font.Antique
     signLabel.Parent = signGui
+    makeSignDoubleSided(signBoard)
 
     -- ===== ENTRANCE TRIGGER =====
     local entranceTrigger = Instance.new("Part")
@@ -12998,6 +13012,7 @@ local function createTownHall()
     trophyLabelText.Font = Enum.Font.GothamBold
     trophyLabelText.TextColor3 = Color3.fromRGB(255, 255, 255)
     trophyLabelText.Parent = trophyLabelGui
+    makeSignDoubleSided(trophyLabel)
 
     -- ========================================================================
     -- NEW STATION 2: BUILDING UPGRADE CENTER
@@ -13256,6 +13271,7 @@ local function createTownHall()
     shieldTimeLabel.Font = Enum.Font.Code
     shieldTimeLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
     shieldTimeLabel.Parent = shieldStatusFrame
+    makeSignDoubleSided(shieldPanel)
 
     -- Update shield status visuals
     local function updateShieldStatusVisuals()

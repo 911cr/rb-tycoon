@@ -827,12 +827,9 @@ connectEvent(RequestTeleportToOverworld, function(player)
         end)
     end
 
-    -- Save player data before teleport
+    -- Save player data before teleport (keeps cache intact)
     if DataService and DataService.SavePlayerData then
         pcall(function() DataService:SavePlayerData(player) end)
-    end
-    if DataService and DataService.PrepareForTeleport then
-        pcall(function() DataService:PrepareForTeleport(player) end)
     end
 
     -- Teleport to overworld
@@ -842,11 +839,46 @@ connectEvent(RequestTeleportToOverworld, function(player)
 
     if success then
         print(string.format("[SERVER] Teleporting %s to overworld", player.Name))
+        -- Only clear cache + release lock AFTER teleport initiated successfully
+        -- PlayerRemoving will also handle cleanup when player actually leaves
+        if DataService and DataService.PrepareForTeleport then
+            pcall(function() DataService:PrepareForTeleport(player) end)
+        end
     else
         warn(string.format("[SERVER] Teleport failed for %s: %s", player.Name, tostring(err)))
+        -- Data cache is still intact — player can keep playing normally
         ServerResponse:FireClient(player, "TeleportToOverworld", {
             success = false, error = "Teleport failed",
         })
+        -- Re-sync HUD in case client is confused
+        if DataService and DataService.GetPlayerData then
+            local data = DataService:GetPlayerData(player)
+            if data then
+                SyncPlayerData:FireClient(player, data)
+            end
+        end
+    end
+end)
+
+-- Handle failed teleports: if Roblox accepted the call but the teleport fails
+-- later, the player stays in-game but PrepareForTeleport already cleared their
+-- data cache. Reload it so they can keep playing.
+TeleportService.TeleportInitFailed:Connect(function(player, _result, errorMessage)
+    warn(string.format("[SERVER] Teleport failed for %s after init: %s", player.Name, tostring(errorMessage)))
+
+    -- Reload player data if it was cleared by PrepareForTeleport
+    if DataService and DataService.GetPlayerData and DataService.LoadPlayerData then
+        local data = DataService:GetPlayerData(player)
+        if not data then
+            print(string.format("[SERVER] Reloading data for %s after failed teleport", player.Name))
+            local result = DataService:LoadPlayerData(player)
+            if result.success and result.data then
+                SyncPlayerData:FireClient(player, result.data)
+                print(string.format("[SERVER] Data restored for %s", player.Name))
+            else
+                warn(string.format("[SERVER] Failed to restore data for %s: %s", player.Name, tostring(result.error)))
+            end
+        end
     end
 end)
 
