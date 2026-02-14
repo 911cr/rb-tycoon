@@ -65,6 +65,10 @@ local RequestRevenge = Events:WaitForChild("RequestRevenge", 10) :: RemoteEvent?
 local AttackGoblinCamp = Events:WaitForChild("AttackGoblinCamp", 10) :: RemoteEvent?
 local GetGoblinCamps = Events:WaitForChild("GetGoblinCamps", 10) :: RemoteFunction?
 
+-- Resource node events
+local CollectResourceNode = Events:WaitForChild("CollectResourceNode", 10) :: RemoteEvent?
+local GetResourceNodes = Events:WaitForChild("GetResourceNodes", 10) :: RemoteFunction?
+
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- Load controllers
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -157,6 +161,39 @@ if OverworldHUD and OverworldHUD.GoToCityClicked then
         print("[CLIENT] Go to City clicked - requesting teleport to village")
         RequestTeleportToVillage:FireServer()
     end)
+end
+
+-- Resource refresh loop (updates resource display and raid risk indicator)
+if OverworldHUD and OverworldHUD.UpdateResources then
+    local GetPlayerResources = Events:FindFirstChild("GetPlayerResources") :: RemoteFunction?
+    if GetPlayerResources then
+        -- Initial fetch
+        task.spawn(function()
+            task.wait(1)
+            local success, resources = pcall(function()
+                return GetPlayerResources:InvokeServer()
+            end)
+            if success and resources then
+                OverworldHUD:UpdateResources(resources)
+            end
+        end)
+
+        -- Periodic refresh every 10 seconds
+        task.spawn(function()
+            while true do
+                task.wait(10)
+                local success, resources = pcall(function()
+                    return GetPlayerResources:InvokeServer()
+                end)
+                if success and resources then
+                    OverworldHUD:UpdateResources(resources)
+                end
+            end
+        end)
+        print("[CLIENT] Resource refresh loop started")
+    else
+        warn("[CLIENT] GetPlayerResources RemoteFunction not found - resource display unavailable")
+    end
 end
 
 -- Connect Scout button -> move player near the target base
@@ -513,6 +550,109 @@ if OverworldHUD and OverworldHUD.DefenseLogClicked then
     end)
 end
 
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- Shield timer HUD
+-- ═══════════════════════════════════════════════════════════════════════════════
+print("[CLIENT] Setting up shield timer...")
+
+do
+    local RunService = game:GetService("RunService")
+    local _shieldActive = false
+    local _shieldExpiresAt = 0
+    local _shieldUpdateConnection: RBXScriptConnection? = nil
+
+    -- Fetch shield status from server
+    local GetShieldStatus = Events:FindFirstChild("GetShieldStatus") :: RemoteFunction?
+    if not GetShieldStatus then
+        -- Wait briefly in case server hasn't created it yet
+        task.delay(2, function()
+            GetShieldStatus = Events:FindFirstChild("GetShieldStatus") :: RemoteFunction?
+        end)
+    end
+
+    local function fetchAndUpdateShield()
+        if not GetShieldStatus then
+            GetShieldStatus = Events:FindFirstChild("GetShieldStatus") :: RemoteFunction?
+        end
+        if not GetShieldStatus then return end
+
+        local success, shieldData = pcall(function()
+            return GetShieldStatus:InvokeServer()
+        end)
+
+        if not success or not shieldData then
+            _shieldActive = false
+            if OverworldHUD and OverworldHUD.UpdateShield then
+                OverworldHUD:UpdateShield({ active = false })
+            end
+            return
+        end
+
+        _shieldActive = shieldData.active == true
+        _shieldExpiresAt = shieldData.expiresAt or 0
+
+        if OverworldHUD and OverworldHUD.UpdateShield then
+            OverworldHUD:UpdateShield(shieldData)
+        end
+    end
+
+    -- Start countdown loop that updates every second
+    local function startShieldCountdown()
+        -- Disconnect any existing update loop
+        if _shieldUpdateConnection then
+            _shieldUpdateConnection:Disconnect()
+            _shieldUpdateConnection = nil
+        end
+
+        local _lastUpdateTime = 0
+
+        _shieldUpdateConnection = RunService.Heartbeat:Connect(function()
+            if not _shieldActive then return end
+
+            local now = os.clock()
+            -- Only update once per second
+            if now - _lastUpdateTime < 1 then return end
+            _lastUpdateTime = now
+
+            local remaining = math.max(0, _shieldExpiresAt - os.time())
+
+            if remaining <= 0 then
+                -- Shield expired
+                _shieldActive = false
+                if OverworldHUD and OverworldHUD.UpdateShield then
+                    OverworldHUD:UpdateShield({ active = false })
+                end
+                return
+            end
+
+            -- Update the display with current remaining time
+            if OverworldHUD and OverworldHUD.UpdateShield then
+                OverworldHUD:UpdateShield({
+                    active = true,
+                    expiresAt = _shieldExpiresAt,
+                    remainingSeconds = remaining,
+                })
+            end
+        end)
+    end
+
+    -- Initial fetch after a brief delay to let server init
+    task.spawn(function()
+        task.wait(2)
+        fetchAndUpdateShield()
+        startShieldCountdown()
+        print("[CLIENT] Shield timer initialized")
+    end)
+
+    -- Periodic re-fetch from server every 60 seconds to stay in sync
+    task.spawn(function()
+        while true do
+            task.wait(60)
+            fetchAndUpdateShield()
+        end
+    end)
+end
+
 -- Connect Find Battle button -> open MatchmakingUI
 if OverworldHUD and OverworldHUD.FindBattleClicked then
     OverworldHUD.FindBattleClicked:Connect(function()
@@ -800,6 +940,467 @@ do
 end
 
 -- ═══════════════════════════════════════════════════════════════════════════════
+-- Resource node overworld markers
+-- ═══════════════════════════════════════════════════════════════════════════════
+print("[CLIENT] Setting up resource node markers...")
+
+do
+    local _nodeMarkers: {[string]: Model} = {} -- [nodeId] = marker model
+    local _nodesFolder: Folder? = nil
+
+    -- Resource node type visual config
+    local NODE_TYPE_VISUALS = {
+        Gold = {
+            displayName = "Gold Vein",
+            color = Color3.fromRGB(255, 200, 50),
+            secondaryColor = Color3.fromRGB(180, 140, 30),
+            material = Enum.Material.Metal,
+            shape = "Rock", -- Rock formation
+            billboardColor = Color3.fromRGB(255, 200, 50),
+        },
+        Wood = {
+            displayName = "Lumber Patch",
+            color = Color3.fromRGB(140, 90, 40),
+            secondaryColor = Color3.fromRGB(100, 65, 25),
+            material = Enum.Material.WoodPlanks,
+            shape = "Stump", -- Tree stump
+            billboardColor = Color3.fromRGB(180, 130, 70),
+        },
+        Food = {
+            displayName = "Berry Bush",
+            color = Color3.fromRGB(50, 160, 60),
+            secondaryColor = Color3.fromRGB(180, 40, 60),
+            material = Enum.Material.Grass,
+            shape = "Bush", -- Round bush
+            billboardColor = Color3.fromRGB(80, 200, 80),
+        },
+    }
+
+    -- Creates a 3D visual marker for a resource node in the overworld
+    local function createNodeMarker(node: any)
+        if _nodeMarkers[node.id] then return end -- Already exists
+
+        -- Ensure folder exists
+        if not _nodesFolder then
+            _nodesFolder = workspace:FindFirstChild("ResourceNodes") :: Folder?
+            if not _nodesFolder then
+                local folder = Instance.new("Folder")
+                folder.Name = "ResourceNodes"
+                folder.Parent = workspace
+                _nodesFolder = folder
+            end
+        end
+
+        local visuals = NODE_TYPE_VISUALS[node.type] or NODE_TYPE_VISUALS.Gold
+        local pos = node.position
+
+        -- Create marker model
+        local marker = Instance.new("Model")
+        marker.Name = "ResourceNode_" .. node.id
+
+        if node.type == "Gold" then
+            -- Gold Vein: cluster of golden rocks with sparkle
+            local rock1 = Instance.new("Part")
+            rock1.Name = "Rock1"
+            rock1.Size = Vector3.new(4, 3, 4)
+            rock1.Position = Vector3.new(pos.X, pos.Y + 1.5, pos.Z)
+            rock1.Anchored = true
+            rock1.CanCollide = false
+            rock1.Material = Enum.Material.Metal
+            rock1.Color = visuals.color
+            rock1.Parent = marker
+
+            local rock2 = Instance.new("Part")
+            rock2.Name = "Rock2"
+            rock2.Size = Vector3.new(2.5, 2, 2.5)
+            rock2.Position = Vector3.new(pos.X + 2, pos.Y + 1, pos.Z + 1)
+            rock2.Anchored = true
+            rock2.CanCollide = false
+            rock2.Material = Enum.Material.Metal
+            rock2.Color = visuals.secondaryColor
+            rock2.Parent = marker
+
+            local rock3 = Instance.new("Part")
+            rock3.Name = "Rock3"
+            rock3.Size = Vector3.new(2, 1.5, 2)
+            rock3.Position = Vector3.new(pos.X - 1.5, pos.Y + 0.75, pos.Z - 1)
+            rock3.Anchored = true
+            rock3.CanCollide = false
+            rock3.Material = Enum.Material.Metal
+            rock3.Color = visuals.color
+            rock3.Parent = marker
+
+            -- Sparkle effect on main rock
+            local sparkle = Instance.new("ParticleEmitter")
+            sparkle.Name = "Sparkle"
+            sparkle.Rate = 5
+            sparkle.Lifetime = NumberRange.new(0.5, 1.5)
+            sparkle.Speed = NumberRange.new(1, 3)
+            sparkle.SpreadAngle = Vector2.new(180, 180)
+            sparkle.Color = ColorSequence.new(Color3.fromRGB(255, 230, 100))
+            sparkle.Size = NumberSequence.new({
+                NumberSequenceKeypoint.new(0, 0.2),
+                NumberSequenceKeypoint.new(0.5, 0.4),
+                NumberSequenceKeypoint.new(1, 0),
+            })
+            sparkle.Transparency = NumberSequence.new({
+                NumberSequenceKeypoint.new(0, 0.5),
+                NumberSequenceKeypoint.new(1, 1),
+            })
+            sparkle.LightEmission = 1
+            sparkle.Parent = rock1
+
+        elseif node.type == "Wood" then
+            -- Lumber Patch: tree stump with logs
+            local stump = Instance.new("Part")
+            stump.Name = "Stump"
+            stump.Size = Vector3.new(4, 2, 4)
+            stump.Position = Vector3.new(pos.X, pos.Y + 1, pos.Z)
+            stump.Anchored = true
+            stump.CanCollide = false
+            stump.Material = Enum.Material.WoodPlanks
+            stump.Color = visuals.color
+            stump.Shape = Enum.PartType.Cylinder
+            stump.Orientation = Vector3.new(0, 0, 90)
+            stump.Parent = marker
+
+            -- Fallen log nearby
+            local log = Instance.new("Part")
+            log.Name = "Log"
+            log.Size = Vector3.new(5, 1.2, 1.2)
+            log.Position = Vector3.new(pos.X + 2, pos.Y + 0.6, pos.Z + 2)
+            log.Anchored = true
+            log.CanCollide = false
+            log.Material = Enum.Material.WoodPlanks
+            log.Color = visuals.secondaryColor
+            log.Orientation = Vector3.new(0, 30, 0)
+            log.Parent = marker
+
+            -- Second smaller log
+            local log2 = Instance.new("Part")
+            log2.Name = "Log2"
+            log2.Size = Vector3.new(3.5, 1, 1)
+            log2.Position = Vector3.new(pos.X - 1.5, pos.Y + 0.5, pos.Z + 1.5)
+            log2.Anchored = true
+            log2.CanCollide = false
+            log2.Material = Enum.Material.WoodPlanks
+            log2.Color = visuals.color
+            log2.Orientation = Vector3.new(0, -20, 10)
+            log2.Parent = marker
+
+        elseif node.type == "Food" then
+            -- Berry Bush: green bush with red berry accents
+            local bush = Instance.new("Part")
+            bush.Name = "Bush"
+            bush.Size = Vector3.new(5, 3, 5)
+            bush.Position = Vector3.new(pos.X, pos.Y + 1.5, pos.Z)
+            bush.Anchored = true
+            bush.CanCollide = false
+            bush.Material = Enum.Material.Grass
+            bush.Color = visuals.color
+            bush.Shape = Enum.PartType.Ball
+            bush.Parent = marker
+
+            -- Berry clusters (small red spheres)
+            local berryPositions = {
+                Vector3.new(1.5, 1, 1),
+                Vector3.new(-1, 1.5, 1.5),
+                Vector3.new(0.5, 2, -1),
+                Vector3.new(-1.5, 0.8, -0.5),
+                Vector3.new(1, 0.5, -1.5),
+            }
+
+            for i, berryOffset in berryPositions do
+                local berry = Instance.new("Part")
+                berry.Name = "Berry_" .. i
+                berry.Size = Vector3.new(0.6, 0.6, 0.6)
+                berry.Position = Vector3.new(pos.X + berryOffset.X, pos.Y + berryOffset.Y, pos.Z + berryOffset.Z)
+                berry.Anchored = true
+                berry.CanCollide = false
+                berry.Material = Enum.Material.SmoothPlastic
+                berry.Color = visuals.secondaryColor
+                berry.Shape = Enum.PartType.Ball
+                berry.Parent = marker
+            end
+        end
+
+        -- Get the primary part for billboard adornee
+        local adorneePart = marker:FindFirstChild("Rock1") or marker:FindFirstChild("Stump") or marker:FindFirstChild("Bush")
+
+        -- BillboardGui with node info + collect button
+        local billboard = Instance.new("BillboardGui")
+        billboard.Name = "NodeInfo"
+        billboard.Size = UDim2.new(0, 180, 0, 100)
+        billboard.StudsOffset = Vector3.new(0, 5, 0)
+        billboard.AlwaysOnTop = true
+        billboard.MaxDistance = 80
+        billboard.Adornee = adorneePart
+        billboard.Parent = marker
+
+        -- Background frame
+        local bgFrame = Instance.new("Frame")
+        bgFrame.Name = "Background"
+        bgFrame.Size = UDim2.new(1, 0, 1, 0)
+        bgFrame.BackgroundColor3 = Color3.fromRGB(25, 20, 18)
+        bgFrame.BackgroundTransparency = 0.2
+        bgFrame.BorderSizePixel = 0
+        bgFrame.Parent = billboard
+
+        local bgCorner = Instance.new("UICorner")
+        bgCorner.CornerRadius = UDim.new(0, 8)
+        bgCorner.Parent = bgFrame
+
+        local bgStroke = Instance.new("UIStroke")
+        bgStroke.Color = visuals.billboardColor
+        bgStroke.Thickness = 2
+        bgStroke.Parent = bgFrame
+
+        -- Node name
+        local nameLabel = Instance.new("TextLabel")
+        nameLabel.Name = "NodeName"
+        nameLabel.Size = UDim2.new(1, -8, 0, 20)
+        nameLabel.Position = UDim2.new(0, 4, 0, 4)
+        nameLabel.BackgroundTransparency = 1
+        nameLabel.Text = node.displayName or visuals.displayName
+        nameLabel.TextColor3 = Color3.fromRGB(240, 220, 180)
+        nameLabel.TextSize = 13
+        nameLabel.Font = Enum.Font.GothamBold
+        nameLabel.Parent = bgFrame
+
+        -- Amount range
+        local amountText = ""
+        if node.amount then
+            local resourceName = string.lower(node.type)
+            if resourceName == "gold" then
+                amountText = node.amount.min .. "-" .. node.amount.max .. " gold"
+            elseif resourceName == "wood" then
+                amountText = node.amount.min .. "-" .. node.amount.max .. " wood"
+            elseif resourceName == "food" then
+                amountText = node.amount.min .. "-" .. node.amount.max .. " food"
+            end
+        end
+
+        local amountLabel = Instance.new("TextLabel")
+        amountLabel.Name = "AmountRange"
+        amountLabel.Size = UDim2.new(1, -8, 0, 16)
+        amountLabel.Position = UDim2.new(0, 4, 0, 26)
+        amountLabel.BackgroundTransparency = 1
+        amountLabel.Text = amountText
+        amountLabel.TextColor3 = visuals.billboardColor
+        amountLabel.TextSize = 11
+        amountLabel.Font = Enum.Font.Gotham
+        amountLabel.TextXAlignment = Enum.TextXAlignment.Center
+        amountLabel.Parent = bgFrame
+
+        -- Collect button
+        local collectButton = Instance.new("TextButton")
+        collectButton.Name = "CollectButton"
+        collectButton.Size = UDim2.new(0.8, 0, 0, 28)
+        collectButton.Position = UDim2.new(0.1, 0, 0, 50)
+        collectButton.BackgroundColor3 = Color3.fromRGB(50, 140, 50)
+        collectButton.Text = "COLLECT"
+        collectButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+        collectButton.TextSize = 13
+        collectButton.Font = Enum.Font.GothamBold
+        collectButton.BorderSizePixel = 0
+        collectButton.Parent = bgFrame
+
+        local collectCorner = Instance.new("UICorner")
+        collectCorner.CornerRadius = UDim.new(0, 6)
+        collectCorner.Parent = collectButton
+
+        local collectStroke = Instance.new("UIStroke")
+        collectStroke.Color = Color3.fromRGB(80, 200, 80)
+        collectStroke.Thickness = 1
+        collectStroke.Parent = collectButton
+
+        -- Collect button click handler
+        collectButton.MouseButton1Click:Connect(function()
+            if not CollectResourceNode then
+                if OverworldHUD and OverworldHUD.ShowError then
+                    OverworldHUD:ShowError("Resource nodes not available")
+                end
+                return
+            end
+
+            -- Disable button to prevent double-click
+            collectButton.Active = false
+            collectButton.Text = "Collecting..."
+            collectButton.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
+
+            -- Fire collect request
+            CollectResourceNode:FireServer(node.id)
+
+            -- Re-enable after a delay (in case server response is slow)
+            task.delay(3, function()
+                if collectButton and collectButton.Parent then
+                    collectButton.Active = true
+                    collectButton.Text = "COLLECT"
+                    collectButton.BackgroundColor3 = Color3.fromRGB(50, 140, 50)
+                end
+            end)
+        end)
+
+        marker.Parent = _nodesFolder
+        _nodeMarkers[node.id] = marker
+    end
+
+    -- Removes a node marker from the overworld
+    local function removeNodeMarker(nodeId: string)
+        local marker = _nodeMarkers[nodeId]
+        if marker then
+            marker:Destroy()
+            _nodeMarkers[nodeId] = nil
+        end
+    end
+
+    -- Shows a floating "+X Resource" text at a position (collection feedback)
+    local function showFloatingText(position: Vector3, text: string, color: Color3)
+        local part = Instance.new("Part")
+        part.Name = "FloatingText"
+        part.Size = Vector3.new(1, 1, 1)
+        part.Position = position + Vector3.new(0, 5, 0)
+        part.Anchored = true
+        part.CanCollide = false
+        part.Transparency = 1
+        part.Parent = workspace
+
+        local billboard = Instance.new("BillboardGui")
+        billboard.Size = UDim2.new(0, 200, 0, 40)
+        billboard.StudsOffset = Vector3.new(0, 0, 0)
+        billboard.AlwaysOnTop = true
+        billboard.MaxDistance = 100
+        billboard.Adornee = part
+        billboard.Parent = part
+
+        local label = Instance.new("TextLabel")
+        label.Size = UDim2.new(1, 0, 1, 0)
+        label.BackgroundTransparency = 1
+        label.Text = text
+        label.TextColor3 = color
+        label.TextSize = 20
+        label.Font = Enum.Font.GothamBlack
+        label.TextStrokeTransparency = 0.5
+        label.TextStrokeColor3 = Color3.new(0, 0, 0)
+        label.Parent = billboard
+
+        -- Animate upward and fade out
+        task.spawn(function()
+            for i = 1, 30 do
+                task.wait(0.05)
+                part.Position = part.Position + Vector3.new(0, 0.15, 0)
+                label.TextTransparency = i / 30
+                label.TextStrokeTransparency = 0.5 + (i / 30) * 0.5
+            end
+            part:Destroy()
+        end)
+    end
+
+    -- Refreshes all resource node markers by fetching available nodes from server
+    local function refreshResourceNodes()
+        if not GetResourceNodes then return end
+
+        local success, nodes = pcall(function()
+            return GetResourceNodes:InvokeServer()
+        end)
+
+        if not success or not nodes then return end
+
+        -- Build set of active node IDs
+        local activeNodeIds: {[string]: boolean} = {}
+        for _, node in nodes do
+            activeNodeIds[node.id] = true
+            -- Create or keep marker
+            createNodeMarker(node)
+        end
+
+        -- Remove markers for nodes that are no longer available (on cooldown for this player)
+        for nodeId, _ in _nodeMarkers do
+            if not activeNodeIds[nodeId] then
+                removeNodeMarker(nodeId)
+            end
+        end
+    end
+
+    -- Listen for ServerResponse to handle collection results
+    -- (We hook into the existing ServerResponse handler below, but also handle
+    -- the node removal and floating text here)
+    task.spawn(function()
+        -- Wait for ServerResponse to be available
+        local sr = Events:WaitForChild("ServerResponse", 10) :: RemoteEvent?
+        if not sr then return end
+
+        sr.OnClientEvent:Connect(function(eventName, result)
+            if eventName ~= "CollectResourceNode" then return end
+
+            if result.success then
+                local nodeId = result.nodeId
+                local resourceType = result.resourceType
+                local amount = result.amount
+
+                -- Remove the collected node marker
+                if nodeId then
+                    -- Get node position before removing for floating text
+                    local marker = _nodeMarkers[nodeId]
+                    local markerPos = Vector3.new(0, 0, 0)
+                    if marker then
+                        local primaryPart = marker:FindFirstChild("Rock1") or marker:FindFirstChild("Stump") or marker:FindFirstChild("Bush")
+                        if primaryPart then
+                            markerPos = (primaryPart :: BasePart).Position
+                        end
+                    end
+
+                    removeNodeMarker(nodeId)
+
+                    -- Show floating collection text
+                    if amount and resourceType then
+                        local visuals = NODE_TYPE_VISUALS[resourceType]
+                        local color = if visuals then visuals.billboardColor else Color3.fromRGB(255, 255, 255)
+                        local resourceName = if resourceType == "Gold" then "Gold"
+                            elseif resourceType == "Wood" then "Wood"
+                            elseif resourceType == "Food" then "Food"
+                            else resourceType
+                        showFloatingText(markerPos, "+" .. tostring(amount) .. " " .. resourceName .. "!", color)
+                    end
+                end
+
+                print(string.format("[CLIENT] Collected resource node: +%d %s", amount or 0, resourceType or "?"))
+            else
+                -- Handle error (show user-friendly message for specific errors)
+                if result.error and OverworldHUD and OverworldHUD.ShowError then
+                    local errorMsg = result.error
+                    if errorMsg == "TOO_FAR" then
+                        errorMsg = "Get closer to collect"
+                    elseif errorMsg == "ON_COOLDOWN" then
+                        errorMsg = "Already collected - respawns later"
+                    elseif errorMsg == "RATE_LIMITED" then
+                        errorMsg = "Please wait before collecting again"
+                    elseif errorMsg == "NODE_NOT_FOUND" then
+                        errorMsg = "Node not found"
+                    end
+                    OverworldHUD:ShowError(errorMsg)
+                end
+            end
+        end)
+    end)
+
+    -- Initial load of resource nodes (after a brief delay to let server init)
+    task.spawn(function()
+        task.wait(3)
+        refreshResourceNodes()
+        print("[CLIENT] Resource node markers loaded")
+    end)
+
+    -- Periodic refresh of resource node markers (every 60 seconds)
+    task.spawn(function()
+        while true do
+            task.wait(60)
+            refreshResourceNodes()
+        end
+    end)
+end
+
+-- ═══════════════════════════════════════════════════════════════════════════════
 -- Event connections
 -- ═══════════════════════════════════════════════════════════════════════════════
 print("[CLIENT] Connecting events...")
@@ -863,8 +1464,8 @@ ServerResponse.OnClientEvent:Connect(function(eventName, result)
     print(string.format("[CLIENT] Server response for %s: %s", eventName, result.success and "success" or "failed"))
 
     if not result.success and OverworldHUD and OverworldHUD.ShowError then
-        -- Don't show raw error codes for matchmaking/revenge/goblin camps - handled specifically below
-        if eventName ~= "ConfirmMatchmaking" and eventName ~= "RequestRevenge" and eventName ~= "AttackGoblinCamp" then
+        -- Don't show raw error codes for matchmaking/revenge/goblin camps/resource nodes - handled specifically
+        if eventName ~= "ConfirmMatchmaking" and eventName ~= "RequestRevenge" and eventName ~= "AttackGoblinCamp" and eventName ~= "CollectResourceNode" then
             OverworldHUD:ShowError(result.error or "Unknown error")
         end
     end

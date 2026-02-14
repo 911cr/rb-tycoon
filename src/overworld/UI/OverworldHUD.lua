@@ -37,12 +37,41 @@ local _playerGui: PlayerGui? = nil
 
 local _screenGui: ScreenGui? = nil
 local _resourcesFrame: Frame? = nil
+local _riskLabel: TextLabel? = nil
 local _miniMapFrame: Frame? = nil
 local _loadingFrame: Frame? = nil
 local _errorFrame: Frame? = nil
 local _goToCityButton: TextButton? = nil
 local _findBattleButton: TextButton? = nil
 local _defenseLogButton: TextButton? = nil
+local _shieldFrame: Frame? = nil
+local _shieldTimerLabel: TextLabel? = nil
+local _shieldWarningLabel: TextLabel? = nil
+local _shieldPulseActive = false
+
+-- ============================================================================
+-- CONSTANTS
+-- ============================================================================
+
+local LOOT_AVAILABLE_PERCENT = 0.85 -- 85% of stored resources exposed to raids
+
+-- ============================================================================
+-- HELPER FUNCTIONS
+-- ============================================================================
+
+--[[
+    Formats a number with comma separators for readability.
+    e.g., 4250 -> "4,250"
+]]
+local function formatNumber(num: number): string
+    local formatted = tostring(math.floor(num))
+    local k
+    while true do
+        formatted, k = string.gsub(formatted, "^(-?%d+)(%d%d%d)", '%1,%2')
+        if k == 0 then break end
+    end
+    return formatted
+end
 
 -- ============================================================================
 -- UI CREATION
@@ -114,7 +143,7 @@ local function createHUD(): ScreenGui
     -- Resources container (top-left)
     local resourcesFrame = Instance.new("Frame")
     resourcesFrame.Name = "Resources"
-    resourcesFrame.Size = UDim2.new(0, 130, 0, 120)
+    resourcesFrame.Size = UDim2.new(0, 220, 0, 150)
     resourcesFrame.Position = UDim2.new(0, 15, 0, 15)
     resourcesFrame.BackgroundTransparency = 1
     resourcesFrame.Parent = screenGui
@@ -133,6 +162,20 @@ local function createHUD(): ScreenGui
     -- Food bar
     createResourceBar("Food", Color3.fromRGB(100, 180, 80), "rbxassetid://2958706766", resourcesFrame)
 
+    -- Raid risk indicator (below resource bars)
+    local riskLabel = Instance.new("TextLabel")
+    riskLabel.Name = "RiskIndicator"
+    riskLabel.Size = UDim2.new(0, 220, 0, 18)
+    riskLabel.BackgroundTransparency = 1
+    riskLabel.Text = ""
+    riskLabel.TextColor3 = Color3.fromRGB(200, 130, 80)
+    riskLabel.TextSize = 10
+    riskLabel.Font = Enum.Font.Gotham
+    riskLabel.TextXAlignment = Enum.TextXAlignment.Left
+    riskLabel.TextTransparency = 0.2
+    riskLabel.Parent = resourcesFrame
+
+    _riskLabel = riskLabel
     _resourcesFrame = resourcesFrame
 
     -- Mini-map container (top-right)
@@ -189,6 +232,69 @@ local function createHUD(): ScreenGui
     nearbyLabel.Parent = miniMapFrame
 
     _miniMapFrame = miniMapFrame
+
+    -- Shield timer display (below mini-map, top-right area)
+    local shieldFrame = Instance.new("Frame")
+    shieldFrame.Name = "ShieldDisplay"
+    shieldFrame.Size = UDim2.new(0, 150, 0, 60)
+    shieldFrame.Position = UDim2.new(1, -165, 0, 175)
+    shieldFrame.BackgroundColor3 = Color3.fromRGB(20, 40, 60)
+    shieldFrame.BorderSizePixel = 0
+    shieldFrame.Visible = false
+    shieldFrame.Parent = screenGui
+
+    local shieldCorner = Instance.new("UICorner")
+    shieldCorner.CornerRadius = UDim.new(0, 8)
+    shieldCorner.Parent = shieldFrame
+
+    local shieldStroke = Instance.new("UIStroke")
+    shieldStroke.Name = "ShieldStroke"
+    shieldStroke.Color = Color3.fromRGB(60, 150, 220)
+    shieldStroke.Thickness = 2
+    shieldStroke.Parent = shieldFrame
+
+    -- Shield icon/label
+    local shieldIconLabel = Instance.new("TextLabel")
+    shieldIconLabel.Name = "ShieldIcon"
+    shieldIconLabel.Size = UDim2.new(0, 30, 0, 30)
+    shieldIconLabel.Position = UDim2.new(0, 8, 0, 5)
+    shieldIconLabel.BackgroundTransparency = 1
+    shieldIconLabel.Text = "SHIELD"
+    shieldIconLabel.TextColor3 = Color3.fromRGB(80, 180, 255)
+    shieldIconLabel.TextSize = 8
+    shieldIconLabel.Font = Enum.Font.GothamBold
+    shieldIconLabel.Parent = shieldFrame
+
+    -- Shield timer label
+    local shieldTimerLabel = Instance.new("TextLabel")
+    shieldTimerLabel.Name = "TimerLabel"
+    shieldTimerLabel.Size = UDim2.new(1, -45, 0, 22)
+    shieldTimerLabel.Position = UDim2.new(0, 40, 0, 6)
+    shieldTimerLabel.BackgroundTransparency = 1
+    shieldTimerLabel.Text = "Shield: --:--"
+    shieldTimerLabel.TextColor3 = Color3.fromRGB(80, 200, 255)
+    shieldTimerLabel.TextSize = 14
+    shieldTimerLabel.Font = Enum.Font.GothamBold
+    shieldTimerLabel.TextXAlignment = Enum.TextXAlignment.Left
+    shieldTimerLabel.Parent = shieldFrame
+
+    _shieldTimerLabel = shieldTimerLabel
+
+    -- Shield warning text
+    local shieldWarningLabel = Instance.new("TextLabel")
+    shieldWarningLabel.Name = "WarningLabel"
+    shieldWarningLabel.Size = UDim2.new(1, -12, 0, 18)
+    shieldWarningLabel.Position = UDim2.new(0, 6, 0, 34)
+    shieldWarningLabel.BackgroundTransparency = 1
+    shieldWarningLabel.Text = "Attacking breaks your shield!"
+    shieldWarningLabel.TextColor3 = Color3.fromRGB(200, 180, 140)
+    shieldWarningLabel.TextSize = 9
+    shieldWarningLabel.Font = Enum.Font.Gotham
+    shieldWarningLabel.TextXAlignment = Enum.TextXAlignment.Center
+    shieldWarningLabel.Parent = shieldFrame
+
+    _shieldWarningLabel = shieldWarningLabel
+    _shieldFrame = shieldFrame
 
     -- Go to City button (bottom center)
     local goToCityButton = Instance.new("TextButton")
@@ -412,11 +518,15 @@ end
 function OverworldHUD:UpdateResources(resources: {gold: number, wood: number, food: number})
     if not _resourcesFrame then return end
 
+    local gold = resources.gold or 0
+    local wood = resources.wood or 0
+    local food = resources.food or 0
+
     local goldBar = _resourcesFrame:FindFirstChild("GoldBar") :: Frame?
     if goldBar then
         local value = goldBar:FindFirstChild("Value") :: TextLabel?
         if value then
-            value.Text = tostring(resources.gold or 0)
+            value.Text = tostring(gold)
         end
     end
 
@@ -424,7 +534,7 @@ function OverworldHUD:UpdateResources(resources: {gold: number, wood: number, fo
     if woodBar then
         local value = woodBar:FindFirstChild("Value") :: TextLabel?
         if value then
-            value.Text = tostring(resources.wood or 0)
+            value.Text = tostring(wood)
         end
     end
 
@@ -432,7 +542,25 @@ function OverworldHUD:UpdateResources(resources: {gold: number, wood: number, fo
     if foodBar then
         local value = foodBar:FindFirstChild("Value") :: TextLabel?
         if value then
-            value.Text = tostring(resources.food or 0)
+            value.Text = tostring(food)
+        end
+    end
+
+    -- Update raid risk indicator
+    if _riskLabel then
+        local exposedGold = math.floor(gold * LOOT_AVAILABLE_PERCENT)
+        local exposedWood = math.floor(wood * LOOT_AVAILABLE_PERCENT)
+        local exposedFood = math.floor(food * LOOT_AVAILABLE_PERCENT)
+
+        if exposedGold > 0 or exposedWood > 0 or exposedFood > 0 then
+            _riskLabel.Text = string.format(
+                "At risk: %sg  %sw  %sf",
+                formatNumber(exposedGold),
+                formatNumber(exposedWood),
+                formatNumber(exposedFood)
+            )
+        else
+            _riskLabel.Text = ""
         end
     end
 end
@@ -576,6 +704,136 @@ function OverworldHUD:ShowError(message: string)
             _errorFrame.Visible = false
         end)
     end)
+end
+
+--[[
+    Formats seconds into a human-readable time string.
+    e.g., 28920 -> "8h 02m", 540 -> "9m 00s"
+]]
+local function formatShieldTime(seconds: number): string
+    if seconds <= 0 then
+        return "0s"
+    end
+
+    local hours = math.floor(seconds / 3600)
+    local minutes = math.floor((seconds % 3600) / 60)
+    local secs = math.floor(seconds % 60)
+
+    if hours > 0 then
+        return string.format("%dh %02dm", hours, minutes)
+    elseif minutes > 0 then
+        return string.format("%dm %02ds", minutes, secs)
+    else
+        return string.format("%ds", secs)
+    end
+end
+
+--[[
+    Updates the shield timer display.
+
+    @param shieldData table - Shield status data
+        { active: boolean, expiresAt: number?, remainingSeconds: number? }
+    If active is false or remainingSeconds <= 0, hides the shield display.
+]]
+function OverworldHUD:UpdateShield(shieldData: {active: boolean, expiresAt: number?, remainingSeconds: number?})
+    if not _shieldFrame then return end
+
+    if not shieldData or not shieldData.active then
+        _shieldFrame.Visible = false
+        _shieldPulseActive = false
+        return
+    end
+
+    -- Calculate remaining time
+    local remaining = shieldData.remainingSeconds or 0
+    if shieldData.expiresAt then
+        remaining = math.max(0, shieldData.expiresAt - os.time())
+    end
+
+    if remaining <= 0 then
+        _shieldFrame.Visible = false
+        _shieldPulseActive = false
+        return
+    end
+
+    _shieldFrame.Visible = true
+
+    -- Update timer text
+    if _shieldTimerLabel then
+        _shieldTimerLabel.Text = "Shield: " .. formatShieldTime(remaining)
+    end
+
+    -- Apply color based on remaining time
+    local timerColor: Color3
+    local strokeColor: Color3
+    local bgColor: Color3
+
+    if remaining < 600 then
+        -- Less than 10 minutes: red + pulse
+        timerColor = Color3.fromRGB(255, 80, 60)
+        strokeColor = Color3.fromRGB(220, 60, 40)
+        bgColor = Color3.fromRGB(50, 20, 20)
+
+        -- Start pulse effect if not already running
+        if not _shieldPulseActive then
+            _shieldPulseActive = true
+            task.spawn(function()
+                while _shieldPulseActive and _shieldFrame and _shieldFrame.Visible do
+                    -- Pulse to bright
+                    local pulseIn = TweenService:Create(
+                        _shieldFrame,
+                        TweenInfo.new(0.6, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut),
+                        {BackgroundTransparency = 0.3}
+                    )
+                    pulseIn:Play()
+                    pulseIn.Completed:Wait()
+
+                    if not _shieldPulseActive then break end
+
+                    -- Pulse back
+                    local pulseOut = TweenService:Create(
+                        _shieldFrame,
+                        TweenInfo.new(0.6, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut),
+                        {BackgroundTransparency = 0}
+                    )
+                    pulseOut:Play()
+                    pulseOut.Completed:Wait()
+                end
+                -- Reset transparency when done pulsing
+                if _shieldFrame then
+                    _shieldFrame.BackgroundTransparency = 0
+                end
+            end)
+        end
+    elseif remaining < 3600 then
+        -- Less than 1 hour: yellow/orange warning
+        timerColor = Color3.fromRGB(255, 200, 50)
+        strokeColor = Color3.fromRGB(200, 160, 40)
+        bgColor = Color3.fromRGB(50, 40, 15)
+        _shieldPulseActive = false
+    else
+        -- Normal: blue/cyan
+        timerColor = Color3.fromRGB(80, 200, 255)
+        strokeColor = Color3.fromRGB(60, 150, 220)
+        bgColor = Color3.fromRGB(20, 40, 60)
+        _shieldPulseActive = false
+    end
+
+    if _shieldTimerLabel then
+        _shieldTimerLabel.TextColor3 = timerColor
+    end
+
+    _shieldFrame.BackgroundColor3 = bgColor
+
+    local shieldStroke = _shieldFrame:FindFirstChild("ShieldStroke") :: UIStroke?
+    if shieldStroke then
+        shieldStroke.Color = strokeColor
+    end
+
+    local shieldIcon = _shieldFrame:FindFirstChild("ShieldIcon") :: TextLabel?
+    if shieldIcon then
+        shieldIcon.TextColor3 = timerColor
+    end
 end
 
 --[[

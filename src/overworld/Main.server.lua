@@ -92,11 +92,16 @@ local RequestRevenge = createRemoteEvent("RequestRevenge")
 local AttackGoblinCamp = createRemoteEvent("AttackGoblinCamp")
 local GetGoblinCamps = createRemoteFunction("GetGoblinCamps")
 
+-- Resource node events
+local CollectResourceNode = createRemoteEvent("CollectResourceNode")
+local GetResourceNodes = createRemoteFunction("GetResourceNodes")
+
 -- UI data
 local GetOwnBaseData = createRemoteFunction("GetOwnBaseData")
 local GetPlayerResources = createRemoteFunction("GetPlayerResources")
 local GetDefenseLog = createRemoteFunction("GetDefenseLog")
 local GetUnreadAttacks = createRemoteFunction("GetUnreadAttacks")
+local GetShieldStatus = createRemoteFunction("GetShieldStatus")
 
 print("[OVERWORLD] Events folder created")
 
@@ -138,6 +143,7 @@ local TeleportManager = loadService("TeleportManager")
 local BattleArenaService = loadService("BattleArenaService")
 local MatchmakingService = loadService("MatchmakingService")
 local GoblinCampService = loadService("GoblinCampService")
+local ResourceNodeService = loadService("ResourceNodeService")
 
 -- Load shared module references
 local OverworldConfig = require(ReplicatedStorage.Shared.Constants.OverworldConfig)
@@ -165,6 +171,7 @@ initService(OverworldService, "OverworldService")
 initService(MatchmakingService, "MatchmakingService")
 initService(BattleArenaService, "BattleArenaService")
 initService(GoblinCampService, "GoblinCampService")
+initService(ResourceNodeService, "ResourceNodeService")
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- STEP 5: Build the overworld environment
@@ -353,6 +360,42 @@ GetUnreadAttacks.OnServerInvoke = function(player)
         end
     end
     return {}
+end
+
+-- Get shield status (for Shield Timer HUD)
+GetShieldStatus.OnServerInvoke = function(player)
+    local dataServiceModule = ServerScriptService:FindFirstChild("Services")
+        and ServerScriptService.Services:FindFirstChild("DataService")
+    if dataServiceModule then
+        local success, DataService = pcall(require, dataServiceModule)
+        if success and DataService and DataService.GetPlayerData then
+            local data = DataService:GetPlayerData(player)
+            if data and data.shield then
+                local shield = data.shield
+                -- Shield can be a table with active + expiresAt fields
+                if typeof(shield) == "table" then
+                    local isActive = shield.active == true
+                    local expiresAt = shield.expiresAt or 0
+
+                    -- Check if shield has expired
+                    if isActive and expiresAt > 0 and os.time() >= expiresAt then
+                        -- Shield expired, deactivate it
+                        shield.active = false
+                        isActive = false
+                    end
+
+                    if isActive and expiresAt > os.time() then
+                        return {
+                            active = true,
+                            expiresAt = expiresAt,
+                            remainingSeconds = expiresAt - os.time(),
+                        }
+                    end
+                end
+            end
+        end
+    end
+    return { active = false }
 end
 
 -- Surrender: client requests to surrender the current battle
@@ -765,6 +808,52 @@ connectEvent(AttackGoblinCamp, function(player, campId)
 end)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
+-- STEP 7.8: Resource node handlers
+-- ═══════════════════════════════════════════════════════════════════════════════
+print("[OVERWORLD] Connecting resource node handlers...")
+
+-- GetResourceNodes: client asks for nodes available to this player
+GetResourceNodes.OnServerInvoke = function(player)
+    if ResourceNodeService then
+        return ResourceNodeService:GetActiveNodes(player)
+    end
+    return {}
+end
+
+-- CollectResourceNode: client requests to collect a specific node
+connectEvent(CollectResourceNode, function(player, nodeId)
+    if not ResourceNodeService then
+        ServerResponse:FireClient(player, "CollectResourceNode", { success = false, error = "SERVICE_UNAVAILABLE" })
+        return
+    end
+
+    -- Type validation
+    if typeof(nodeId) ~= "string" then
+        ServerResponse:FireClient(player, "CollectResourceNode", { success = false, error = "INVALID_NODE_ID" })
+        return
+    end
+
+    -- Attempt collection
+    local success, resourceType, amount = ResourceNodeService:CollectNode(player, nodeId)
+    if success then
+        ServerResponse:FireClient(player, "CollectResourceNode", {
+            success = true,
+            nodeId = nodeId,
+            resourceType = resourceType,
+            amount = amount,
+        })
+    else
+        ServerResponse:FireClient(player, "CollectResourceNode", {
+            success = false,
+            error = resourceType or "COLLECT_FAILED", -- resourceType holds error code on failure
+        })
+    end
+
+    print(string.format("[OVERWORLD] CollectResourceNode from %s for node %s: %s",
+        player.Name, tostring(nodeId), success and ("+" .. tostring(amount) .. " " .. tostring(resourceType)) or (resourceType or "failed")))
+end)
+
+-- ═══════════════════════════════════════════════════════════════════════════════
 -- STEP 8: Player connection handling
 -- ═══════════════════════════════════════════════════════════════════════════════
 print("[OVERWORLD] Setting up player handlers...")
@@ -930,6 +1019,18 @@ task.spawn(function()
         task.wait(60) -- Every 60 seconds
         if GoblinCampService then
             GoblinCampService:CheckRespawns()
+        end
+    end
+end)
+
+-- Periodically check for resource node respawns (per-player cooldowns)
+task.spawn(function()
+    while true do
+        task.wait(60) -- Every 60 seconds
+        if ResourceNodeService then
+            for _, player in Players:GetPlayers() do
+                ResourceNodeService:CheckRespawns(player)
+            end
         end
     end
 end)
