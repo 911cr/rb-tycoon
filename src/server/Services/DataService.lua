@@ -51,7 +51,22 @@ end
 -- Constants
 local DATA_SAVE_INTERVAL = 300 -- 5 minutes
 local SESSION_LOCK_KEY_PREFIX = "SessionLock_"
-local SESSION_LOCK_TIMEOUT = 120 -- 2 minutes (reduced from 10 to handle crashes + teleport transitions)
+local SESSION_LOCK_TIMEOUT = 600 -- 10 minutes (must be > auto-save interval to prevent lock expiry between saves)
+local LOCK_HEARTBEAT_INTERVAL = 60 -- Refresh lock every 60 seconds (independent of save cycle)
+local SAVE_MAX_RETRIES = 3
+local SAVE_RETRY_BASE_DELAY = 1 -- seconds (exponential backoff: 1, 2, 4)
+local LOAD_MAX_RETRIES = 3
+local LOAD_RETRY_DELAY = 2 -- seconds (exponential backoff: 2, 4, 8)
+
+-- Unique session identifier for ownership-aware locking
+local SESSION_ID = game.JobId .. "_" .. tostring(os.time())
+
+-- User-friendly kick messages
+local KICK_MESSAGES = {
+    SESSION_LOCKED = "Your save data is being used by another server. Please wait a moment and rejoin!",
+    DATASTORE_ERROR = "Couldn't reach Roblox save servers. Please try again in a minute!",
+    LOAD_FAILED = "We couldn't load your save data after multiple tries. Please rejoin shortly!",
+}
 
 --[[
     Sanitizes a number to prevent NaN/Infinity exploits.
@@ -279,10 +294,15 @@ end
 --[[
     Acquires a session lock for the player using atomic UpdateAsync.
     Prevents data corruption from multiple sessions.
-    FIXED: Uses UpdateAsync for atomic check-and-set to prevent race conditions.
+    Lock value is { owner = SESSION_ID, timestamp = os.time() } for ownership-aware release.
 ]]
 local SESSION_LOCK_RETRIES = 3
 local SESSION_LOCK_RETRY_DELAY = 2 -- seconds between retries
+
+local _lockStore = nil
+pcall(function()
+    _lockStore = DataStoreService:GetDataStore("BattleTycoon_SessionLocks")
+end)
 
 local function acquireSessionLock(userId: number): boolean
     -- In local mode, always succeed (no DataStore)
@@ -291,8 +311,12 @@ local function acquireSessionLock(userId: number): boolean
         return true
     end
 
+    if not _lockStore then
+        warn("[DataService] Lock store unavailable, proceeding without lock")
+        return true
+    end
+
     local lockKey = SESSION_LOCK_KEY_PREFIX .. userId
-    local lockStore = DataStoreService:GetDataStore("BattleTycoon_SessionLocks")
 
     -- Retry loop: the previous server may still be releasing the lock (teleport race condition)
     for attempt = 1, SESSION_LOCK_RETRIES do
@@ -300,12 +324,22 @@ local function acquireSessionLock(userId: number): boolean
         local now = os.time()
 
         local success, err = pcall(function()
-            lockStore:UpdateAsync(lockKey, function(currentValue)
-                -- If no lock exists or lock is stale (> 10 minutes old), acquire it
-                if not currentValue or (now - currentValue) >= SESSION_LOCK_TIMEOUT then
-                    acquired = true
-                    return now -- Set new lock timestamp
+            _lockStore:UpdateAsync(lockKey, function(currentValue)
+                -- Lock value format: { owner = SESSION_ID, timestamp = os.time() }
+                -- Legacy format: plain number (os.time()) — handle migration
+                local lockTimestamp = 0
+                if typeof(currentValue) == "table" then
+                    lockTimestamp = currentValue.timestamp or 0
+                elseif typeof(currentValue) == "number" then
+                    lockTimestamp = currentValue -- Legacy format
                 end
+
+                -- If no lock exists or lock is stale (expired), acquire it
+                if not currentValue or (now - lockTimestamp) >= SESSION_LOCK_TIMEOUT then
+                    acquired = true
+                    return { owner = SESSION_ID, timestamp = now }
+                end
+
                 -- Lock is active, don't modify
                 acquired = false
                 return nil -- Return nil to cancel the update
@@ -333,6 +367,8 @@ end
 
 --[[
     Releases the session lock for the player.
+    Ownership-aware: only clears the lock if we own it (our SESSION_ID matches).
+    Uses UpdateAsync instead of RemoveAsync to prevent deleting another server's lock.
 ]]
 local function releaseSessionLock(userId: number)
     -- In local mode, just clear local state
@@ -341,14 +377,46 @@ local function releaseSessionLock(userId: number)
         return
     end
 
+    if not _lockStore then
+        _sessionLocks[userId] = nil
+        return
+    end
+
     local lockKey = SESSION_LOCK_KEY_PREFIX .. userId
-    local lockStore = DataStoreService:GetDataStore("BattleTycoon_SessionLocks")
 
     pcall(function()
-        lockStore:RemoveAsync(lockKey)
+        _lockStore:UpdateAsync(lockKey, function(currentValue)
+            if typeof(currentValue) == "table" and currentValue.owner == SESSION_ID then
+                -- We own this lock — mark as expired (timestamp = 0) so next acquirer gets it immediately
+                return { owner = SESSION_ID, timestamp = 0 }
+            end
+            -- Not our lock (another server acquired it) — leave it alone
+            return nil
+        end)
     end)
 
     _sessionLocks[userId] = nil
+end
+
+--[[
+    Refreshes the session lock timestamp to prevent expiry during long sessions.
+    Only refreshes if we still own the lock.
+]]
+local function refreshSessionLock(userId: number)
+    if _useLocalData or not _lockStore then return end
+
+    local lockKey = SESSION_LOCK_KEY_PREFIX .. userId
+    local now = os.time()
+
+    pcall(function()
+        _lockStore:UpdateAsync(lockKey, function(currentValue)
+            if typeof(currentValue) == "table" and currentValue.owner == SESSION_ID then
+                return { owner = SESSION_ID, timestamp = now }
+            end
+            -- Not our lock — don't touch it
+            return nil
+        end)
+    end)
 end
 
 --[[
@@ -386,54 +454,79 @@ function DataService:LoadPlayerData(player: Player): Types.PlayerDataResult
         }
     end
 
-    -- Acquire session lock
-    if not acquireSessionLock(userId) then
+    -- Retry loop: handles temporary DataStore throttling and session locks from previous server
+    local lastError = "UNKNOWN"
+
+    for attempt = 1, LOAD_MAX_RETRIES do
+        -- Player may have left during retry wait
+        if not player.Parent then
+            return { success = false, data = nil, error = "PLAYER_LEFT" }
+        end
+
+        -- Acquire session lock (has its own internal retries)
+        if not acquireSessionLock(userId) then
+            lastError = "SESSION_LOCKED"
+            if attempt < LOAD_MAX_RETRIES then
+                warn(string.format("[DataService] Load attempt %d/%d: session locked for %d, retrying in %ds",
+                    attempt, LOAD_MAX_RETRIES, userId, LOAD_RETRY_DELAY * (2 ^ (attempt - 1))))
+                task.wait(LOAD_RETRY_DELAY * (2 ^ (attempt - 1)))
+                continue
+            end
+            -- Final attempt failed
+            break
+        end
+
+        -- Load from DataStore
+        local success, result = pcall(function()
+            return _dataStore:GetAsync(tostring(userId))
+        end)
+
+        if not success then
+            releaseSessionLock(userId)
+            lastError = "DATASTORE_ERROR"
+            warn(string.format("[DataService] Load attempt %d/%d failed for %d: %s",
+                attempt, LOAD_MAX_RETRIES, userId, tostring(result)))
+            if attempt < LOAD_MAX_RETRIES then
+                task.wait(LOAD_RETRY_DELAY * (2 ^ (attempt - 1)))
+                continue
+            end
+            break
+        end
+
+        -- Success! Process data
+        local data: Types.PlayerData
+
+        if result then
+            -- Existing player
+            data = validatePlayerData(result)
+            data.lastLoginAt = os.time()
+        else
+            -- New player
+            data = createDefaultData(userId, username)
+        end
+
+        -- Cache data
+        _playerData[userId] = data
+
+        -- Calculate initial food supply state
+        self:UpdateFoodSupplyState(player)
+
+        -- Fire event
+        DataService.PlayerDataLoaded:Fire(player, data)
+
         return {
-            success = false,
-            data = nil,
-            error = "SESSION_LOCKED",
+            success = true,
+            data = data,
+            error = nil,
         }
     end
 
-    -- Load from DataStore
-    local success, result = pcall(function()
-        return _dataStore:GetAsync(tostring(userId))
-    end)
-
-    if not success then
-        releaseSessionLock(userId)
-        warn("DataStore error loading", userId, result)
-        return {
-            success = false,
-            data = nil,
-            error = "DATASTORE_ERROR",
-        }
-    end
-
-    local data: Types.PlayerData
-
-    if result then
-        -- Existing player
-        data = validatePlayerData(result)
-        data.lastLoginAt = os.time()
-    else
-        -- New player
-        data = createDefaultData(userId, username)
-    end
-
-    -- Cache data
-    _playerData[userId] = data
-
-    -- Calculate initial food supply state
-    self:UpdateFoodSupplyState(player)
-
-    -- Fire event
-    DataService.PlayerDataLoaded:Fire(player, data)
-
+    -- All retries exhausted
+    warn(string.format("[DataService] All %d load attempts failed for %d: %s", LOAD_MAX_RETRIES, userId, lastError))
     return {
-        success = true,
-        data = data,
-        error = nil,
+        success = false,
+        data = nil,
+        error = lastError,
     }
 end
 
@@ -455,18 +548,29 @@ function DataService:SavePlayerData(player: Player): boolean
         return true
     end
 
-    local success, err = pcall(function()
-        _dataStore:SetAsync(tostring(userId), data)
-    end)
+    -- Retry with exponential backoff
+    for attempt = 1, SAVE_MAX_RETRIES do
+        local success, err = pcall(function()
+            _dataStore:SetAsync(tostring(userId), data)
+        end)
 
-    if not success then
-        warn("Failed to save data for", userId, err)
-        DataService.PlayerDataError:Fire(player, "SAVE_FAILED")
-        return false
+        if success then
+            DataService.PlayerDataSaved:Fire(player)
+            return true
+        end
+
+        warn(string.format("[DataService] Save attempt %d/%d failed for %d: %s",
+            attempt, SAVE_MAX_RETRIES, userId, tostring(err)))
+
+        if attempt < SAVE_MAX_RETRIES then
+            local delay = SAVE_RETRY_BASE_DELAY * (2 ^ (attempt - 1))
+            task.wait(delay)
+        end
     end
 
-    DataService.PlayerDataSaved:Fire(player)
-    return true
+    warn(string.format("[DataService] All %d save attempts failed for %d", SAVE_MAX_RETRIES, userId))
+    DataService.PlayerDataError:Fire(player, "SAVE_FAILED")
+    return false
 end
 
 --[[
@@ -704,6 +808,20 @@ function DataService:GetFoodSupplyStatus(player: Player): {production: number, u
 end
 
 --[[
+    Saves all online player data and releases locks.
+    Used for BindToClose and explicit shutdown calls.
+]]
+function DataService:SaveAllData()
+    for _, player in Players:GetPlayers() do
+        pcall(function()
+            self:SavePlayerData(player)
+        end)
+        releaseSessionLock(player.UserId)
+    end
+    print("[DataService] SaveAllData complete")
+end
+
+--[[
     Initializes the DataService.
 ]]
 function DataService:Init()
@@ -717,7 +835,8 @@ function DataService:Init()
         local result = self:LoadPlayerData(player)
 
         if not result.success then
-            player:Kick("Failed to load data: " .. (result.error or "Unknown error"))
+            local friendlyMsg = KICK_MESSAGES[result.error] or KICK_MESSAGES.LOAD_FAILED
+            player:Kick(friendlyMsg)
         end
     end)
 
@@ -764,12 +883,19 @@ function DataService:Init()
         end
     end)
 
+    -- Lock heartbeat: refresh session locks every 60s to prevent expiry during long sessions
+    task.spawn(function()
+        while true do
+            task.wait(LOCK_HEARTBEAT_INTERVAL)
+            for userId, _ in _sessionLocks do
+                refreshSessionLock(userId)
+            end
+        end
+    end)
+
     -- Save all on shutdown
     game:BindToClose(function()
-        for _, player in Players:GetPlayers() do
-            self:SavePlayerData(player)
-            releaseSessionLock(player.UserId)
-        end
+        self:SaveAllData()
     end)
 
     _initialized = true

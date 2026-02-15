@@ -755,18 +755,9 @@ end)
 Players.PlayerRemoving:Connect(function(player)
     print(string.format("[SERVER] Player leaving: %s (%d)", player.Name, player.UserId))
 
-    -- Save player data
-    if DataService and DataService.SavePlayerData then
-        local success, err = pcall(function()
-            DataService:SavePlayerData(player)
-        end)
-
-        if not success then
-            warn(string.format("[SERVER] Failed to save data for %s: %s", player.Name, tostring(err)))
-        else
-            print(string.format("[SERVER] Data saved for %s", player.Name))
-        end
-    end
+    -- NOTE: DataService's own PlayerRemoving handler saves data and releases lock.
+    -- Do NOT call DataService:SavePlayerData here — it causes double saves and
+    -- races where DataService clears _playerData before this handler runs.
 
     -- Clean up matchmaking
     if MatchmakingService and MatchmakingService.PlayerLeft then
@@ -827,9 +818,14 @@ connectEvent(RequestTeleportToOverworld, function(player)
         end)
     end
 
-    -- Save player data before teleport (keeps cache intact)
-    if DataService and DataService.SavePlayerData then
-        pcall(function() DataService:SavePlayerData(player) end)
+    -- Prepare for teleport BEFORE initiating: save data, release lock, clear cache.
+    -- This prevents the race condition where PlayerRemoving fires between Teleport()
+    -- and PrepareForTeleport, causing double saves or nil data.
+    if DataService and DataService.PrepareForTeleport then
+        local prepOk = pcall(function() DataService:PrepareForTeleport(player) end)
+        if not prepOk then
+            warn(string.format("[SERVER] PrepareForTeleport failed for %s", player.Name))
+        end
     end
 
     -- Teleport to overworld
@@ -839,24 +835,26 @@ connectEvent(RequestTeleportToOverworld, function(player)
 
     if success then
         print(string.format("[SERVER] Teleporting %s to overworld", player.Name))
-        -- Only clear cache + release lock AFTER teleport initiated successfully
-        -- PlayerRemoving will also handle cleanup when player actually leaves
-        if DataService and DataService.PrepareForTeleport then
-            pcall(function() DataService:PrepareForTeleport(player) end)
-        end
+        -- Data already saved and lock released by PrepareForTeleport.
+        -- PlayerRemoving will find nothing to do (data cache already cleared).
     else
         warn(string.format("[SERVER] Teleport failed for %s: %s", player.Name, tostring(err)))
-        -- Data cache is still intact — player can keep playing normally
+        -- Teleport failed — reload data so player can keep playing
+        if DataService and DataService.LoadPlayerData then
+            local reloadResult = pcall(function()
+                return DataService:LoadPlayerData(player)
+            end)
+            if reloadResult then
+                local data = DataService:GetPlayerData(player)
+                if data then
+                    SyncPlayerData:FireClient(player, data)
+                    print(string.format("[SERVER] Data reloaded for %s after failed teleport", player.Name))
+                end
+            end
+        end
         ServerResponse:FireClient(player, "TeleportToOverworld", {
             success = false, error = "Teleport failed",
         })
-        -- Re-sync HUD in case client is confused
-        if DataService and DataService.GetPlayerData then
-            local data = DataService:GetPlayerData(player)
-            if data then
-                SyncPlayerData:FireClient(player, data)
-            end
-        end
     end
 end)
 

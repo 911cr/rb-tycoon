@@ -24,7 +24,10 @@ VillageStateService.__index = VillageStateService
 local DATASTORE_NAME = "BattleTycoon_VillageState_v1"
 local LOCK_DATASTORE_NAME = "BattleTycoon_VillageLock"
 local AUTO_SAVE_INTERVAL = 300 -- 5 minutes
-local SESSION_LOCK_TIMEOUT = 120 -- 2 minutes
+local SESSION_LOCK_TIMEOUT = 600 -- 10 minutes (must be > auto-save interval to prevent lock expiry between saves)
+local LOCK_HEARTBEAT_INTERVAL = 60 -- Refresh lock every 60 seconds (independent of save cycle)
+local LOCK_ACQUIRE_RETRIES = 3
+local LOCK_ACQUIRE_RETRY_DELAY = 2 -- seconds between retries
 local CURRENT_VERSION = 1
 local SAVE_MAX_RETRIES = 3
 local SAVE_RETRY_BASE_DELAY = 1 -- seconds (exponential backoff: 1, 2, 4)
@@ -40,6 +43,9 @@ local _sessionLocked = false
 local _autoSaveThread: thread? = nil
 local _stateTablesRef: any = nil -- Reference to SimpleTest state tables
 local _loadFailed = false -- True if DataStore load errored (prevents overwriting saved data)
+
+-- Unique session identifier for ownership-aware locking
+local _villageSessionId = game.JobId .. "_village_" .. tostring(os.time())
 
 -- Try to get DataStore
 local success, result = pcall(function()
@@ -74,29 +80,57 @@ local function acquireVillageLock(userId: number): boolean
     if not _lockStore then return true end
 
     local lockKey = "VillageLock_" .. userId
-    local acquired = false
-    local now = os.time()
 
-    local lockSuccess2, lockErr = pcall(function()
-        _lockStore:UpdateAsync(lockKey, function(currentValue)
-            if not currentValue or (now - currentValue) >= SESSION_LOCK_TIMEOUT then
-                acquired = true
-                return now
-            end
-            acquired = false
-            return nil
+    -- Retry loop: previous server may still be releasing the lock
+    for attempt = 1, LOCK_ACQUIRE_RETRIES do
+        local acquired = false
+        local now = os.time()
+
+        local lockSuccess2, lockErr = pcall(function()
+            _lockStore:UpdateAsync(lockKey, function(currentValue)
+                -- Lock value format: { owner = sessionId, timestamp = os.time() }
+                -- Legacy format: plain number (os.time()) — handle migration
+                local lockTimestamp = 0
+                if typeof(currentValue) == "table" then
+                    lockTimestamp = currentValue.timestamp or 0
+                elseif typeof(currentValue) == "number" then
+                    lockTimestamp = currentValue -- Legacy format
+                end
+
+                if not currentValue or (now - lockTimestamp) >= SESSION_LOCK_TIMEOUT then
+                    acquired = true
+                    return { owner = _villageSessionId, timestamp = now }
+                end
+                acquired = false
+                return nil
+            end)
         end)
-    end)
 
-    if not lockSuccess2 then
-        warn("[VillageStateService] Failed to acquire village lock:", lockErr)
-        return false
+        if not lockSuccess2 then
+            warn(string.format("[VillageStateService] Lock acquire attempt %d/%d failed: %s",
+                attempt, LOCK_ACQUIRE_RETRIES, tostring(lockErr)))
+        elseif acquired then
+            _sessionLocked = true
+            return true
+        end
+
+        if attempt < LOCK_ACQUIRE_RETRIES then
+            warn(string.format("[VillageStateService] Village lock busy for %d, retrying in %ds (attempt %d/%d)",
+                userId, LOCK_ACQUIRE_RETRY_DELAY, attempt, LOCK_ACQUIRE_RETRIES))
+            task.wait(LOCK_ACQUIRE_RETRY_DELAY)
+        end
     end
 
-    _sessionLocked = acquired
-    return acquired
+    warn(string.format("[VillageStateService] Village lock still active for %d after %d attempts",
+        userId, LOCK_ACQUIRE_RETRIES))
+    _sessionLocked = false
+    return false
 end
 
+--[[
+    Ownership-aware lock release: only clears if we own the lock.
+    Uses UpdateAsync instead of RemoveAsync to prevent deleting another server's lock.
+]]
 local function releaseVillageLock(userId: number)
     if _useLocalData or not _lockStore then
         _sessionLocked = false
@@ -105,17 +139,35 @@ local function releaseVillageLock(userId: number)
 
     local lockKey = "VillageLock_" .. userId
     pcall(function()
-        _lockStore:RemoveAsync(lockKey)
+        _lockStore:UpdateAsync(lockKey, function(currentValue)
+            if typeof(currentValue) == "table" and currentValue.owner == _villageSessionId then
+                -- We own this lock — mark as expired
+                return { owner = _villageSessionId, timestamp = 0 }
+            end
+            -- Not our lock — leave it alone
+            return nil
+        end)
     end)
     _sessionLocked = false
 end
 
+--[[
+    Refreshes the village lock timestamp to prevent expiry during long sessions.
+    Only refreshes if we still own the lock.
+]]
 local function refreshVillageLock(userId: number)
     if _useLocalData or not _lockStore then return end
 
     local lockKey = "VillageLock_" .. userId
+    local now = os.time()
     pcall(function()
-        _lockStore:SetAsync(lockKey, os.time())
+        _lockStore:UpdateAsync(lockKey, function(currentValue)
+            if typeof(currentValue) == "table" and currentValue.owner == _villageSessionId then
+                return { owner = _villageSessionId, timestamp = now }
+            end
+            -- Not our lock — don't touch it
+            return nil
+        end)
     end)
 end
 
@@ -617,7 +669,18 @@ function VillageStateService:StartAutoSave()
         end
     end)
 
+    -- Lock heartbeat: refresh village lock every 60s to prevent expiry during long sessions
+    task.spawn(function()
+        while _initialized do
+            task.wait(LOCK_HEARTBEAT_INTERVAL)
+            if _ownerUserId and _sessionLocked then
+                refreshVillageLock(_ownerUserId)
+            end
+        end
+    end)
+
     print("[VillageStateService] Auto-save loop started (every " .. AUTO_SAVE_INTERVAL .. "s)")
+    print("[VillageStateService] Lock heartbeat started (every " .. LOCK_HEARTBEAT_INTERVAL .. "s)")
 end
 
 -- ============================================================================

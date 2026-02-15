@@ -1217,10 +1217,20 @@ for _, player in Players:GetPlayers() do
     end)
 end
 
--- Handle game shutdown
+-- Handle game shutdown - save all player data
 game:BindToClose(function()
-    print("[OVERWORLD] Shutting down...")
-    task.wait(1)
+    print("[OVERWORLD] Shutting down, saving all player data...")
+    if DataService and DataService.SaveAllData then
+        DataService:SaveAllData()
+    else
+        -- Fallback: save individually if SaveAllData doesn't exist
+        if DataService and DataService.SavePlayerData then
+            for _, player in Players:GetPlayers() do
+                pcall(function() DataService:SavePlayerData(player) end)
+            end
+        end
+    end
+    task.wait(3) -- Give time for saves with retry backoff to complete
 end)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
