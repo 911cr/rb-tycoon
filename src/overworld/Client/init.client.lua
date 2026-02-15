@@ -1493,6 +1493,124 @@ do
 end
 
 -- ═══════════════════════════════════════════════════════════════════════════════
+-- Proximity trade: show TRADE billboard above nearby players
+-- ═══════════════════════════════════════════════════════════════════════════════
+do
+    local RunService = game:GetService("RunService")
+    local TRADE_PROXIMITY = 15 -- studs
+    local SCAN_INTERVAL = 0.5 -- seconds
+    local _tradeBillboards: {[number]: BillboardGui} = {}
+    local _lastScan = 0
+
+    RunService.Heartbeat:Connect(function()
+        local now = os.clock()
+        if now - _lastScan < SCAN_INTERVAL then return end
+        _lastScan = now
+
+        if not TradeUI then return end
+
+        local myChar = Player.Character
+        if not myChar then return end
+        local myRoot = myChar:FindFirstChild("HumanoidRootPart") :: BasePart?
+        if not myRoot then return end
+        local myPos = myRoot.Position
+
+        -- Track which players are currently nearby
+        local nearbyIds: {[number]: boolean} = {}
+
+        for _, otherPlayer in Players:GetPlayers() do
+            if otherPlayer == Player then continue end
+
+            local otherChar = otherPlayer.Character
+            if not otherChar then continue end
+            local otherRoot = otherChar:FindFirstChild("HumanoidRootPart") :: BasePart?
+            if not otherRoot then continue end
+
+            local dist = (otherRoot.Position - myPos).Magnitude
+            if dist <= TRADE_PROXIMITY then
+                nearbyIds[otherPlayer.UserId] = true
+
+                -- Create billboard if not already present
+                if not _tradeBillboards[otherPlayer.UserId] then
+                    local head = otherChar:FindFirstChild("Head") :: BasePart?
+                    local adornee = head or otherRoot
+
+                    local billboard = Instance.new("BillboardGui")
+                    billboard.Name = "TradeBillboard"
+                    billboard.Size = UDim2.new(0, 100, 0, 36)
+                    billboard.StudsOffset = Vector3.new(0, 3, 0)
+                    billboard.AlwaysOnTop = true
+                    billboard.MaxDistance = 25
+                    billboard.Adornee = adornee
+                    billboard.Parent = adornee
+
+                    local btn = Instance.new("TextButton")
+                    btn.Name = "TradeButton"
+                    btn.Size = UDim2.new(1, 0, 1, 0)
+                    btn.BackgroundColor3 = Color3.fromRGB(40, 160, 140)
+                    btn.BackgroundTransparency = 0.15
+                    btn.Text = "TRADE"
+                    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+                    btn.TextSize = 14
+                    btn.Font = Enum.Font.GothamBold
+                    btn.BorderSizePixel = 0
+                    btn.Parent = billboard
+
+                    local corner = Instance.new("UICorner")
+                    corner.CornerRadius = UDim.new(0, 8)
+                    corner.Parent = btn
+
+                    local stroke = Instance.new("UIStroke")
+                    stroke.Color = Color3.fromRGB(60, 200, 170)
+                    stroke.Thickness = 1
+                    stroke.Parent = btn
+
+                    -- Capture player info for click handler
+                    local targetUserId = otherPlayer.UserId
+                    local targetName = otherPlayer.DisplayName or otherPlayer.Name
+
+                    btn.MouseButton1Click:Connect(function()
+                        -- Fetch current resources
+                        local GetPlayerResources = Events:FindFirstChild("GetPlayerResources") :: RemoteFunction?
+                        local resources = { gold = 0, wood = 0, food = 0 }
+                        if GetPlayerResources then
+                            local ok, res = pcall(function() return GetPlayerResources:InvokeServer() end)
+                            if ok and res then resources = res end
+                        end
+
+                        TradeUI:ShowProposalPanel(
+                            { userId = targetUserId, username = targetName },
+                            resources
+                        )
+                    end)
+
+                    _tradeBillboards[otherPlayer.UserId] = billboard
+                end
+            end
+        end
+
+        -- Remove billboards for players who moved away or left
+        for userId, billboard in _tradeBillboards do
+            if not nearbyIds[userId] then
+                billboard:Destroy()
+                _tradeBillboards[userId] = nil
+            end
+        end
+    end)
+
+    -- Clean up on player leaving
+    Players.PlayerRemoving:Connect(function(removedPlayer)
+        local billboard = _tradeBillboards[removedPlayer.UserId]
+        if billboard then
+            billboard:Destroy()
+            _tradeBillboards[removedPlayer.UserId] = nil
+        end
+    end)
+
+    print("[CLIENT] Proximity trade system initialized")
+end
+
+-- ═══════════════════════════════════════════════════════════════════════════════
 -- Event connections
 -- ═══════════════════════════════════════════════════════════════════════════════
 print("[CLIENT] Connecting events...")

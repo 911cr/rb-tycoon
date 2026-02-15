@@ -132,8 +132,11 @@ local function createResourceInput(
     name: string,
     color: Color3,
     parent: Frame,
-    onChanged: (number) -> ()
-): (Frame, TextLabel, TextLabel?)
+    onChanged: (number) -> (),
+    maxValue: number?
+): (Frame, TextBox, TextLabel?)
+    local clampMax = maxValue or 999999
+
     local row = Instance.new("Frame")
     row.Name = name .. "Row"
     row.Size = UDim2.new(1, -16, 0, 36)
@@ -170,17 +173,25 @@ local function createResourceInput(
     minusCorner.CornerRadius = UDim.new(0, 6)
     minusCorner.Parent = minusButton
 
-    -- Value display
-    local valueLabel = Instance.new("TextLabel")
+    -- Value display (TextBox for direct typing)
+    local valueLabel = Instance.new("TextBox")
     valueLabel.Name = "Value"
-    valueLabel.Size = UDim2.new(0, 70, 1, 0)
-    valueLabel.Position = UDim2.new(0, 90, 0, 0)
-    valueLabel.BackgroundTransparency = 1
+    valueLabel.Size = UDim2.new(0, 70, 0, 28)
+    valueLabel.Position = UDim2.new(0, 90, 0.5, -14)
+    valueLabel.BackgroundColor3 = Color3.fromRGB(50, 48, 42)
+    valueLabel.BackgroundTransparency = 0.3
     valueLabel.Text = "0"
+    valueLabel.PlaceholderText = "0"
     valueLabel.TextColor3 = TRADE_THEME.textPrimary
     valueLabel.TextSize = 16
     valueLabel.Font = Enum.Font.GothamBold
+    valueLabel.ClearTextOnFocus = false
+    valueLabel.BorderSizePixel = 0
     valueLabel.Parent = row
+
+    local valueCorner = Instance.new("UICorner")
+    valueCorner.CornerRadius = UDim.new(0, 4)
+    valueCorner.Parent = valueLabel
 
     -- Plus button
     local plusButton = Instance.new("TextButton")
@@ -199,18 +210,26 @@ local function createResourceInput(
     plusCorner.CornerRadius = UDim.new(0, 6)
     plusCorner.Parent = plusButton
 
+    -- Handle typed input
+    valueLabel.FocusLost:Connect(function(_enterPressed)
+        local parsed = tonumber(valueLabel.Text:gsub(",", "")) or 0
+        parsed = math.clamp(math.floor(parsed), 0, clampMax)
+        valueLabel.Text = formatNumber(parsed)
+        onChanged(parsed)
+    end)
+
     -- Wire buttons
     minusButton.MouseButton1Click:Connect(function()
         local step = if isShiftHeld() then RESOURCE_STEP_SHIFT else RESOURCE_STEP
         local current = tonumber(valueLabel.Text:gsub(",", "")) or 0
-        local newVal = math.max(0, current - step)
+        local newVal = math.clamp(current - step, 0, clampMax)
         onChanged(newVal)
     end)
 
     plusButton.MouseButton1Click:Connect(function()
         local step = if isShiftHeld() then RESOURCE_STEP_SHIFT else RESOURCE_STEP
         local current = tonumber(valueLabel.Text:gsub(",", "")) or 0
-        local newVal = current + step
+        local newVal = math.clamp(current + step, 0, clampMax)
         onChanged(newVal)
     end)
 
@@ -350,8 +369,8 @@ local function createProposalPanel(parent: ScreenGui): Frame
     overlayButton.ZIndex = 10
     overlayButton.Parent = overlay
 
-    -- Main panel
-    local panel = Instance.new("Frame")
+    -- Main panel (TextButton to absorb clicks and prevent fall-through to overlay)
+    local panel = Instance.new("TextButton")
     panel.Name = "ProposalPanel"
     panel.Size = UDim2.new(0, 520, 0, 380)
     panel.Position = UDim2.new(0.5, 0, 0.5, 0)
@@ -359,6 +378,8 @@ local function createProposalPanel(parent: ScreenGui): Frame
     panel.BackgroundColor3 = TRADE_THEME.panelBg
     panel.BorderSizePixel = 0
     panel.ZIndex = 11
+    panel.Text = ""
+    panel.AutoButtonColor = false
     panel.Parent = overlay
 
     local panelCorner = Instance.new("UICorner")
@@ -407,7 +428,7 @@ local function createProposalPanel(parent: ScreenGui): Frame
 
     local offerContent = offerSection:FindFirstChild("Content") :: Frame
     if offerContent then
-        -- Gold input
+        -- Gold input (maxValue = player's gold, clamped in createResourceInput)
         local _, goldVal = createResourceInput("Gold", TRADE_THEME.goldColor, offerContent, function(newVal)
             _offerValues.gold = math.min(newVal, _playerResources.gold)
             if goldVal then
@@ -420,7 +441,7 @@ local function createProposalPanel(parent: ScreenGui): Frame
                     or _requestValues.gold > 0 or _requestValues.wood > 0 or _requestValues.food > 0
                 proposeBtn.BackgroundColor3 = if hasValue then TRADE_THEME.primary else TRADE_THEME.cancelGray
             end
-        end)
+        end, _playerResources.gold)
         for _, c in goldVal.Parent:GetDescendants() do if c:IsA("GuiObject") then c.ZIndex = 12 end end
         goldVal.Parent.ZIndex = 12
 
@@ -436,7 +457,7 @@ local function createProposalPanel(parent: ScreenGui): Frame
                     or _requestValues.gold > 0 or _requestValues.wood > 0 or _requestValues.food > 0
                 proposeBtn.BackgroundColor3 = if hasValue then TRADE_THEME.primary else TRADE_THEME.cancelGray
             end
-        end)
+        end, _playerResources.wood)
         for _, c in woodVal.Parent:GetDescendants() do if c:IsA("GuiObject") then c.ZIndex = 12 end end
         woodVal.Parent.ZIndex = 12
 
@@ -452,7 +473,7 @@ local function createProposalPanel(parent: ScreenGui): Frame
                     or _requestValues.gold > 0 or _requestValues.wood > 0 or _requestValues.food > 0
                 proposeBtn.BackgroundColor3 = if hasValue then TRADE_THEME.primary else TRADE_THEME.cancelGray
             end
-        end)
+        end, _playerResources.food)
         for _, c in foodVal.Parent:GetDescendants() do if c:IsA("GuiObject") then c.ZIndex = 12 end end
         foodVal.Parent.ZIndex = 12
 
@@ -482,7 +503,7 @@ local function createProposalPanel(parent: ScreenGui): Frame
 
     local requestContent = requestSection:FindFirstChild("Content") :: Frame
     if requestContent then
-        -- Gold input
+        -- Gold input (request side - no player cap)
         local _, goldReqVal = createResourceInput("Gold", TRADE_THEME.goldColor, requestContent, function(newVal)
             _requestValues.gold = newVal
             if goldReqVal then
@@ -494,7 +515,7 @@ local function createProposalPanel(parent: ScreenGui): Frame
                     or _requestValues.gold > 0 or _requestValues.wood > 0 or _requestValues.food > 0
                 proposeBtn.BackgroundColor3 = if hasValue then TRADE_THEME.primary else TRADE_THEME.cancelGray
             end
-        end)
+        end, 999999)
         for _, c in goldReqVal.Parent:GetDescendants() do if c:IsA("GuiObject") then c.ZIndex = 12 end end
         goldReqVal.Parent.ZIndex = 12
 
@@ -510,7 +531,7 @@ local function createProposalPanel(parent: ScreenGui): Frame
                     or _requestValues.gold > 0 or _requestValues.wood > 0 or _requestValues.food > 0
                 proposeBtn.BackgroundColor3 = if hasValue then TRADE_THEME.primary else TRADE_THEME.cancelGray
             end
-        end)
+        end, 999999)
         for _, c in woodReqVal.Parent:GetDescendants() do if c:IsA("GuiObject") then c.ZIndex = 12 end end
         woodReqVal.Parent.ZIndex = 12
 
@@ -526,7 +547,7 @@ local function createProposalPanel(parent: ScreenGui): Frame
                     or _requestValues.gold > 0 or _requestValues.wood > 0 or _requestValues.food > 0
                 proposeBtn.BackgroundColor3 = if hasValue then TRADE_THEME.primary else TRADE_THEME.cancelGray
             end
-        end)
+        end, 999999)
         for _, c in foodReqVal.Parent:GetDescendants() do if c:IsA("GuiObject") then c.ZIndex = 12 end end
         foodReqVal.Parent.ZIndex = 12
     end
@@ -591,7 +612,7 @@ local function createProposalPanel(parent: ScreenGui): Frame
     shiftHint.Size = UDim2.new(1, 0, 0, 16)
     shiftHint.Position = UDim2.new(0, 0, 1, -18)
     shiftHint.BackgroundTransparency = 1
-    shiftHint.Text = "Hold Shift + click for +/-1,000"
+    shiftHint.Text = "Click a value to type. Shift+click +/- for 1,000"
     shiftHint.TextColor3 = TRADE_THEME.textMuted
     shiftHint.TextSize = 10
     shiftHint.Font = Enum.Font.Gotham

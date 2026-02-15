@@ -175,13 +175,6 @@ local function createDefaultState(userId: number): any
             level = 1,
             xp = 0,
             xpToNextLevel = 100,
-            equipment = {
-                dummies = "Basic",
-                weapons = "Basic",
-                armor = "Basic",
-            },
-            drillSergeantCount = 0,
-            totalTroopsTrained = 0,
         },
 
         townHall = {
@@ -366,13 +359,6 @@ function VillageStateService:SerializeState(): any
         state.barracks.level = BarracksState.level or 1
         state.barracks.xp = BarracksState.xp or 0
         state.barracks.xpToNextLevel = BarracksState.xpToNextLevel or 100
-        state.barracks.equipment = {
-            dummies = BarracksState.equipment.dummies or "Basic",
-            weapons = BarracksState.equipment.weapons or "Basic",
-            armor = BarracksState.equipment.armor or "Basic",
-        }
-        state.barracks.drillSergeantCount = #(BarracksState.drillSergeants or {})
-        state.barracks.totalTroopsTrained = BarracksState.totalTroopsTrained or 0
     end
 
     -- Town Hall

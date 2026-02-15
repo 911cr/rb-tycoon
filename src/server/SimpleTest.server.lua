@@ -10480,84 +10480,74 @@ local function createFarm(farmNumber)
 end
 
 -- ============================================================================
--- BARRACKS - Military training building with full progression loop
+-- BARRACKS - Army Training System
 -- ============================================================================
--- PROGRESSION LOOP:
---   1. RECRUIT: Get trainee from Recruitment Board (costs food)
---   2. TRAIN: Take trainee to Training Yard (practice at dummies)
---   3. EQUIP: Take trained recruit to Armory (weapon + armor)
---   4. DEPLOY: Take soldier to Army Camp (joins your army)
---   5. HIRE: Unlock Drill Sergeants at Level 3 (automation)
---   6. UPGRADE: Improve training dummies, weapons, armor at Forge
+-- STATIONS:
+--   1. TRAINING STATION: Queue troops for training (Soldier, Archer, Catapult)
+--   2. RESEARCH STATION: Unlock new troop types (Archer, then Catapult)
+--   3. QUEUE EXPANSION: Buy additional training queue slots (2 default, 5 max)
+--   4. ARMY DISPLAY: View your current army composition
 -- ============================================================================
+
+-- Troop definitions for Army Training System
+local BarracksTroopTypes = {
+    Soldier = {
+        displayName = "Soldier",
+        description = "Melee fighter with heavy armor",
+        costs = { gold = 150, food = 50 },
+        trainTime = 30,
+        foodUpkeep = 2,
+        researchCost = nil,
+        researchTime = 0,
+        prereq = nil,
+        color = Color3.fromRGB(140, 140, 150),
+    },
+    Archer = {
+        displayName = "Archer",
+        description = "Ranged unit with bows",
+        costs = { gold = 50, wood = 150, food = 30 },
+        trainTime = 25,
+        foodUpkeep = 1,
+        researchCost = { gold = 500, wood = 300 },
+        researchTime = 60,
+        prereq = nil,
+        color = Color3.fromRGB(100, 140, 90),
+    },
+    Catapult = {
+        displayName = "Catapult",
+        description = "Siege weapon for breaking defenses",
+        costs = { gold = 200, wood = 300 },
+        trainTime = 120,
+        foodUpkeep = 5,
+        researchCost = { gold = 1000, wood = 500, food = 200 },
+        researchTime = 120,
+        prereq = "Archer",
+        color = Color3.fromRGB(100, 70, 45),
+    },
+}
+
+-- Ordered list for consistent iteration
+local BarracksTroopOrder = { "Soldier", "Archer", "Catapult" }
+
+local QueueSlotCosts = { [3] = 500, [4] = 1500, [5] = 4000 }
 
 -- Barracks state
 local BarracksState = {
     level = 1,
     xp = 0,
     xpToNextLevel = 100,
-    drillSergeants = {},  -- NPC drill sergeants (train recruits)
-    equipment = {
-        dummies = "Basic",     -- Training dummy quality
-        weapons = "Basic",     -- Weapon quality
-        armor = "Basic",       -- Armor quality
-    },
-    playerInventory = {}, -- Per-player: { trainees = 0, trainedRecruits = 0, equippedSoldiers = 0, deployedTroops = 0 }
-    -- Player carrying state (for walk-through system)
-    playerTrainees = {},     -- [playerId] = trainees being carried
-    playerRecruits = {},     -- [playerId] = trained recruits being carried
-    playerSoldiers = {},     -- [playerId] = equipped soldiers being carried
-    -- Visual update functions (set during creation)
-    updateTraineeQueueVisuals = nil,
-    updateRecruitQueueVisuals = nil,
-    updateSoldierQueueVisuals = nil,
-    totalTroopsTrained = 0,
+    trainingQueues = {},   -- [userId] = { {troopType, startTime, completesAt}, ... }
+    queueSlots = {},       -- [userId] = number (default 2, max 5)
+    researched = {},       -- [userId] = { Soldier=true, Archer=false, Catapult=false }
+    activeResearch = {},   -- [userId] = { troopType, startTime, completesAt } or nil
     positions = {},
+    -- Visual update callbacks (set during creation)
+    updateQueueVisuals = nil,
+    updateResearchVisuals = nil,
 }
 
--- Equipment upgrade tiers for Barracks
-local DummyStats = {
-    Basic = { trainSpeed = 1.0, xpBonus = 1, cost = 0 },
-    Reinforced = { trainSpeed = 1.5, xpBonus = 2, cost = 500 },
-    Steel = { trainSpeed = 2.0, xpBonus = 3, cost = 2500 },
-    Enchanted = { trainSpeed = 3.0, xpBonus = 5, cost = 12000 },
-}
-
-local WeaponStats = {
-    Basic = { damage = 10, cost = 0 },
-    Iron = { damage = 18, cost = 800 },
-    Steel = { damage = 28, cost = 4000 },
-    Mithril = { damage = 45, cost = 20000 },
-}
-
-local ArmorStats = {
-    Basic = { defense = 5, cost = 0 },
-    Iron = { defense = 12, cost = 600 },
-    Steel = { defense = 22, cost = 3000 },
-    Mithril = { defense = 40, cost = 15000 },
-}
-
--- Worker (Drill Sergeant) costs
-local DrillSergeantCosts = {
-    { gold = 300, food = 150 },  -- First sergeant
-    { gold = 800, food = 400 },  -- Second
-    { gold = 2000, food = 1000 }, -- Third
-    { gold = 5000, food = 2500 }, -- Fourth (max)
-}
-
--- Get or initialize player barracks inventory
-local function getBarracksInventory(player: Player)
-    local id = tostring(player.UserId)
-    if not BarracksState.playerInventory[id] then
-        BarracksState.playerInventory[id] = {
-            trainees = 0,
-            trainedRecruits = 0,
-            equippedSoldiers = 0,
-            deployedTroops = 0,
-        }
-    end
-    return BarracksState.playerInventory[id]
-end
+-- Active barracks GUIs per player
+local activeBarracksGuis = {} -- [userId] = ScreenGui
 
 -- Add XP to barracks and handle leveling
 local function addBarracksXP(amount: number)
@@ -10570,336 +10560,159 @@ local function addBarracksXP(amount: number)
     end
 end
 
--- Player carrying helper functions for walk-through system
-local function getPlayerTrainees(player: Player): number
-    return BarracksState.playerTrainees[player.UserId] or 0
+-- Initialize barracks data for a player
+local function initPlayerBarracksData(player: Player)
+    local uid = player.UserId
+    if not BarracksState.queueSlots[uid] then
+        BarracksState.queueSlots[uid] = 2
+    end
+    if not BarracksState.trainingQueues[uid] then
+        BarracksState.trainingQueues[uid] = {}
+    end
+    if not BarracksState.researched[uid] then
+        BarracksState.researched[uid] = { Soldier = true, Archer = false, Catapult = false }
+    end
 end
 
-local function setPlayerTrainees(player: Player, amount: number)
-    BarracksState.playerTrainees[player.UserId] = math.max(0, math.min(amount, 10))
+-- Format time remaining as MM:SS
+local function formatTimeRemaining(seconds: number): string
+    if seconds <= 0 then return "Done!" end
+    local m = math.floor(seconds / 60)
+    local s = math.floor(seconds % 60)
+    if m > 0 then
+        return string.format("%dm %02ds", m, s)
+    end
+    return string.format("%ds", s)
 end
 
-local function getPlayerRecruits(player: Player): number
-    return BarracksState.playerRecruits[player.UserId] or 0
-end
+-- Add a troop to the training queue
+local function addToTrainingQueue(player: Player, troopType: string): boolean
+    local uid = player.UserId
+    initPlayerBarracksData(player)
 
-local function setPlayerRecruits(player: Player, amount: number)
-    BarracksState.playerRecruits[player.UserId] = math.max(0, math.min(amount, 10))
-end
+    local troopDef = BarracksTroopTypes[troopType]
+    if not troopDef then return false end
 
-local function getPlayerSoldiers(player: Player): number
-    return BarracksState.playerSoldiers[player.UserId] or 0
-end
+    -- Check troop is researched
+    if not BarracksState.researched[uid][troopType] then
+        notifyPlayer(player, "BarracksTrain", false, troopDef.displayName .. " not yet researched!")
+        return false
+    end
 
-local function setPlayerSoldiers(player: Player, amount: number)
-    BarracksState.playerSoldiers[player.UserId] = math.max(0, math.min(amount, 10))
-end
+    -- Check queue capacity
+    local queue = BarracksState.trainingQueues[uid]
+    local maxSlots = BarracksState.queueSlots[uid]
+    if #queue >= maxSlots then
+        notifyPlayer(player, "BarracksTrain", false, "Training queue full! (" .. #queue .. "/" .. maxSlots .. ")")
+        return false
+    end
 
---[[
-    Updates the visual representation of trainees following the player.
-    Shows peasant figures following behind the player.
-]]
-local function updatePlayerTraineeVisual(player: Player, count: number)
-    local character = player.Character
-    if not character then return end
-    local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
-    if not humanoidRootPart then return end
-
-    -- Remove old trainee visuals
-    for _, child in character:GetChildren() do
-        if child.Name == "TraineeFollower" then
-            child:Destroy()
+    -- Check food supply
+    if DataService then
+        local playerData = DataService:GetPlayerData(player)
+        if playerData and playerData.trainingPaused then
+            notifyPlayer(player, "BarracksTrain", false, "Food supply too low! Build more farms.")
+            return false
         end
     end
 
-    if count <= 0 then return end
+    -- Deduct resources
+    if not deductPlayerResources(player, troopDef.costs, "Barracks") then return false end
 
-    -- Create trainee figures on player's back (max 3 visible)
-    local visibleCount = math.min(count, 3)
-    for i = 1, visibleCount do
-        local traineeModel = Instance.new("Model")
-        traineeModel.Name = "TraineeFollower"
+    -- Calculate start time (chains after last queue item)
+    local now = os.time()
+    local startTime = now
+    if #queue > 0 then
+        local lastItem = queue[#queue]
+        startTime = math.max(now, lastItem.completesAt)
+    end
+    local completesAt = startTime + troopDef.trainTime
 
-        -- Peasant body (brown tunic)
-        local body = Instance.new("Part")
-        body.Name = "TraineeBody"
-        body.Size = Vector3.new(0.6, 1.2, 0.4)
-        body.Position = humanoidRootPart.Position + Vector3.new(-0.8 - (i-1)*0.5, 0.3 + (i-1)*0.4, -0.5)
-        body.Anchored = false
-        body.CanCollide = false
-        body.Material = Enum.Material.Fabric
-        body.Color = Color3.fromRGB(139, 119, 101)
-        body.Parent = traineeModel
+    table.insert(queue, {
+        troopType = troopType,
+        startTime = startTime,
+        completesAt = completesAt,
+    })
 
-        -- Weld to player
-        local bodyWeld = Instance.new("WeldConstraint")
-        bodyWeld.Part0 = humanoidRootPart
-        bodyWeld.Part1 = body
-        bodyWeld.Parent = body
+    notifyPlayer(player, "BarracksTrain", true,
+        "Training " .. troopDef.displayName .. "! Ready in " .. formatTimeRemaining(completesAt - now))
+    addBarracksXP(5)
 
-        -- Peasant head
-        local head = Instance.new("Part")
-        head.Name = "TraineeHead"
-        head.Shape = Enum.PartType.Ball
-        head.Size = Vector3.new(0.4, 0.4, 0.4)
-        head.Position = body.Position + Vector3.new(0, 0.8, 0)
-        head.Anchored = false
-        head.CanCollide = false
-        head.Material = Enum.Material.SmoothPlastic
-        head.Color = Color3.fromRGB(227, 183, 151)
-        head.Parent = traineeModel
-
-        local headWeld = Instance.new("WeldConstraint")
-        headWeld.Part0 = body
-        headWeld.Part1 = head
-        headWeld.Parent = head
-
-        traineeModel.PrimaryPart = body
-        traineeModel.Parent = character
+    if BarracksState.updateQueueVisuals then
+        BarracksState.updateQueueVisuals(player)
     end
 
-    -- Add count indicator if more than visible
-    if count > 3 then
-        local countPart = Instance.new("Part")
-        countPart.Name = "TraineeFollower"
-        countPart.Shape = Enum.PartType.Ball
-        countPart.Size = Vector3.new(0.5, 0.5, 0.5)
-        countPart.Position = humanoidRootPart.Position + Vector3.new(-2.5, 1.5, -0.5)
-        countPart.Anchored = false
-        countPart.CanCollide = false
-        countPart.Material = Enum.Material.Neon
-        countPart.Color = Color3.fromRGB(255, 220, 100)
-        countPart.Parent = character
-
-        local countWeld = Instance.new("WeldConstraint")
-        countWeld.Part0 = humanoidRootPart
-        countWeld.Part1 = countPart
-        countWeld.Parent = countPart
-
-        local billboard = Instance.new("BillboardGui")
-        billboard.Size = UDim2.new(0, 30, 0, 30)
-        billboard.StudsOffset = Vector3.new(0, 0.5, 0)
-        billboard.Parent = countPart
-
-        local label = Instance.new("TextLabel")
-        label.Size = UDim2.new(1, 0, 1, 0)
-        label.BackgroundTransparency = 1
-        label.Text = "x" .. tostring(count)
-        label.TextColor3 = Color3.new(1, 1, 1)
-        label.TextScaled = true
-        label.Font = Enum.Font.GothamBold
-        label.Parent = billboard
-    end
+    return true
 end
 
---[[
-    Updates the visual representation of trained recruits on the player.
-    Shows soldiers with basic armor behind the player.
-]]
-local function updatePlayerRecruitVisual(player: Player, count: number)
-    local character = player.Character
-    if not character then return end
-    local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
-    if not humanoidRootPart then return end
+-- Start researching a troop type
+local function startResearch(player: Player, troopType: string): boolean
+    local uid = player.UserId
+    initPlayerBarracksData(player)
 
-    -- Remove old recruit visuals
-    for _, child in character:GetChildren() do
-        if child.Name == "RecruitFollower" then
-            child:Destroy()
-        end
+    local troopDef = BarracksTroopTypes[troopType]
+    if not troopDef then return false end
+
+    -- Check not already researched
+    if BarracksState.researched[uid][troopType] then
+        notifyPlayer(player, "BarracksResearch", false, troopDef.displayName .. " already researched!")
+        return false
     end
 
-    if count <= 0 then return end
-
-    -- Create recruit figures on player's back (max 3 visible)
-    local visibleCount = math.min(count, 3)
-    for i = 1, visibleCount do
-        local recruitModel = Instance.new("Model")
-        recruitModel.Name = "RecruitFollower"
-
-        -- Recruit body (leather armor)
-        local body = Instance.new("Part")
-        body.Name = "RecruitBody"
-        body.Size = Vector3.new(0.7, 1.3, 0.5)
-        body.Position = humanoidRootPart.Position + Vector3.new(-0.8 - (i-1)*0.5, 0.3 + (i-1)*0.4, -0.5)
-        body.Anchored = false
-        body.CanCollide = false
-        body.Material = Enum.Material.Leather
-        body.Color = Color3.fromRGB(110, 85, 60)
-        body.Parent = recruitModel
-
-        -- Weld to player
-        local bodyWeld = Instance.new("WeldConstraint")
-        bodyWeld.Part0 = humanoidRootPart
-        bodyWeld.Part1 = body
-        bodyWeld.Parent = body
-
-        -- Recruit head with helmet
-        local head = Instance.new("Part")
-        head.Name = "RecruitHead"
-        head.Shape = Enum.PartType.Ball
-        head.Size = Vector3.new(0.45, 0.45, 0.45)
-        head.Position = body.Position + Vector3.new(0, 0.85, 0)
-        head.Anchored = false
-        head.CanCollide = false
-        head.Material = Enum.Material.Metal
-        head.Color = Color3.fromRGB(100, 95, 90)
-        head.Parent = recruitModel
-
-        local headWeld = Instance.new("WeldConstraint")
-        headWeld.Part0 = body
-        headWeld.Part1 = head
-        headWeld.Parent = head
-
-        recruitModel.PrimaryPart = body
-        recruitModel.Parent = character
+    -- Check not already researching something
+    if BarracksState.activeResearch[uid] then
+        notifyPlayer(player, "BarracksResearch", false, "Already researching! Wait for current research to finish.")
+        return false
     end
 
-    -- Add count indicator if more than visible
-    if count > 3 then
-        local countPart = Instance.new("Part")
-        countPart.Name = "RecruitFollower"
-        countPart.Shape = Enum.PartType.Ball
-        countPart.Size = Vector3.new(0.5, 0.5, 0.5)
-        countPart.Position = humanoidRootPart.Position + Vector3.new(-2.5, 1.5, -0.5)
-        countPart.Anchored = false
-        countPart.CanCollide = false
-        countPart.Material = Enum.Material.Neon
-        countPart.Color = Color3.fromRGB(100, 180, 255)
-        countPart.Parent = character
-
-        local countWeld = Instance.new("WeldConstraint")
-        countWeld.Part0 = humanoidRootPart
-        countWeld.Part1 = countPart
-        countWeld.Parent = countPart
-
-        local billboard = Instance.new("BillboardGui")
-        billboard.Size = UDim2.new(0, 30, 0, 30)
-        billboard.StudsOffset = Vector3.new(0, 0.5, 0)
-        billboard.Parent = countPart
-
-        local label = Instance.new("TextLabel")
-        label.Size = UDim2.new(1, 0, 1, 0)
-        label.BackgroundTransparency = 1
-        label.Text = "x" .. tostring(count)
-        label.TextColor3 = Color3.new(1, 1, 1)
-        label.TextScaled = true
-        label.Font = Enum.Font.GothamBold
-        label.Parent = billboard
+    -- Check prereq
+    if troopDef.prereq and not BarracksState.researched[uid][troopDef.prereq] then
+        local prereqName = BarracksTroopTypes[troopDef.prereq].displayName
+        notifyPlayer(player, "BarracksResearch", false, "Research " .. prereqName .. " first!")
+        return false
     end
+
+    -- Check research cost exists
+    if not troopDef.researchCost then return false end
+
+    -- Deduct resources
+    if not deductPlayerResources(player, troopDef.researchCost, "Barracks") then return false end
+
+    local now = os.time()
+    BarracksState.activeResearch[uid] = {
+        troopType = troopType,
+        startTime = now,
+        completesAt = now + troopDef.researchTime,
+    }
+
+    notifyPlayer(player, "BarracksResearch", true,
+        "Researching " .. troopDef.displayName .. "! " .. formatTimeRemaining(troopDef.researchTime))
+    addBarracksXP(10)
+
+    return true
 end
 
---[[
-    Updates the visual representation of equipped soldiers on the player.
-    Shows fully armored soldiers with swords behind the player.
-]]
-local function updatePlayerSoldierVisual(player: Player, count: number)
-    local character = player.Character
-    if not character then return end
-    local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
-    if not humanoidRootPart then return end
+-- Buy an additional queue slot
+local function buyQueueSlot(player: Player): boolean
+    local uid = player.UserId
+    initPlayerBarracksData(player)
 
-    -- Remove old soldier visuals
-    for _, child in character:GetChildren() do
-        if child.Name == "SoldierFollower" then
-            child:Destroy()
-        end
+    local currentSlots = BarracksState.queueSlots[uid]
+    if currentSlots >= 5 then
+        notifyPlayer(player, "BarracksSlot", false, "Already at maximum queue slots (5)!")
+        return false
     end
 
-    if count <= 0 then return end
+    local nextSlot = currentSlots + 1
+    local cost = QueueSlotCosts[nextSlot]
+    if not cost then return false end
 
-    -- Create soldier figures on player's back (max 3 visible)
-    local visibleCount = math.min(count, 3)
-    for i = 1, visibleCount do
-        local soldierModel = Instance.new("Model")
-        soldierModel.Name = "SoldierFollower"
+    if not deductPlayerResources(player, { gold = cost }, "Barracks") then return false end
 
-        -- Soldier body (metal armor)
-        local body = Instance.new("Part")
-        body.Name = "SoldierBody"
-        body.Size = Vector3.new(0.8, 1.4, 0.5)
-        body.Position = humanoidRootPart.Position + Vector3.new(-0.8 - (i-1)*0.5, 0.3 + (i-1)*0.4, -0.5)
-        body.Anchored = false
-        body.CanCollide = false
-        body.Material = Enum.Material.Metal
-        body.Color = Color3.fromRGB(140, 140, 150)
-        body.Parent = soldierModel
-
-        -- Weld to player
-        local bodyWeld = Instance.new("WeldConstraint")
-        bodyWeld.Part0 = humanoidRootPart
-        bodyWeld.Part1 = body
-        bodyWeld.Parent = body
-
-        -- Soldier head with full helm
-        local head = Instance.new("Part")
-        head.Name = "SoldierHead"
-        head.Size = Vector3.new(0.5, 0.5, 0.5)
-        head.Position = body.Position + Vector3.new(0, 0.95, 0)
-        head.Anchored = false
-        head.CanCollide = false
-        head.Material = Enum.Material.Metal
-        head.Color = Color3.fromRGB(100, 100, 110)
-        head.Parent = soldierModel
-
-        local headWeld = Instance.new("WeldConstraint")
-        headWeld.Part0 = body
-        headWeld.Part1 = head
-        headWeld.Parent = head
-
-        -- Sword on back
-        local sword = Instance.new("Part")
-        sword.Name = "SoldierSword"
-        sword.Size = Vector3.new(0.1, 1.0, 0.2)
-        sword.Position = body.Position + Vector3.new(0.3, 0.2, -0.2)
-        sword.Orientation = Vector3.new(0, 0, -25)
-        sword.Anchored = false
-        sword.CanCollide = false
-        sword.Material = Enum.Material.Metal
-        sword.Color = Color3.fromRGB(180, 180, 190)
-        sword.Parent = soldierModel
-
-        local swordWeld = Instance.new("WeldConstraint")
-        swordWeld.Part0 = body
-        swordWeld.Part1 = sword
-        swordWeld.Parent = sword
-
-        soldierModel.PrimaryPart = body
-        soldierModel.Parent = character
-    end
-
-    -- Add count indicator if more than visible
-    if count > 3 then
-        local countPart = Instance.new("Part")
-        countPart.Name = "SoldierFollower"
-        countPart.Shape = Enum.PartType.Ball
-        countPart.Size = Vector3.new(0.5, 0.5, 0.5)
-        countPart.Position = humanoidRootPart.Position + Vector3.new(-2.5, 1.5, -0.5)
-        countPart.Anchored = false
-        countPart.CanCollide = false
-        countPart.Material = Enum.Material.Neon
-        countPart.Color = Color3.fromRGB(255, 150, 50)
-        countPart.Parent = character
-
-        local countWeld = Instance.new("WeldConstraint")
-        countWeld.Part0 = humanoidRootPart
-        countWeld.Part1 = countPart
-        countWeld.Parent = countPart
-
-        local billboard = Instance.new("BillboardGui")
-        billboard.Size = UDim2.new(0, 30, 0, 30)
-        billboard.StudsOffset = Vector3.new(0, 0.5, 0)
-        billboard.Parent = countPart
-
-        local label = Instance.new("TextLabel")
-        label.Size = UDim2.new(1, 0, 1, 0)
-        label.BackgroundTransparency = 1
-        label.Text = "x" .. tostring(count)
-        label.TextColor3 = Color3.new(1, 1, 1)
-        label.TextScaled = true
-        label.Font = Enum.Font.GothamBold
-        label.Parent = billboard
-    end
+    BarracksState.queueSlots[uid] = nextSlot
+    notifyPlayer(player, "BarracksSlot", true, "Queue expanded to " .. nextSlot .. " slots!")
+    addBarracksXP(15)
+    return true
 end
 
 local function createBarracks()
@@ -11094,1015 +10907,847 @@ local function createBarracks()
     end
 
     -- ========================================================================
-    -- STATION 1: RECRUITMENT BOARD (Get trainees - costs food)
+    -- STATION 1: TRAINING STATION (center of arena)
     -- ========================================================================
-    local recruitBoard = Instance.new("Part")
-    recruitBoard.Name = "RecruitmentBoard"
-    recruitBoard.Size = Vector3.new(4, 5, 0.5)
-    recruitBoard.Position = Vector3.new(baseX - 12, GROUND_Y + 2.5, baseZ)
-    recruitBoard.Anchored = true
-    recruitBoard.Material = Enum.Material.Wood
-    recruitBoard.Color = Color3.fromRGB(100, 70, 45)
-    recruitBoard.Parent = barracksModel
+    local trainingTable = Instance.new("Part")
+    trainingTable.Name = "TrainingTable"
+    trainingTable.Size = Vector3.new(6, 3, 4)
+    trainingTable.Position = Vector3.new(baseX, GROUND_Y + 1.5, baseZ + 5)
+    trainingTable.Anchored = true
+    trainingTable.Material = Enum.Material.Wood
+    trainingTable.Color = Color3.fromRGB(100, 70, 45)
+    trainingTable.Parent = barracksModel
 
-    -- Board header
-    local boardHeader = Instance.new("Part")
-    boardHeader.Name = "BoardHeader"
-    boardHeader.Size = Vector3.new(4.5, 1, 0.3)
-    boardHeader.Position = Vector3.new(baseX - 12, GROUND_Y + 5.5, baseZ)
-    boardHeader.Anchored = true
-    boardHeader.Material = Enum.Material.Wood
-    boardHeader.Color = Color3.fromRGB(80, 55, 35)
-    boardHeader.Parent = barracksModel
+    -- Training board (map on table)
+    local trainingBoard = Instance.new("Part")
+    trainingBoard.Name = "TrainingBoard"
+    trainingBoard.Size = Vector3.new(4, 3, 0.3)
+    trainingBoard.Position = Vector3.new(baseX, GROUND_Y + 4.5, baseZ + 7)
+    trainingBoard.Anchored = true
+    trainingBoard.Material = Enum.Material.Wood
+    trainingBoard.Color = Color3.fromRGB(80, 55, 35)
+    trainingBoard.Parent = barracksModel
 
-    -- Recruitment posters
-    for i = 1, 3 do
-        local poster = Instance.new("Part")
-        poster.Name = "Poster" .. i
-        poster.Size = Vector3.new(1, 1.5, 0.1)
-        poster.Position = Vector3.new(baseX - 13 + i * 1.2, GROUND_Y + 3, baseZ + 0.3)
-        poster.Anchored = true
-        poster.Material = Enum.Material.SmoothPlastic
-        poster.Color = Color3.fromRGB(240, 230, 200)
-        poster.Parent = barracksModel
-    end
+    createSign(barracksModel, "TRAINING STATION", Vector3.new(baseX, GROUND_Y + 7, baseZ + 7), Vector3.new(6, 1, 0.3))
 
-    -- Waiting peasants (visual - these show the queue of available trainees)
-    local traineeQueueParts = {}
+    -- Visual queue slots (5 max, body+head pairs colored by troop type)
+    local queueSlotParts = {}
     for i = 1, 5 do
-        local peasant = Instance.new("Part")
-        peasant.Name = "WaitingPeasant" .. i
-        peasant.Size = Vector3.new(1, 3, 1)
-        peasant.Position = Vector3.new(baseX - 14, GROUND_Y + 1.5, baseZ - 3 + i * 1.5)
-        peasant.Anchored = true
-        peasant.Material = Enum.Material.Fabric
-        peasant.Color = Color3.fromRGB(139, 119, 101)
-        peasant.Transparency = i > 2 and 1 or 0 -- Only show first 2 initially
-        peasant.Parent = barracksModel
+        local slotBody = Instance.new("Part")
+        slotBody.Name = "QueueSlot" .. i
+        slotBody.Size = Vector3.new(1, 2.5, 0.8)
+        slotBody.Position = Vector3.new(baseX - 6 + (i - 1) * 2.5, GROUND_Y + 1.25, baseZ + 2)
+        slotBody.Anchored = true
+        slotBody.Material = Enum.Material.Metal
+        slotBody.Color = Color3.fromRGB(140, 140, 150)
+        slotBody.Transparency = 1
+        slotBody.Parent = barracksModel
 
-        local peasantHead = Instance.new("Part")
-        peasantHead.Name = "PeasantHead" .. i
-        peasantHead.Shape = Enum.PartType.Ball
-        peasantHead.Size = Vector3.new(1, 1, 1)
-        peasantHead.Position = Vector3.new(baseX - 14, GROUND_Y + 3.5, baseZ - 3 + i * 1.5)
-        peasantHead.Anchored = true
-        peasantHead.Material = Enum.Material.SmoothPlastic
-        peasantHead.Color = Color3.fromRGB(227, 183, 151)
-        peasantHead.Transparency = i > 2 and 1 or 0
-        peasantHead.Parent = barracksModel
+        local slotHead = Instance.new("Part")
+        slotHead.Name = "QueueSlotHead" .. i
+        slotHead.Shape = Enum.PartType.Ball
+        slotHead.Size = Vector3.new(0.8, 0.8, 0.8)
+        slotHead.Position = Vector3.new(baseX - 6 + (i - 1) * 2.5, GROUND_Y + 3, baseZ + 2)
+        slotHead.Anchored = true
+        slotHead.Material = Enum.Material.SmoothPlastic
+        slotHead.Color = Color3.fromRGB(227, 183, 151)
+        slotHead.Transparency = 1
+        slotHead.Parent = barracksModel
 
-        table.insert(traineeQueueParts, { body = peasant, head = peasantHead })
+        table.insert(queueSlotParts, { body = slotBody, head = slotHead })
     end
 
-    -- Trainee queue visual update function
-    local traineeQueueCount = 5 -- Available trainees waiting
-    local function updateTraineeQueueVisuals()
-        for i, parts in ipairs(traineeQueueParts) do
-            local visible = i <= traineeQueueCount
-            parts.body.Transparency = visible and 0 or 1
-            parts.head.Transparency = visible and 0 or 1
-        end
-    end
-    BarracksState.updateTraineeQueueVisuals = updateTraineeQueueVisuals
-
-    -- Sign showing action
-    createSign(barracksModel, "WALK TO RECRUIT", Vector3.new(baseX - 12, GROUND_Y + 6.5, baseZ + 2), Vector3.new(5, 0.8, 0.3))
-
-    -- WALK-THROUGH TRIGGER: Recruit trainees (walk near the board)
-    local recruitTrigger = Instance.new("Part")
-    recruitTrigger.Name = "RecruitTrigger"
-    recruitTrigger.Size = Vector3.new(8, 5, 6)
-    recruitTrigger.Position = Vector3.new(baseX - 13, GROUND_Y + 2.5, baseZ)
-    recruitTrigger.Anchored = true
-    recruitTrigger.Transparency = 1
-    recruitTrigger.CanCollide = false
-    recruitTrigger.Parent = barracksModel
-
-    local recruitDebounce = {}
-    recruitTrigger.Touched:Connect(function(hit)
-        local character = hit.Parent
-        local humanoid = character and character:FindFirstChild("Humanoid")
-        if not humanoid then return end
-        local player = Players:GetPlayerFromCharacter(character)
-        if not player then return end
-        if not isVillageOwner(player) then return end
-        if recruitDebounce[player.UserId] then return end
-        recruitDebounce[player.UserId] = true
-
-        -- Check if trainees available in queue
-        if traineeQueueCount > 0 then
-            -- Pick up a trainee
-            local currentTrainees = getPlayerTrainees(player)
-            if currentTrainees < 10 then
-                traineeQueueCount = traineeQueueCount - 1
-                setPlayerTrainees(player, currentTrainees + 1)
-                updatePlayerTraineeVisual(player, currentTrainees + 1)
-                updateTraineeQueueVisuals()
-                addBarracksXP(5)
-                print(string.format("[Barracks] %s recruited a trainee! (Cost: 10 Food)", player.Name))
-                print(string.format("  Carrying %d trainee(s). Take to TRAINING YARD!", currentTrainees + 1))
+    -- Queue visual update function
+    local function updateQueueVisualsForPlayer(player)
+        local uid = player.UserId
+        local queue = BarracksState.trainingQueues[uid] or {}
+        for i, parts in ipairs(queueSlotParts) do
+            if i <= #queue then
+                local troopDef = BarracksTroopTypes[queue[i].troopType]
+                parts.body.Color = troopDef and troopDef.color or Color3.fromRGB(140, 140, 150)
+                parts.body.Transparency = 0
+                parts.head.Transparency = 0
             else
-                print(string.format("[Barracks] %s: Already carrying maximum trainees (10)!", player.Name))
-            end
-        else
-            print(string.format("[Barracks] %s: No more trainees available! Wait for more peasants.", player.Name))
-        end
-
-        task.delay(1, function() recruitDebounce[player.UserId] = nil end)
-    end)
-
-    -- Slowly regenerate trainees over time
-    task.spawn(function()
-        while true do
-            task.wait(10) -- Every 10 seconds
-            if traineeQueueCount < 5 then
-                traineeQueueCount = traineeQueueCount + 1
-                updateTraineeQueueVisuals()
-                print("[Barracks] A new peasant arrived for recruitment!")
+                parts.body.Transparency = 1
+                parts.head.Transparency = 1
             end
         end
+    end
+    BarracksState.updateQueueVisuals = updateQueueVisualsForPlayer
+
+    -- Training Menu GUI
+    local function showTrainingMenu(player)
+        local uid = player.UserId
+        initPlayerBarracksData(player)
+
+        if activeBarracksGuis[uid] then
+            activeBarracksGuis[uid]:Destroy()
+            activeBarracksGuis[uid] = nil
+        end
+
+        local playerGui = player:FindFirstChild("PlayerGui")
+        if not playerGui then return end
+
+        local screenGui = Instance.new("ScreenGui")
+        screenGui.Name = "BarracksTrainingGui"
+        screenGui.ResetOnSpawn = false
+        screenGui.Parent = playerGui
+        activeBarracksGuis[uid] = screenGui
+
+        local mainFrame = Instance.new("Frame")
+        mainFrame.Name = "MainFrame"
+        mainFrame.Size = UDim2.new(0, 500, 0, 450)
+        mainFrame.Position = UDim2.new(0.5, -250, 0.5, -225)
+        mainFrame.BackgroundColor3 = Color3.fromRGB(30, 25, 20)
+        mainFrame.BorderSizePixel = 3
+        mainFrame.BorderColor3 = Color3.fromRGB(200, 50, 50)
+        mainFrame.Parent = screenGui
+
+        local title = Instance.new("TextLabel")
+        title.Size = UDim2.new(1, 0, 0, 45)
+        title.BackgroundColor3 = Color3.fromRGB(50, 40, 30)
+        title.BorderSizePixel = 0
+        title.Text = "TRAINING STATION"
+        title.TextColor3 = Color3.fromRGB(255, 100, 80)
+        title.TextScaled = true
+        title.Font = Enum.Font.GothamBold
+        title.Parent = mainFrame
+
+        -- Troop cards
+        local yOffset = 55
+        for _, troopName in ipairs(BarracksTroopOrder) do
+            if BarracksState.researched[uid][troopName] then
+                local troopDef = BarracksTroopTypes[troopName]
+
+                local card = Instance.new("Frame")
+                card.Size = UDim2.new(0.95, 0, 0, 85)
+                card.Position = UDim2.new(0.025, 0, 0, yOffset)
+                card.BackgroundColor3 = Color3.fromRGB(45, 40, 35)
+                card.BorderSizePixel = 2
+                card.BorderColor3 = troopDef.color
+                card.Parent = mainFrame
+
+                local cardTitle = Instance.new("TextLabel")
+                cardTitle.Size = UDim2.new(0.5, 0, 0, 25)
+                cardTitle.Position = UDim2.new(0.02, 0, 0, 5)
+                cardTitle.BackgroundTransparency = 1
+                cardTitle.Text = troopDef.displayName
+                cardTitle.TextColor3 = troopDef.color
+                cardTitle.TextXAlignment = Enum.TextXAlignment.Left
+                cardTitle.TextScaled = true
+                cardTitle.Font = Enum.Font.GothamBold
+                cardTitle.Parent = card
+
+                -- Cost display
+                local costParts = {}
+                if troopDef.costs.gold then table.insert(costParts, troopDef.costs.gold .. "g") end
+                if troopDef.costs.wood then table.insert(costParts, troopDef.costs.wood .. "w") end
+                if troopDef.costs.food then table.insert(costParts, troopDef.costs.food .. "f") end
+
+                local costLabel = Instance.new("TextLabel")
+                costLabel.Size = UDim2.new(0.96, 0, 0, 20)
+                costLabel.Position = UDim2.new(0.02, 0, 0, 30)
+                costLabel.BackgroundTransparency = 1
+                costLabel.Text = "Cost: " .. table.concat(costParts, " / ") .. "  |  Time: " .. formatTimeRemaining(troopDef.trainTime)
+                costLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
+                costLabel.TextXAlignment = Enum.TextXAlignment.Left
+                costLabel.TextScaled = true
+                costLabel.Font = Enum.Font.Gotham
+                costLabel.Parent = card
+
+                local trainBtn = Instance.new("TextButton")
+                trainBtn.Size = UDim2.new(0.96, 0, 0, 25)
+                trainBtn.Position = UDim2.new(0.02, 0, 0, 55)
+                trainBtn.BackgroundColor3 = Color3.fromRGB(80, 150, 80)
+                trainBtn.BorderSizePixel = 0
+                trainBtn.Text = "TRAIN " .. troopDef.displayName:upper()
+                trainBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+                trainBtn.TextScaled = true
+                trainBtn.Font = Enum.Font.GothamBold
+                trainBtn.Parent = card
+
+                trainBtn.MouseButton1Click:Connect(function()
+                    addToTrainingQueue(player, troopName)
+                    -- Refresh GUI
+                    showTrainingMenu(player)
+                end)
+
+                yOffset = yOffset + 90
+            end
+        end
+
+        -- Queue display
+        local queue = BarracksState.trainingQueues[uid] or {}
+        local maxSlots = BarracksState.queueSlots[uid] or 2
+
+        local queueTitle = Instance.new("TextLabel")
+        queueTitle.Size = UDim2.new(0.95, 0, 0, 25)
+        queueTitle.Position = UDim2.new(0.025, 0, 0, yOffset + 5)
+        queueTitle.BackgroundTransparency = 1
+        queueTitle.Text = string.format("Queue: %d/%d", #queue, maxSlots)
+        queueTitle.TextColor3 = Color3.fromRGB(255, 200, 100)
+        queueTitle.TextXAlignment = Enum.TextXAlignment.Left
+        queueTitle.TextScaled = true
+        queueTitle.Font = Enum.Font.GothamBold
+        queueTitle.Parent = mainFrame
+
+        local now = os.time()
+        for i, item in ipairs(queue) do
+            local remaining = item.completesAt - now
+            local troopDef = BarracksTroopTypes[item.troopType]
+            local queueLabel = Instance.new("TextLabel")
+            queueLabel.Size = UDim2.new(0.9, 0, 0, 18)
+            queueLabel.Position = UDim2.new(0.05, 0, 0, yOffset + 28 + (i - 1) * 20)
+            queueLabel.BackgroundTransparency = 1
+            queueLabel.Text = string.format("%d. %s - %s", i, troopDef and troopDef.displayName or item.troopType, formatTimeRemaining(remaining))
+            queueLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
+            queueLabel.TextXAlignment = Enum.TextXAlignment.Left
+            queueLabel.TextScaled = true
+            queueLabel.Font = Enum.Font.Gotham
+            queueLabel.Parent = mainFrame
+        end
+
+        -- Resize frame to fit content
+        local totalHeight = yOffset + 35 + #queue * 20 + 50
+        mainFrame.Size = UDim2.new(0, 500, 0, math.max(350, totalHeight))
+        mainFrame.Position = UDim2.new(0.5, -250, 0.5, -math.max(350, totalHeight) / 2)
+
+        -- Close button
+        local closeButton = Instance.new("TextButton")
+        closeButton.Size = UDim2.new(0.5, 0, 0, 35)
+        closeButton.Position = UDim2.new(0.25, 0, 1, -40)
+        closeButton.BackgroundColor3 = Color3.fromRGB(150, 50, 50)
+        closeButton.BorderSizePixel = 0
+        closeButton.Text = "CLOSE"
+        closeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+        closeButton.TextScaled = true
+        closeButton.Font = Enum.Font.GothamBold
+        closeButton.Parent = mainFrame
+
+        closeButton.MouseButton1Click:Connect(function()
+            screenGui:Destroy()
+            activeBarracksGuis[uid] = nil
+        end)
+    end
+
+    createInteraction(trainingTable, "Train Troops", "Training Station", 0, function(player)
+        showTrainingMenu(player)
     end)
 
     -- ========================================================================
-    -- STATION 2: TRAINING YARD (Train at dummies)
+    -- STATION 2: RESEARCH STATION (left side)
     -- ========================================================================
-    local trainingYard = Instance.new("Part")
-    trainingYard.Name = "TrainingYard"
-    trainingYard.Size = Vector3.new(16, 0.2, 14)
-    trainingYard.Position = Vector3.new(baseX, GROUND_Y + 0.2, baseZ + 16)
-    trainingYard.Anchored = true
-    trainingYard.Material = Enum.Material.Ground
-    trainingYard.Color = Color3.fromRGB(120, 100, 80)
-    trainingYard.Parent = barracksModel
+    local researchTable = Instance.new("Part")
+    researchTable.Name = "ResearchTable"
+    researchTable.Size = Vector3.new(5, 3, 3)
+    researchTable.Position = Vector3.new(baseX - 25, GROUND_Y + 1.5, baseZ - 5)
+    researchTable.Anchored = true
+    researchTable.Material = Enum.Material.Wood
+    researchTable.Color = Color3.fromRGB(90, 60, 40)
+    researchTable.Parent = barracksModel
 
-    -- Training dummies (3 of them)
-    local dummies = {}
-    for i = 1, 3 do
-        local dummyPost = Instance.new("Part")
-        dummyPost.Name = "DummyPost" .. i
-        dummyPost.Size = Vector3.new(0.5, 5, 0.5)
-        dummyPost.Position = Vector3.new(baseX - 5 + (i - 1) * 5, GROUND_Y + 2.5, baseZ + 16)
-        dummyPost.Anchored = true
-        dummyPost.Material = Enum.Material.Wood
-        dummyPost.Color = Color3.fromRGB(90, 65, 45)
-        dummyPost.Parent = barracksModel
+    -- Scroll decoration
+    local scroll = Instance.new("Part")
+    scroll.Name = "ResearchScroll"
+    scroll.Shape = Enum.PartType.Cylinder
+    scroll.Size = Vector3.new(0.3, 2, 0.5)
+    scroll.Position = Vector3.new(baseX - 25, GROUND_Y + 3.3, baseZ - 5)
+    scroll.Orientation = Vector3.new(0, 0, 90)
+    scroll.Anchored = true
+    scroll.Material = Enum.Material.Fabric
+    scroll.Color = Color3.fromRGB(230, 210, 170)
+    scroll.Parent = barracksModel
 
-        local dummyBody = Instance.new("Part")
-        dummyBody.Name = "DummyBody" .. i
-        dummyBody.Size = Vector3.new(2, 3, 1)
-        dummyBody.Position = Vector3.new(baseX - 5 + (i - 1) * 5, GROUND_Y + 4.5, baseZ + 16)
-        dummyBody.Anchored = true
-        dummyBody.Material = Enum.Material.Fabric
-        dummyBody.Color = Color3.fromRGB(180, 160, 120)
-        dummyBody.Parent = barracksModel
+    -- Glowing crystal
+    local crystal = Instance.new("Part")
+    crystal.Name = "ResearchCrystal"
+    crystal.Size = Vector3.new(1, 2, 1)
+    crystal.Position = Vector3.new(baseX - 23, GROUND_Y + 4, baseZ - 5)
+    crystal.Anchored = true
+    crystal.Material = Enum.Material.Neon
+    crystal.Color = Color3.fromRGB(100, 150, 255)
+    crystal.Parent = barracksModel
 
-        local dummyHead = Instance.new("Part")
-        dummyHead.Name = "DummyHead" .. i
-        dummyHead.Shape = Enum.PartType.Ball
-        dummyHead.Size = Vector3.new(1.2, 1.2, 1.2)
-        dummyHead.Position = Vector3.new(baseX - 5 + (i - 1) * 5, GROUND_Y + 6.5, baseZ + 16)
-        dummyHead.Anchored = true
-        dummyHead.Material = Enum.Material.Fabric
-        dummyHead.Color = Color3.fromRGB(180, 160, 120)
-        dummyHead.Parent = barracksModel
+    local crystalLight = Instance.new("PointLight")
+    crystalLight.Brightness = 1
+    crystalLight.Range = 12
+    crystalLight.Color = Color3.fromRGB(100, 150, 255)
+    crystalLight.Parent = crystal
 
-        table.insert(dummies, { post = dummyPost, body = dummyBody, head = dummyHead })
-    end
+    createSign(barracksModel, "RESEARCH STATION", Vector3.new(baseX - 25, GROUND_Y + 6.5, baseZ - 3), Vector3.new(6, 1, 0.3))
 
-    -- Training queue visuals (trainees waiting to train at each dummy)
-    local trainingQueueParts = {}
-    for i = 1, 6 do
-        local trainee = Instance.new("Part")
-        trainee.Name = "TrainingQueueTrainee" .. i
-        trainee.Size = Vector3.new(0.8, 2.5, 0.6)
-        trainee.Position = Vector3.new(baseX - 8 + (i-1) * 2.5, GROUND_Y + 1.25, baseZ + 20)
-        trainee.Anchored = true
-        trainee.Material = Enum.Material.Fabric
-        trainee.Color = Color3.fromRGB(139, 119, 101)
-        trainee.Transparency = 1 -- Hidden initially
-        trainee.Parent = barracksModel
+    -- Research Menu GUI
+    local function showResearchMenu(player)
+        local uid = player.UserId
+        initPlayerBarracksData(player)
 
-        local traineeHead = Instance.new("Part")
-        traineeHead.Name = "TrainingQueueHead" .. i
-        traineeHead.Shape = Enum.PartType.Ball
-        traineeHead.Size = Vector3.new(0.7, 0.7, 0.7)
-        traineeHead.Position = Vector3.new(baseX - 8 + (i-1) * 2.5, GROUND_Y + 3, baseZ + 20)
-        traineeHead.Anchored = true
-        traineeHead.Material = Enum.Material.SmoothPlastic
-        traineeHead.Color = Color3.fromRGB(227, 183, 151)
-        traineeHead.Transparency = 1
-        traineeHead.Parent = barracksModel
-
-        table.insert(trainingQueueParts, { body = trainee, head = traineeHead })
-    end
-
-    -- Trained recruit waiting area (after training)
-    local recruitReadyParts = {}
-    for i = 1, 6 do
-        local recruit = Instance.new("Part")
-        recruit.Name = "TrainedRecruit" .. i
-        recruit.Size = Vector3.new(0.8, 2.5, 0.6)
-        recruit.Position = Vector3.new(baseX - 8 + (i-1) * 2.5, GROUND_Y + 1.25, baseZ + 12)
-        recruit.Anchored = true
-        recruit.Material = Enum.Material.Leather
-        recruit.Color = Color3.fromRGB(110, 85, 60)
-        recruit.Transparency = 1
-        recruit.Parent = barracksModel
-
-        local recruitHead = Instance.new("Part")
-        recruitHead.Name = "TrainedRecruitHead" .. i
-        recruitHead.Shape = Enum.PartType.Ball
-        recruitHead.Size = Vector3.new(0.75, 0.75, 0.75)
-        recruitHead.Position = Vector3.new(baseX - 8 + (i-1) * 2.5, GROUND_Y + 3, baseZ + 12)
-        recruitHead.Anchored = true
-        recruitHead.Material = Enum.Material.Metal
-        recruitHead.Color = Color3.fromRGB(100, 95, 90)
-        recruitHead.Transparency = 1
-        recruitHead.Parent = barracksModel
-
-        table.insert(recruitReadyParts, { body = recruit, head = recruitHead })
-    end
-
-    -- Training state
-    local traineesInTraining = 0
-    local traineesReady = 0
-
-    local function updateTrainingVisuals()
-        -- Update trainees in queue
-        for i, parts in ipairs(trainingQueueParts) do
-            local visible = i <= traineesInTraining
-            parts.body.Transparency = visible and 0 or 1
-            parts.head.Transparency = visible and 0 or 1
+        if activeBarracksGuis[uid] then
+            activeBarracksGuis[uid]:Destroy()
+            activeBarracksGuis[uid] = nil
         end
-        -- Update trained recruits ready
-        for i, parts in ipairs(recruitReadyParts) do
-            local visible = i <= traineesReady
-            parts.body.Transparency = visible and 0 or 1
-            parts.head.Transparency = visible and 0 or 1
+
+        local playerGui = player:FindFirstChild("PlayerGui")
+        if not playerGui then return end
+
+        local screenGui = Instance.new("ScreenGui")
+        screenGui.Name = "BarracksResearchGui"
+        screenGui.ResetOnSpawn = false
+        screenGui.Parent = playerGui
+        activeBarracksGuis[uid] = screenGui
+
+        local mainFrame = Instance.new("Frame")
+        mainFrame.Size = UDim2.new(0, 450, 0, 400)
+        mainFrame.Position = UDim2.new(0.5, -225, 0.5, -200)
+        mainFrame.BackgroundColor3 = Color3.fromRGB(20, 25, 40)
+        mainFrame.BorderSizePixel = 3
+        mainFrame.BorderColor3 = Color3.fromRGB(100, 150, 255)
+        mainFrame.Parent = screenGui
+
+        local title = Instance.new("TextLabel")
+        title.Size = UDim2.new(1, 0, 0, 45)
+        title.BackgroundColor3 = Color3.fromRGB(30, 35, 60)
+        title.BorderSizePixel = 0
+        title.Text = "RESEARCH STATION"
+        title.TextColor3 = Color3.fromRGB(100, 180, 255)
+        title.TextScaled = true
+        title.Font = Enum.Font.GothamBold
+        title.Parent = mainFrame
+
+        -- Active research progress
+        local yOffset = 55
+        local activeRes = BarracksState.activeResearch[uid]
+        if activeRes then
+            local now = os.time()
+            local remaining = activeRes.completesAt - now
+            local troopDef = BarracksTroopTypes[activeRes.troopType]
+
+            local activeCard = Instance.new("Frame")
+            activeCard.Size = UDim2.new(0.95, 0, 0, 50)
+            activeCard.Position = UDim2.new(0.025, 0, 0, yOffset)
+            activeCard.BackgroundColor3 = Color3.fromRGB(40, 50, 80)
+            activeCard.BorderSizePixel = 2
+            activeCard.BorderColor3 = Color3.fromRGB(255, 200, 50)
+            activeCard.Parent = mainFrame
+
+            local activeLabel = Instance.new("TextLabel")
+            activeLabel.Size = UDim2.new(0.96, 0, 0, 25)
+            activeLabel.Position = UDim2.new(0.02, 0, 0, 5)
+            activeLabel.BackgroundTransparency = 1
+            activeLabel.Text = "Researching: " .. (troopDef and troopDef.displayName or activeRes.troopType)
+            activeLabel.TextColor3 = Color3.fromRGB(255, 200, 50)
+            activeLabel.TextXAlignment = Enum.TextXAlignment.Left
+            activeLabel.TextScaled = true
+            activeLabel.Font = Enum.Font.GothamBold
+            activeLabel.Parent = activeCard
+
+            local timeLabel = Instance.new("TextLabel")
+            timeLabel.Size = UDim2.new(0.96, 0, 0, 20)
+            timeLabel.Position = UDim2.new(0.02, 0, 0, 28)
+            timeLabel.BackgroundTransparency = 1
+            timeLabel.Text = "Time remaining: " .. formatTimeRemaining(remaining)
+            timeLabel.TextColor3 = Color3.fromRGB(180, 180, 220)
+            timeLabel.TextXAlignment = Enum.TextXAlignment.Left
+            timeLabel.TextScaled = true
+            timeLabel.Font = Enum.Font.Gotham
+            timeLabel.Parent = activeCard
+
+            yOffset = yOffset + 60
         end
+
+        -- Research cards for each troop type
+        for _, troopName in ipairs(BarracksTroopOrder) do
+            local troopDef = BarracksTroopTypes[troopName]
+            local isResearched = BarracksState.researched[uid][troopName]
+
+            local card = Instance.new("Frame")
+            card.Size = UDim2.new(0.95, 0, 0, 70)
+            card.Position = UDim2.new(0.025, 0, 0, yOffset)
+            card.BackgroundColor3 = isResearched and Color3.fromRGB(30, 50, 30) or Color3.fromRGB(45, 40, 50)
+            card.BorderSizePixel = 2
+            card.BorderColor3 = troopDef.color
+            card.Parent = mainFrame
+
+            local cardTitle = Instance.new("TextLabel")
+            cardTitle.Size = UDim2.new(0.6, 0, 0, 25)
+            cardTitle.Position = UDim2.new(0.02, 0, 0, 5)
+            cardTitle.BackgroundTransparency = 1
+            cardTitle.Text = troopDef.displayName .. (isResearched and " (UNLOCKED)" or "")
+            cardTitle.TextColor3 = isResearched and Color3.fromRGB(100, 200, 100) or troopDef.color
+            cardTitle.TextXAlignment = Enum.TextXAlignment.Left
+            cardTitle.TextScaled = true
+            cardTitle.Font = Enum.Font.GothamBold
+            cardTitle.Parent = card
+
+            if not isResearched and troopDef.researchCost then
+                -- Cost display
+                local costParts = {}
+                if troopDef.researchCost.gold then table.insert(costParts, troopDef.researchCost.gold .. "g") end
+                if troopDef.researchCost.wood then table.insert(costParts, troopDef.researchCost.wood .. "w") end
+                if troopDef.researchCost.food then table.insert(costParts, troopDef.researchCost.food .. "f") end
+                local prereqText = troopDef.prereq and ("  |  Requires: " .. BarracksTroopTypes[troopDef.prereq].displayName) or ""
+
+                local costLabel = Instance.new("TextLabel")
+                costLabel.Size = UDim2.new(0.96, 0, 0, 18)
+                costLabel.Position = UDim2.new(0.02, 0, 0, 28)
+                costLabel.BackgroundTransparency = 1
+                costLabel.Text = "Cost: " .. table.concat(costParts, " / ") .. "  |  " .. formatTimeRemaining(troopDef.researchTime) .. prereqText
+                costLabel.TextColor3 = Color3.fromRGB(180, 180, 200)
+                costLabel.TextXAlignment = Enum.TextXAlignment.Left
+                costLabel.TextScaled = true
+                costLabel.Font = Enum.Font.Gotham
+                costLabel.Parent = card
+
+                local researchBtn = Instance.new("TextButton")
+                researchBtn.Size = UDim2.new(0.4, 0, 0, 22)
+                researchBtn.Position = UDim2.new(0.55, 0, 0, 44)
+                researchBtn.BackgroundColor3 = Color3.fromRGB(60, 80, 160)
+                researchBtn.BorderSizePixel = 0
+                researchBtn.Text = "RESEARCH"
+                researchBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+                researchBtn.TextScaled = true
+                researchBtn.Font = Enum.Font.GothamBold
+                researchBtn.Parent = card
+
+                researchBtn.MouseButton1Click:Connect(function()
+                    startResearch(player, troopName)
+                    showResearchMenu(player)
+                end)
+            else
+                local descLabel = Instance.new("TextLabel")
+                descLabel.Size = UDim2.new(0.96, 0, 0, 18)
+                descLabel.Position = UDim2.new(0.02, 0, 0, 30)
+                descLabel.BackgroundTransparency = 1
+                descLabel.Text = troopDef.description
+                descLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
+                descLabel.TextXAlignment = Enum.TextXAlignment.Left
+                descLabel.TextScaled = true
+                descLabel.Font = Enum.Font.Gotham
+                descLabel.Parent = card
+            end
+
+            yOffset = yOffset + 75
+        end
+
+        -- Resize frame
+        local totalHeight = yOffset + 50
+        mainFrame.Size = UDim2.new(0, 450, 0, totalHeight)
+        mainFrame.Position = UDim2.new(0.5, -225, 0.5, -totalHeight / 2)
+
+        local closeButton = Instance.new("TextButton")
+        closeButton.Size = UDim2.new(0.5, 0, 0, 35)
+        closeButton.Position = UDim2.new(0.25, 0, 1, -40)
+        closeButton.BackgroundColor3 = Color3.fromRGB(150, 50, 50)
+        closeButton.BorderSizePixel = 0
+        closeButton.Text = "CLOSE"
+        closeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+        closeButton.TextScaled = true
+        closeButton.Font = Enum.Font.GothamBold
+        closeButton.Parent = mainFrame
+
+        closeButton.MouseButton1Click:Connect(function()
+            screenGui:Destroy()
+            activeBarracksGuis[uid] = nil
+        end)
     end
-    BarracksState.updateRecruitQueueVisuals = updateTrainingVisuals
 
-    -- Signs
-    createSign(barracksModel, "DROP TRAINEES", Vector3.new(baseX, GROUND_Y + 8.5, baseZ + 20), Vector3.new(5, 0.8, 0.3))
-    createSign(barracksModel, "PICK UP RECRUITS", Vector3.new(baseX, GROUND_Y + 8.5, baseZ + 12), Vector3.new(6, 0.8, 0.3))
+    createInteraction(researchTable, "Research Troops", "Research Station", 0, function(player)
+        showResearchMenu(player)
+    end)
 
-    -- WALK-THROUGH TRIGGER: Drop trainees for training
-    local trainingInputTrigger = Instance.new("Part")
-    trainingInputTrigger.Name = "TrainingInputTrigger"
-    trainingInputTrigger.Size = Vector3.new(18, 5, 6)
-    trainingInputTrigger.Position = Vector3.new(baseX, GROUND_Y + 2.5, baseZ + 20)
-    trainingInputTrigger.Anchored = true
-    trainingInputTrigger.Transparency = 1
-    trainingInputTrigger.CanCollide = false
-    trainingInputTrigger.Parent = barracksModel
+    -- ========================================================================
+    -- STATION 3: QUEUE EXPANSION (right side)
+    -- ========================================================================
+    local queueDesk = Instance.new("Part")
+    queueDesk.Name = "QueueDesk"
+    queueDesk.Size = Vector3.new(5, 3, 3)
+    queueDesk.Position = Vector3.new(baseX + 25, GROUND_Y + 1.5, baseZ - 5)
+    queueDesk.Anchored = true
+    queueDesk.Material = Enum.Material.Wood
+    queueDesk.Color = Color3.fromRGB(100, 70, 45)
+    queueDesk.Parent = barracksModel
 
-    local trainingInputDebounce = {}
-    trainingInputTrigger.Touched:Connect(function(hit)
-        local character = hit.Parent
-        local humanoid = character and character:FindFirstChild("Humanoid")
-        if not humanoid then return end
-        local player = Players:GetPlayerFromCharacter(character)
-        if not player then return end
-        if not isVillageOwner(player) then return end
-        if trainingInputDebounce[player.UserId] then return end
-        trainingInputDebounce[player.UserId] = true
+    -- Gold coin decoration
+    local goldCoin = Instance.new("Part")
+    goldCoin.Name = "GoldCoinDecor"
+    goldCoin.Shape = Enum.PartType.Cylinder
+    goldCoin.Size = Vector3.new(0.3, 1.5, 1.5)
+    goldCoin.Position = Vector3.new(baseX + 25, GROUND_Y + 3.3, baseZ - 5)
+    goldCoin.Orientation = Vector3.new(0, 0, 90)
+    goldCoin.Anchored = true
+    goldCoin.Material = Enum.Material.Neon
+    goldCoin.Color = Color3.fromRGB(255, 200, 50)
+    goldCoin.Parent = barracksModel
 
-        local playerTrainees = getPlayerTrainees(player)
-        if playerTrainees > 0 and traineesInTraining < 6 then
-            local toDeposit = math.min(playerTrainees, 6 - traineesInTraining)
-            setPlayerTrainees(player, playerTrainees - toDeposit)
-            updatePlayerTraineeVisual(player, playerTrainees - toDeposit)
-            traineesInTraining = traineesInTraining + toDeposit
-            updateTrainingVisuals()
-            print(string.format("[Barracks] %s dropped %d trainee(s) for training!", player.Name, toDeposit))
-            print(string.format("  Trainees in training: %d", traineesInTraining))
+    createSign(barracksModel, "QUEUE EXPANSION", Vector3.new(baseX + 25, GROUND_Y + 6.5, baseZ - 3), Vector3.new(6, 1, 0.3))
 
-            -- Wobble a dummy for visual feedback
-            local dummyBody = dummies[2].body
-            local originalPos = dummyBody.Position
-            task.spawn(function()
-                dummyBody.Position = originalPos + Vector3.new(0.3, 0, 0)
-                task.wait(0.1)
-                dummyBody.Position = originalPos - Vector3.new(0.3, 0, 0)
-                task.wait(0.1)
-                dummyBody.Position = originalPos
+    -- Queue Expansion Menu GUI
+    local function showQueueExpansionMenu(player)
+        local uid = player.UserId
+        initPlayerBarracksData(player)
+
+        if activeBarracksGuis[uid] then
+            activeBarracksGuis[uid]:Destroy()
+            activeBarracksGuis[uid] = nil
+        end
+
+        local playerGui = player:FindFirstChild("PlayerGui")
+        if not playerGui then return end
+
+        local screenGui = Instance.new("ScreenGui")
+        screenGui.Name = "BarracksQueueGui"
+        screenGui.ResetOnSpawn = false
+        screenGui.Parent = playerGui
+        activeBarracksGuis[uid] = screenGui
+
+        local mainFrame = Instance.new("Frame")
+        mainFrame.Size = UDim2.new(0, 350, 0, 250)
+        mainFrame.Position = UDim2.new(0.5, -175, 0.5, -125)
+        mainFrame.BackgroundColor3 = Color3.fromRGB(30, 25, 20)
+        mainFrame.BorderSizePixel = 3
+        mainFrame.BorderColor3 = Color3.fromRGB(255, 200, 50)
+        mainFrame.Parent = screenGui
+
+        local title = Instance.new("TextLabel")
+        title.Size = UDim2.new(1, 0, 0, 45)
+        title.BackgroundColor3 = Color3.fromRGB(50, 40, 30)
+        title.BorderSizePixel = 0
+        title.Text = "QUEUE EXPANSION"
+        title.TextColor3 = Color3.fromRGB(255, 200, 50)
+        title.TextScaled = true
+        title.Font = Enum.Font.GothamBold
+        title.Parent = mainFrame
+
+        local currentSlots = BarracksState.queueSlots[uid] or 2
+
+        local slotsLabel = Instance.new("TextLabel")
+        slotsLabel.Size = UDim2.new(0.9, 0, 0, 35)
+        slotsLabel.Position = UDim2.new(0.05, 0, 0, 60)
+        slotsLabel.BackgroundTransparency = 1
+        slotsLabel.Text = string.format("Current Slots: %d / 5", currentSlots)
+        slotsLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+        slotsLabel.TextScaled = true
+        slotsLabel.Font = Enum.Font.GothamBold
+        slotsLabel.Parent = mainFrame
+
+        if currentSlots < 5 then
+            local nextCost = QueueSlotCosts[currentSlots + 1]
+
+            local costLabel = Instance.new("TextLabel")
+            costLabel.Size = UDim2.new(0.9, 0, 0, 25)
+            costLabel.Position = UDim2.new(0.05, 0, 0, 100)
+            costLabel.BackgroundTransparency = 1
+            costLabel.Text = string.format("Next slot cost: %d gold", nextCost)
+            costLabel.TextColor3 = Color3.fromRGB(200, 200, 180)
+            costLabel.TextScaled = true
+            costLabel.Font = Enum.Font.Gotham
+            costLabel.Parent = mainFrame
+
+            local buyBtn = Instance.new("TextButton")
+            buyBtn.Size = UDim2.new(0.6, 0, 0, 40)
+            buyBtn.Position = UDim2.new(0.2, 0, 0, 140)
+            buyBtn.BackgroundColor3 = Color3.fromRGB(80, 150, 80)
+            buyBtn.BorderSizePixel = 0
+            buyBtn.Text = string.format("BUY SLOT - %dg", nextCost)
+            buyBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+            buyBtn.TextScaled = true
+            buyBtn.Font = Enum.Font.GothamBold
+            buyBtn.Parent = mainFrame
+
+            buyBtn.MouseButton1Click:Connect(function()
+                buyQueueSlot(player)
+                showQueueExpansionMenu(player)
             end)
-        elseif playerTrainees == 0 then
-            print(string.format("[Barracks] %s: Not carrying any trainees! Recruit some first.", player.Name))
         else
-            print(string.format("[Barracks] %s: Training yard is full! Wait for training to finish.", player.Name))
+            local maxLabel = Instance.new("TextLabel")
+            maxLabel.Size = UDim2.new(0.9, 0, 0, 35)
+            maxLabel.Position = UDim2.new(0.05, 0, 0, 110)
+            maxLabel.BackgroundTransparency = 1
+            maxLabel.Text = "MAX SLOTS REACHED"
+            maxLabel.TextColor3 = Color3.fromRGB(255, 200, 50)
+            maxLabel.TextScaled = true
+            maxLabel.Font = Enum.Font.GothamBold
+            maxLabel.Parent = mainFrame
         end
 
-        task.delay(1.5, function() trainingInputDebounce[player.UserId] = nil end)
+        local closeButton = Instance.new("TextButton")
+        closeButton.Size = UDim2.new(0.5, 0, 0, 35)
+        closeButton.Position = UDim2.new(0.25, 0, 1, -40)
+        closeButton.BackgroundColor3 = Color3.fromRGB(150, 50, 50)
+        closeButton.BorderSizePixel = 0
+        closeButton.Text = "CLOSE"
+        closeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+        closeButton.TextScaled = true
+        closeButton.Font = Enum.Font.GothamBold
+        closeButton.Parent = mainFrame
+
+        closeButton.MouseButton1Click:Connect(function()
+            screenGui:Destroy()
+            activeBarracksGuis[uid] = nil
+        end)
+    end
+
+    createInteraction(queueDesk, "Expand Queue", "Queue Expansion", 0, function(player)
+        showQueueExpansionMenu(player)
     end)
 
-    -- WALK-THROUGH TRIGGER: Pick up trained recruits
-    local trainingOutputTrigger = Instance.new("Part")
-    trainingOutputTrigger.Name = "TrainingOutputTrigger"
-    trainingOutputTrigger.Size = Vector3.new(18, 5, 6)
-    trainingOutputTrigger.Position = Vector3.new(baseX, GROUND_Y + 2.5, baseZ + 12)
-    trainingOutputTrigger.Anchored = true
-    trainingOutputTrigger.Transparency = 1
-    trainingOutputTrigger.CanCollide = false
-    trainingOutputTrigger.Parent = barracksModel
+    -- ========================================================================
+    -- STATION 4: ARMY DISPLAY (back wall)
+    -- ========================================================================
+    local displayBoard = Instance.new("Part")
+    displayBoard.Name = "ArmyDisplayBoard"
+    displayBoard.Size = Vector3.new(20, 8, 0.5)
+    displayBoard.Position = Vector3.new(baseX, GROUND_Y + 5, baseZ - 40)
+    displayBoard.Anchored = true
+    displayBoard.Material = Enum.Material.SmoothPlastic
+    displayBoard.Color = Color3.fromRGB(25, 20, 18)
+    displayBoard.Parent = barracksModel
 
-    local trainingOutputDebounce = {}
-    trainingOutputTrigger.Touched:Connect(function(hit)
+    -- SurfaceGui for army counts
+    local displayGui = Instance.new("SurfaceGui")
+    displayGui.Face = Enum.NormalId.Front
+    displayGui.Parent = displayBoard
+
+    local displayTitle = Instance.new("TextLabel")
+    displayTitle.Size = UDim2.new(1, 0, 0.2, 0)
+    displayTitle.BackgroundTransparency = 1
+    displayTitle.Text = "YOUR ARMY"
+    displayTitle.TextColor3 = Color3.fromRGB(255, 200, 50)
+    displayTitle.TextScaled = true
+    displayTitle.Font = Enum.Font.GothamBold
+    displayTitle.Parent = displayGui
+
+    local displayContent = Instance.new("TextLabel")
+    displayContent.Name = "ArmyContent"
+    displayContent.Size = UDim2.new(1, 0, 0.75, 0)
+    displayContent.Position = UDim2.new(0, 0, 0.22, 0)
+    displayContent.BackgroundTransparency = 1
+    displayContent.Text = "Enter barracks to view army"
+    displayContent.TextColor3 = Color3.fromRGB(200, 200, 200)
+    displayContent.TextScaled = true
+    displayContent.Font = Enum.Font.Gotham
+    displayContent.Parent = displayGui
+
+    makeSignDoubleSided(displayBoard)
+
+    createSign(barracksModel, "YOUR ARMY", Vector3.new(baseX, GROUND_Y + 10, baseZ - 40), Vector3.new(6, 1, 0.3))
+
+    -- Troop statues on pedestals (decorative)
+    local statueData = {
+        { name = "Soldier", pos = Vector3.new(baseX - 6, GROUND_Y, baseZ - 37), color = Color3.fromRGB(140, 140, 150) },
+        { name = "Archer", pos = Vector3.new(baseX, GROUND_Y, baseZ - 37), color = Color3.fromRGB(100, 140, 90) },
+        { name = "Catapult", pos = Vector3.new(baseX + 6, GROUND_Y, baseZ - 37), color = Color3.fromRGB(100, 70, 45) },
+    }
+    for _, sd in ipairs(statueData) do
+        -- Pedestal
+        local pedestal = Instance.new("Part")
+        pedestal.Name = sd.name .. "Pedestal"
+        pedestal.Size = Vector3.new(2, 1, 2)
+        pedestal.Position = sd.pos + Vector3.new(0, 0.5, 0)
+        pedestal.Anchored = true
+        pedestal.Material = Enum.Material.Cobblestone
+        pedestal.Color = Color3.fromRGB(80, 75, 70)
+        pedestal.Parent = barracksModel
+
+        -- Statue body
+        local statueBody = Instance.new("Part")
+        statueBody.Name = sd.name .. "Statue"
+        statueBody.Size = Vector3.new(1.2, 3, 0.8)
+        statueBody.Position = sd.pos + Vector3.new(0, 2.5, 0)
+        statueBody.Anchored = true
+        statueBody.Material = Enum.Material.Metal
+        statueBody.Color = sd.color
+        statueBody.Parent = barracksModel
+
+        -- Statue head
+        local statueHead = Instance.new("Part")
+        statueHead.Name = sd.name .. "StatueHead"
+        statueHead.Shape = Enum.PartType.Ball
+        statueHead.Size = Vector3.new(0.8, 0.8, 0.8)
+        statueHead.Position = sd.pos + Vector3.new(0, 4.4, 0)
+        statueHead.Anchored = true
+        statueHead.Material = Enum.Material.Metal
+        statueHead.Color = sd.color
+        statueHead.Parent = barracksModel
+    end
+
+    -- Update army display when player approaches
+    local displayTrigger = Instance.new("Part")
+    displayTrigger.Name = "ArmyDisplayTrigger"
+    displayTrigger.Size = Vector3.new(24, 8, 10)
+    displayTrigger.Position = Vector3.new(baseX, GROUND_Y + 4, baseZ - 35)
+    displayTrigger.Anchored = true
+    displayTrigger.Transparency = 1
+    displayTrigger.CanCollide = false
+    displayTrigger.Parent = barracksModel
+
+    local displayDebounce = {}
+    displayTrigger.Touched:Connect(function(hit)
         local character = hit.Parent
         local humanoid = character and character:FindFirstChild("Humanoid")
         if not humanoid then return end
         local player = Players:GetPlayerFromCharacter(character)
         if not player then return end
-        if not isVillageOwner(player) then return end
-        if trainingOutputDebounce[player.UserId] then return end
-        trainingOutputDebounce[player.UserId] = true
+        if displayDebounce[player.UserId] then return end
+        displayDebounce[player.UserId] = true
 
-        local playerRecruits = getPlayerRecruits(player)
-        if traineesReady > 0 and playerRecruits < 10 then
-            local toPickup = math.min(traineesReady, 10 - playerRecruits)
-            traineesReady = traineesReady - toPickup
-            setPlayerRecruits(player, playerRecruits + toPickup)
-            updatePlayerRecruitVisual(player, playerRecruits + toPickup)
-            updateTrainingVisuals()
-            print(string.format("[Barracks] %s picked up %d trained recruit(s)!", player.Name, toPickup))
-            print(string.format("  Carrying %d recruit(s). Take to ARMORY!", playerRecruits + toPickup))
-        elseif traineesReady == 0 then
-            print(string.format("[Barracks] %s: No trained recruits ready. Training in progress...", player.Name))
-        else
-            print(string.format("[Barracks] %s: Already carrying maximum recruits!", player.Name))
+        -- Update display with troop counts
+        if DataService then
+            local playerData = DataService:GetPlayerData(player)
+            if playerData then
+                local troops = playerData.troops or {}
+                local lines = {}
+                for _, troopName in ipairs(BarracksTroopOrder) do
+                    local count = troops[troopName] or 0
+                    local troopDef = BarracksTroopTypes[troopName]
+                    table.insert(lines, string.format("%s: %d", troopDef.displayName, count))
+                end
+                -- Also show other troops not in our list
+                for troopType, count in pairs(troops) do
+                    if not BarracksTroopTypes[troopType] and count > 0 then
+                        table.insert(lines, string.format("%s: %d", troopType, count))
+                    end
+                end
+                if #lines == 0 then
+                    displayContent.Text = "No troops trained yet!\nVisit the Training Station"
+                else
+                    displayContent.Text = table.concat(lines, "\n")
+                end
+            end
         end
 
-        task.delay(1, function() trainingOutputDebounce[player.UserId] = nil end)
+        task.delay(2, function() displayDebounce[player.UserId] = nil end)
     end)
 
-    -- Training processing loop (trainees → trained recruits over time)
+    -- ========================================================================
+    -- BACKGROUND PROCESSING: Training Queue
+    -- ========================================================================
     task.spawn(function()
         while true do
-            -- Apply speed bonus from Town Hall research
-            local baseTrainTime = 3 -- Base 3 seconds per trainee
-            local speedMultiplier = 1.0
-            if TownHallState and calculateTotalBonuses then
-                local bonuses = calculateTotalBonuses()
-                speedMultiplier = bonuses.speed.barracks or 1.0
-            end
-            local actualTrainTime = baseTrainTime / speedMultiplier
-            task.wait(actualTrainTime)
+            task.wait(1)
+            local now = os.time()
+            for _, player in ipairs(Players:GetPlayers()) do
+                local uid = player.UserId
+                local queue = BarracksState.trainingQueues[uid]
+                if queue and #queue > 0 then
+                    local firstItem = queue[1]
+                    if firstItem.completesAt <= now then
+                        -- Training complete! Add troop to player data
+                        local troopType = firstItem.troopType
+                        table.remove(queue, 1)
 
-            if traineesInTraining > 0 and traineesReady < 6 then
-                local dummyStats = DummyStats[BarracksState.equipment.dummies]
-                traineesInTraining = traineesInTraining - 1
-                traineesReady = traineesReady + 1
-                updateTrainingVisuals()
+                        -- Shift remaining queue items forward
+                        for i, item in ipairs(queue) do
+                            if i == 1 then
+                                item.startTime = now
+                                item.completesAt = now + BarracksTroopTypes[item.troopType].trainTime
+                            else
+                                item.startTime = queue[i - 1].completesAt
+                                item.completesAt = item.startTime + BarracksTroopTypes[item.troopType].trainTime
+                            end
+                        end
 
-                local xpGain = 15 * dummyStats.xpBonus
-                addBarracksXP(xpGain)
-                local bonusText = speedMultiplier > 1.0 and string.format(" (%.0f%% faster!)", (speedMultiplier - 1) * 100) or ""
-                print(string.format("[Barracks] Training complete!%s (+%d XP) Recruits ready: %d", bonusText, xpGain, traineesReady))
+                        if DataService then
+                            local playerData = DataService:GetPlayerData(player)
+                            if playerData then
+                                playerData.troops = playerData.troops or {}
+                                playerData.troops[troopType] = (playerData.troops[troopType] or 0) + 1
+                                DataService:UpdateFoodSupplyState(player)
 
-                -- Sparks on dummy for visual effect
-                local sparks = Instance.new("ParticleEmitter")
-                sparks.Color = ColorSequence.new(Color3.fromRGB(255, 200, 100))
-                sparks.Size = NumberSequence.new(0.3, 0)
-                sparks.Lifetime = NumberRange.new(0.2, 0.4)
-                sparks.Rate = 50
-                sparks.Speed = NumberRange.new(5, 10)
-                sparks.SpreadAngle = Vector2.new(180, 180)
-                sparks.Parent = dummies[2].body
-                task.delay(0.5, function() sparks:Destroy() end)
+                                -- Sync HUD
+                                local Events = ReplicatedStorage:FindFirstChild("Events")
+                                if Events then
+                                    local SyncPlayerData = Events:FindFirstChild("SyncPlayerData")
+                                    if SyncPlayerData then SyncPlayerData:FireClient(player, playerData) end
+                                end
+                            end
+                        end
+
+                        addBarracksXP(10)
+                        local troopDef = BarracksTroopTypes[troopType]
+                        notifyPlayer(player, "BarracksTrain", true,
+                            troopDef.displayName .. " training complete! Added to your army.")
+                        print(string.format("[Barracks] %s: %s training complete!", player.Name, troopType))
+
+                        if BarracksState.updateQueueVisuals then
+                            BarracksState.updateQueueVisuals(player)
+                        end
+                    end
+                end
             end
         end
     end)
 
     -- ========================================================================
-    -- STATION 3: ARMORY (Equip soldiers with weapons and armor)
+    -- BACKGROUND PROCESSING: Research
     -- ========================================================================
-    local armory = Instance.new("Part")
-    armory.Name = "Armory"
-    armory.Size = Vector3.new(8, 6, 6)
-    armory.Position = Vector3.new(baseX + 12, GROUND_Y + 3, baseZ + 10)
-    armory.Anchored = true
-    armory.Material = Enum.Material.Cobblestone
-    armory.Color = Color3.fromRGB(90, 85, 80)
-    armory.Parent = barracksModel
-
-    -- Armory roof
-    local armoryRoof = Instance.new("Part")
-    armoryRoof.Name = "ArmoryRoof"
-    armoryRoof.Size = Vector3.new(9, 1, 7)
-    armoryRoof.Position = Vector3.new(baseX + 12, GROUND_Y + 6.5, baseZ + 10)
-    armoryRoof.Anchored = true
-    armoryRoof.Material = Enum.Material.Slate
-    armoryRoof.Color = Color3.fromRGB(70, 65, 60)
-    armoryRoof.Parent = barracksModel
-
-    -- Weapon racks inside
-    local weaponRack = Instance.new("Part")
-    weaponRack.Name = "WeaponRack"
-    weaponRack.Size = Vector3.new(6, 4, 0.5)
-    weaponRack.Position = Vector3.new(baseX + 12, GROUND_Y + 2, baseZ + 13)
-    weaponRack.Anchored = true
-    weaponRack.Material = Enum.Material.Wood
-    weaponRack.Color = Color3.fromRGB(80, 55, 35)
-    weaponRack.Parent = barracksModel
-
-    -- Swords on rack
-    for i = 1, 4 do
-        local sword = Instance.new("Part")
-        sword.Name = "Sword" .. i
-        sword.Size = Vector3.new(0.2, 2.5, 0.4)
-        sword.Position = Vector3.new(baseX + 10 + i * 1.2, GROUND_Y + 2.5, baseZ + 13.3)
-        sword.Anchored = true
-        sword.Material = Enum.Material.Metal
-        sword.Color = Color3.fromRGB(180, 180, 185)
-        sword.Parent = barracksModel
-    end
-
-    -- Armor stand
-    local armorStand = Instance.new("Part")
-    armorStand.Name = "ArmorStand"
-    armorStand.Size = Vector3.new(2, 4, 1)
-    armorStand.Position = Vector3.new(baseX + 14, GROUND_Y + 2, baseZ + 8)
-    armorStand.Anchored = true
-    armorStand.Material = Enum.Material.Metal
-    armorStand.Color = Color3.fromRGB(140, 140, 150)
-    armorStand.Parent = barracksModel
-
-    -- Recruits waiting to be equipped (visual queue)
-    local armoryQueueParts = {}
-    for i = 1, 4 do
-        local recruit = Instance.new("Part")
-        recruit.Name = "ArmoryQueueRecruit" .. i
-        recruit.Size = Vector3.new(0.8, 2.5, 0.6)
-        recruit.Position = Vector3.new(baseX + 8, GROUND_Y + 1.25, baseZ + 7 + i * 1.5)
-        recruit.Anchored = true
-        recruit.Material = Enum.Material.Leather
-        recruit.Color = Color3.fromRGB(110, 85, 60)
-        recruit.Transparency = 1
-        recruit.Parent = barracksModel
-
-        local recruitHead = Instance.new("Part")
-        recruitHead.Name = "ArmoryQueueHead" .. i
-        recruitHead.Shape = Enum.PartType.Ball
-        recruitHead.Size = Vector3.new(0.7, 0.7, 0.7)
-        recruitHead.Position = Vector3.new(baseX + 8, GROUND_Y + 3, baseZ + 7 + i * 1.5)
-        recruitHead.Anchored = true
-        recruitHead.Material = Enum.Material.Metal
-        recruitHead.Color = Color3.fromRGB(100, 95, 90)
-        recruitHead.Transparency = 1
-        recruitHead.Parent = barracksModel
-
-        table.insert(armoryQueueParts, { body = recruit, head = recruitHead })
-    end
-
-    -- Equipped soldiers ready for pickup (visual queue)
-    local soldierReadyParts = {}
-    for i = 1, 4 do
-        local soldier = Instance.new("Part")
-        soldier.Name = "EquippedSoldier" .. i
-        soldier.Size = Vector3.new(0.9, 2.6, 0.6)
-        soldier.Position = Vector3.new(baseX + 16, GROUND_Y + 1.3, baseZ + 7 + i * 1.5)
-        soldier.Anchored = true
-        soldier.Material = Enum.Material.Metal
-        soldier.Color = Color3.fromRGB(140, 140, 150)
-        soldier.Transparency = 1
-        soldier.Parent = barracksModel
-
-        local soldierHead = Instance.new("Part")
-        soldierHead.Name = "EquippedSoldierHead" .. i
-        soldierHead.Size = Vector3.new(0.7, 0.7, 0.7)
-        soldierHead.Position = Vector3.new(baseX + 16, GROUND_Y + 3.1, baseZ + 7 + i * 1.5)
-        soldierHead.Anchored = true
-        soldierHead.Material = Enum.Material.Metal
-        soldierHead.Color = Color3.fromRGB(100, 100, 110)
-        soldierHead.Transparency = 1
-        soldierHead.Parent = barracksModel
-
-        -- Sword on back
-        local sword = Instance.new("Part")
-        sword.Name = "SoldierSword" .. i
-        sword.Size = Vector3.new(0.1, 1.2, 0.2)
-        sword.Position = Vector3.new(baseX + 16.3, GROUND_Y + 1.8, baseZ + 7 + i * 1.5)
-        sword.Orientation = Vector3.new(0, 0, -20)
-        sword.Anchored = true
-        sword.Material = Enum.Material.Metal
-        sword.Color = Color3.fromRGB(180, 180, 190)
-        sword.Transparency = 1
-        sword.Parent = barracksModel
-
-        table.insert(soldierReadyParts, { body = soldier, head = soldierHead, sword = sword })
-    end
-
-    -- Armory state
-    local recruitsEquipping = 0
-    local soldiersReady = 0
-
-    local function updateArmoryVisuals()
-        -- Update recruits in queue
-        for i, parts in ipairs(armoryQueueParts) do
-            local visible = i <= recruitsEquipping
-            parts.body.Transparency = visible and 0 or 1
-            parts.head.Transparency = visible and 0 or 1
-        end
-        -- Update equipped soldiers ready
-        for i, parts in ipairs(soldierReadyParts) do
-            local visible = i <= soldiersReady
-            parts.body.Transparency = visible and 0 or 1
-            parts.head.Transparency = visible and 0 or 1
-            parts.sword.Transparency = visible and 0 or 1
-        end
-    end
-    BarracksState.updateSoldierQueueVisuals = updateArmoryVisuals
-
-    -- Signs
-    createSign(barracksModel, "DROP RECRUITS", Vector3.new(baseX + 8, GROUND_Y + 7, baseZ + 10), Vector3.new(5, 0.8, 0.3))
-    createSign(barracksModel, "PICK UP SOLDIERS", Vector3.new(baseX + 16, GROUND_Y + 7, baseZ + 10), Vector3.new(6, 0.8, 0.3))
-
-    -- WALK-THROUGH TRIGGER: Drop recruits for equipping
-    local armoryInputTrigger = Instance.new("Part")
-    armoryInputTrigger.Name = "ArmoryInputTrigger"
-    armoryInputTrigger.Size = Vector3.new(6, 5, 10)
-    armoryInputTrigger.Position = Vector3.new(baseX + 8, GROUND_Y + 2.5, baseZ + 10)
-    armoryInputTrigger.Anchored = true
-    armoryInputTrigger.Transparency = 1
-    armoryInputTrigger.CanCollide = false
-    armoryInputTrigger.Parent = barracksModel
-
-    local armoryInputDebounce = {}
-    armoryInputTrigger.Touched:Connect(function(hit)
-        local character = hit.Parent
-        local humanoid = character and character:FindFirstChild("Humanoid")
-        if not humanoid then return end
-        local player = Players:GetPlayerFromCharacter(character)
-        if not player then return end
-        if not isVillageOwner(player) then return end
-        if armoryInputDebounce[player.UserId] then return end
-        armoryInputDebounce[player.UserId] = true
-
-        local playerRecruits = getPlayerRecruits(player)
-        if playerRecruits > 0 and recruitsEquipping < 4 then
-            local toDeposit = math.min(playerRecruits, 4 - recruitsEquipping)
-            setPlayerRecruits(player, playerRecruits - toDeposit)
-            updatePlayerRecruitVisual(player, playerRecruits - toDeposit)
-            recruitsEquipping = recruitsEquipping + toDeposit
-            updateArmoryVisuals()
-            print(string.format("[Barracks] %s dropped %d recruit(s) for equipping!", player.Name, toDeposit))
-            print(string.format("  Recruits being equipped: %d", recruitsEquipping))
-        elseif playerRecruits == 0 then
-            print(string.format("[Barracks] %s: Not carrying any recruits! Train some first.", player.Name))
-        else
-            print(string.format("[Barracks] %s: Armory is full! Wait for equipping to finish.", player.Name))
-        end
-
-        task.delay(1.5, function() armoryInputDebounce[player.UserId] = nil end)
-    end)
-
-    -- WALK-THROUGH TRIGGER: Pick up equipped soldiers
-    local armoryOutputTrigger = Instance.new("Part")
-    armoryOutputTrigger.Name = "ArmoryOutputTrigger"
-    armoryOutputTrigger.Size = Vector3.new(6, 5, 10)
-    armoryOutputTrigger.Position = Vector3.new(baseX + 16, GROUND_Y + 2.5, baseZ + 10)
-    armoryOutputTrigger.Anchored = true
-    armoryOutputTrigger.Transparency = 1
-    armoryOutputTrigger.CanCollide = false
-    armoryOutputTrigger.Parent = barracksModel
-
-    local armoryOutputDebounce = {}
-    armoryOutputTrigger.Touched:Connect(function(hit)
-        local character = hit.Parent
-        local humanoid = character and character:FindFirstChild("Humanoid")
-        if not humanoid then return end
-        local player = Players:GetPlayerFromCharacter(character)
-        if not player then return end
-        if not isVillageOwner(player) then return end
-        if armoryOutputDebounce[player.UserId] then return end
-        armoryOutputDebounce[player.UserId] = true
-
-        local playerSoldiers = getPlayerSoldiers(player)
-        if soldiersReady > 0 and playerSoldiers < 10 then
-            local toPickup = math.min(soldiersReady, 10 - playerSoldiers)
-            soldiersReady = soldiersReady - toPickup
-            setPlayerSoldiers(player, playerSoldiers + toPickup)
-            updatePlayerSoldierVisual(player, playerSoldiers + toPickup)
-            updateArmoryVisuals()
-
-            local weaponStats = WeaponStats[BarracksState.equipment.weapons]
-            local armorStats = ArmorStats[BarracksState.equipment.armor]
-            print(string.format("[Barracks] %s picked up %d equipped soldier(s)!", player.Name, toPickup))
-            print(string.format("  Weapon: %s (Damage: %d)", BarracksState.equipment.weapons, weaponStats.damage))
-            print(string.format("  Armor: %s (Defense: %d)", BarracksState.equipment.armor, armorStats.defense))
-            print(string.format("  Carrying %d soldier(s). Take to ARMY CAMP to deploy!", playerSoldiers + toPickup))
-        elseif soldiersReady == 0 then
-            print(string.format("[Barracks] %s: No equipped soldiers ready. Equipping in progress...", player.Name))
-        else
-            print(string.format("[Barracks] %s: Already carrying maximum soldiers!", player.Name))
-        end
-
-        task.delay(1, function() armoryOutputDebounce[player.UserId] = nil end)
-    end)
-
-    -- Equipping processing loop (recruits → equipped soldiers over time)
     task.spawn(function()
         while true do
-            task.wait(4) -- Process every 4 seconds (slower than training)
-            if recruitsEquipping > 0 and soldiersReady < 4 then
-                recruitsEquipping = recruitsEquipping - 1
-                soldiersReady = soldiersReady + 1
-                updateArmoryVisuals()
+            task.wait(1)
+            local now = os.time()
+            for _, player in ipairs(Players:GetPlayers()) do
+                local uid = player.UserId
+                local research = BarracksState.activeResearch[uid]
+                if research and research.completesAt <= now then
+                    local troopType = research.troopType
+                    BarracksState.researched[uid] = BarracksState.researched[uid] or {}
+                    BarracksState.researched[uid][troopType] = true
+                    BarracksState.activeResearch[uid] = nil
 
-                addBarracksXP(20)
-                print(string.format("[Barracks] Soldier equipped! (+20 XP) Soldiers ready: %d", soldiersReady))
+                    addBarracksXP(20)
 
-                -- Metal sparks effect
-                local metalSparks = Instance.new("ParticleEmitter")
-                metalSparks.Color = ColorSequence.new(Color3.fromRGB(200, 200, 220))
-                metalSparks.Size = NumberSequence.new(0.2, 0)
-                metalSparks.Lifetime = NumberRange.new(0.3, 0.5)
-                metalSparks.Rate = 30
-                metalSparks.Speed = NumberRange.new(3, 6)
-                metalSparks.Parent = armory
-                task.delay(0.5, function() metalSparks:Destroy() end)
+                    local troopDef = BarracksTroopTypes[troopType]
+                    notifyPlayer(player, "BarracksResearch", true,
+                        troopDef.displayName .. " research complete! You can now train them.")
+                    print(string.format("[Barracks] %s: %s research complete!", player.Name, troopType))
+
+                    -- Flash the crystal
+                    task.spawn(function()
+                        crystal.Color = Color3.fromRGB(255, 255, 100)
+                        crystalLight.Color = Color3.fromRGB(255, 255, 100)
+                        task.wait(1)
+                        crystal.Color = Color3.fromRGB(100, 150, 255)
+                        crystalLight.Color = Color3.fromRGB(100, 150, 255)
+                    end)
+                end
             end
         end
     end)
 
     -- ========================================================================
-    -- STATION 4: ARMY CAMP (Deploy troops to your army)
+    -- PLAYER INIT AND CLEANUP
     -- ========================================================================
-    local armyCamp = Instance.new("Part")
-    armyCamp.Name = "ArmyCamp"
-    armyCamp.Size = Vector3.new(12, 0.2, 10)
-    armyCamp.Position = Vector3.new(baseX + 15, GROUND_Y + 0.2, baseZ - 5)
-    armyCamp.Anchored = true
-    armyCamp.Material = Enum.Material.Grass
-    armyCamp.Color = Color3.fromRGB(80, 120, 60)
-    armyCamp.Parent = barracksModel
+    Players.PlayerAdded:Connect(function(player)
+        initPlayerBarracksData(player)
+    end)
 
-    -- Tents
-    for i = 1, 2 do
-        local tent = Instance.new("Part")
-        tent.Name = "Tent" .. i
-        tent.Size = Vector3.new(4, 3, 5)
-        tent.Position = Vector3.new(baseX + 12 + (i - 1) * 6, GROUND_Y + 1.5, baseZ - 5)
-        tent.Anchored = true
-        tent.Material = Enum.Material.Fabric
-        tent.Color = Color3.fromRGB(180, 160, 130)
-        tent.Parent = barracksModel
+    Players.PlayerRemoving:Connect(function(player)
+        local uid = player.UserId
+        -- Cleanup GUI
+        if activeBarracksGuis[uid] then
+            activeBarracksGuis[uid]:Destroy()
+            activeBarracksGuis[uid] = nil
+        end
+        -- Cleanup state
+        BarracksState.trainingQueues[uid] = nil
+        BarracksState.queueSlots[uid] = nil
+        BarracksState.researched[uid] = nil
+        BarracksState.activeResearch[uid] = nil
+    end)
 
-        -- Tent peak
-        local tentPeak = Instance.new("Part")
-        tentPeak.Name = "TentPeak" .. i
-        tentPeak.Size = Vector3.new(4, 2, 5)
-        tentPeak.Position = Vector3.new(baseX + 12 + (i - 1) * 6, GROUND_Y + 4, baseZ - 5)
-        tentPeak.Anchored = true
-        tentPeak.Material = Enum.Material.Fabric
-        tentPeak.Color = Color3.fromRGB(160, 140, 110)
-        tentPeak.Parent = barracksModel
+    -- Init existing players
+    for _, player in ipairs(Players:GetPlayers()) do
+        initPlayerBarracksData(player)
     end
-
-    -- Campfire
-    local campfire = Instance.new("Part")
-    campfire.Name = "Campfire"
-    campfire.Shape = Enum.PartType.Cylinder
-    campfire.Size = Vector3.new(0.5, 2, 2)
-    campfire.Position = Vector3.new(baseX + 15, GROUND_Y + 0.25, baseZ - 8)
-    campfire.Orientation = Vector3.new(0, 0, 90)
-    campfire.Anchored = true
-    campfire.Material = Enum.Material.Rock
-    campfire.Color = Color3.fromRGB(60, 50, 40)
-    campfire.Parent = barracksModel
-
-    -- Campfire flames
-    local campfireFire = Instance.new("Fire")
-    campfireFire.Size = 3
-    campfireFire.Heat = 5
-    campfireFire.Color = Color3.fromRGB(255, 150, 50)
-    campfireFire.SecondaryColor = Color3.fromRGB(255, 80, 20)
-    campfireFire.Parent = campfire
-
-    -- Deploy marker (flag)
-    local deployFlag = Instance.new("Part")
-    deployFlag.Name = "DeployFlag"
-    deployFlag.Size = Vector3.new(0.3, 6, 0.3)
-    deployFlag.Position = Vector3.new(baseX + 20, GROUND_Y + 3, baseZ - 3)
-    deployFlag.Anchored = true
-    deployFlag.Material = Enum.Material.Metal
-    deployFlag.Color = Color3.fromRGB(70, 70, 75)
-    deployFlag.Parent = barracksModel
-
-    local deployBanner = Instance.new("Part")
-    deployBanner.Name = "DeployBanner"
-    deployBanner.Size = Vector3.new(0.1, 2.5, 2)
-    deployBanner.Position = Vector3.new(baseX + 20.5, GROUND_Y + 5, baseZ - 3)
-    deployBanner.Anchored = true
-    deployBanner.Material = Enum.Material.Fabric
-    deployBanner.Color = Color3.fromRGB(50, 120, 180) -- Blue deployment flag
-    deployBanner.Parent = barracksModel
-
-    -- Deployed army visual (soldiers standing in formation)
-    local deployedArmyParts = {}
-    for i = 1, 8 do
-        local row = math.floor((i-1) / 4)
-        local col = (i-1) % 4
-        local soldier = Instance.new("Part")
-        soldier.Name = "DeployedSoldier" .. i
-        soldier.Size = Vector3.new(0.9, 2.6, 0.6)
-        soldier.Position = Vector3.new(baseX + 10 + col * 2, GROUND_Y + 1.3, baseZ - 3 - row * 2)
-        soldier.Anchored = true
-        soldier.Material = Enum.Material.Metal
-        soldier.Color = Color3.fromRGB(140, 140, 150)
-        soldier.Transparency = 1
-        soldier.Parent = barracksModel
-
-        local soldierHead = Instance.new("Part")
-        soldierHead.Name = "DeployedSoldierHead" .. i
-        soldierHead.Size = Vector3.new(0.6, 0.6, 0.6)
-        soldierHead.Position = Vector3.new(baseX + 10 + col * 2, GROUND_Y + 3.1, baseZ - 3 - row * 2)
-        soldierHead.Anchored = true
-        soldierHead.Material = Enum.Material.Metal
-        soldierHead.Color = Color3.fromRGB(100, 100, 110)
-        soldierHead.Transparency = 1
-        soldierHead.Parent = barracksModel
-
-        table.insert(deployedArmyParts, { body = soldier, head = soldierHead })
-    end
-
-    local totalDeployedThisSession = 0
-
-    local function updateDeployedArmyVisuals()
-        for i, parts in ipairs(deployedArmyParts) do
-            local visible = i <= totalDeployedThisSession
-            parts.body.Transparency = visible and 0 or 1
-            parts.head.Transparency = visible and 0 or 1
-        end
-    end
-
-    -- Sign
-    createSign(barracksModel, "DEPLOY SOLDIERS", Vector3.new(baseX + 15, GROUND_Y + 7, baseZ - 3), Vector3.new(6, 0.8, 0.3))
-
-    -- WALK-THROUGH TRIGGER: Deploy soldiers to army (final reward station)
-    local deployTrigger = Instance.new("Part")
-    deployTrigger.Name = "DeployTrigger"
-    deployTrigger.Size = Vector3.new(14, 5, 12)
-    deployTrigger.Position = Vector3.new(baseX + 15, GROUND_Y + 2.5, baseZ - 5)
-    deployTrigger.Anchored = true
-    deployTrigger.Transparency = 1
-    deployTrigger.CanCollide = false
-    deployTrigger.Parent = barracksModel
-
-    local deployDebounce = {}
-    deployTrigger.Touched:Connect(function(hit)
-        local character = hit.Parent
-        local humanoid = character and character:FindFirstChild("Humanoid")
-        if not humanoid then return end
-        local player = Players:GetPlayerFromCharacter(character)
-        if not player then return end
-        if not isVillageOwner(player) then return end
-        if deployDebounce[player.UserId] then return end
-        deployDebounce[player.UserId] = true
-
-        local playerSoldiers = getPlayerSoldiers(player)
-        if playerSoldiers > 0 then
-            local inv = getBarracksInventory(player)
-            local goldReward = playerSoldiers * 30
-
-            -- Deploy all soldiers at once
-            inv.deployedTroops = inv.deployedTroops + playerSoldiers
-            BarracksState.totalTroopsTrained = BarracksState.totalTroopsTrained + playerSoldiers
-            totalDeployedThisSession = math.min(totalDeployedThisSession + playerSoldiers, 8)
-
-            setPlayerSoldiers(player, 0)
-            updatePlayerSoldierVisual(player, 0)
-            updateDeployedArmyVisuals()
-
-            addBarracksXP(25 * playerSoldiers)
-            rewardPlayer(player, "gold", goldReward, "Barracks")
-
-            -- Glory particles
-            local glory = Instance.new("ParticleEmitter")
-            glory.Color = ColorSequence.new(Color3.fromRGB(255, 215, 0))
-            glory.Size = NumberSequence.new(0.5, 0)
-            glory.Lifetime = NumberRange.new(1, 2)
-            glory.Rate = 40
-            glory.Speed = NumberRange.new(3, 5)
-            glory.SpreadAngle = Vector2.new(30, 30)
-            glory.Parent = deployFlag
-            task.delay(1.5, function() glory:Destroy() end)
-
-            print(string.format("[Barracks] %s deployed %d soldier(s) to their army!", player.Name, playerSoldiers))
-            print(string.format("  +%d Gold reward!", goldReward))
-            print(string.format("  Total army size: %d troops", inv.deployedTroops))
-            print(string.format("  Barracks total trained: %d", BarracksState.totalTroopsTrained))
-        else
-            print(string.format("[Barracks] %s: Not carrying any soldiers! Complete the training loop first.", player.Name))
-            print("  Recruit → Train → Equip → Deploy")
-        end
-
-        task.delay(1.5, function() deployDebounce[player.UserId] = nil end)
-    end)
-
-    -- ========================================================================
-    -- STATION 5: SERGEANT HUT (Hire drill sergeants - Level 3+)
-    -- ========================================================================
-    local sergeantHut = Instance.new("Part")
-    sergeantHut.Name = "SergeantHut"
-    sergeantHut.Size = Vector3.new(6, 5, 5)
-    sergeantHut.Position = Vector3.new(baseX - 10, GROUND_Y + 2.5, baseZ + 10)
-    sergeantHut.Anchored = true
-    sergeantHut.Material = Enum.Material.Wood
-    sergeantHut.Color = Color3.fromRGB(100, 75, 50)
-    sergeantHut.Parent = barracksModel
-
-    -- Sergeant hut roof
-    local hutRoof = Instance.new("Part")
-    hutRoof.Name = "HutRoof"
-    hutRoof.Size = Vector3.new(7, 1, 6)
-    hutRoof.Position = Vector3.new(baseX - 10, GROUND_Y + 5.5, baseZ + 10)
-    hutRoof.Anchored = true
-    hutRoof.Material = Enum.Material.Slate
-    hutRoof.Color = Color3.fromRGB(60, 55, 50)
-    hutRoof.Parent = barracksModel
-
-    -- Sergeant sign
-    local sergeantSign = Instance.new("Part")
-    sergeantSign.Name = "SergeantSign"
-    sergeantSign.Size = Vector3.new(3, 1, 0.2)
-    sergeantSign.Position = Vector3.new(baseX - 10, GROUND_Y + 4, baseZ + 12.6)
-    sergeantSign.Anchored = true
-    sergeantSign.Material = Enum.Material.Wood
-    sergeantSign.Color = Color3.fromRGB(80, 55, 35)
-    sergeantSign.Parent = barracksModel
-
-    createInteraction(sergeantHut, "Hire Drill Sergeant", "Sergeant Hut", 2, function(player)
-        if BarracksState.level < 3 then
-            print(string.format("[Barracks] Need Level 3 to hire sergeants! (Currently Level %d)", BarracksState.level))
-            return
-        end
-
-        local numSergeants = #BarracksState.drillSergeants
-        if numSergeants >= 4 then
-            print("[Barracks] Maximum sergeants hired (4)")
-            return
-        end
-
-        local cost = DrillSergeantCosts[numSergeants + 1]
-        if not deductPlayerResources(player, {gold = cost.gold, food = cost.food}, "Barracks") then return end
-        print(string.format("[Barracks] Hiring Drill Sergeant #%d (Cost: %d Gold, %d Food)",
-            numSergeants + 1, cost.gold, cost.food))
-
-        table.insert(BarracksState.drillSergeants, {
-            id = numSergeants + 1,
-            efficiency = 1.0 + numSergeants * 0.1,
-            hiredAt = tick(),
-        })
-
-        addBarracksXP(50)
-        print(string.format("  Drill sergeants: %d/4", #BarracksState.drillSergeants))
-        print("  Sergeants will automatically train recruits!")
-
-        -- Spawn sergeant visual
-        local sergeantVisual = Instance.new("Part")
-        sergeantVisual.Name = "Sergeant" .. numSergeants + 1
-        sergeantVisual.Size = Vector3.new(1.5, 4, 1.5)
-        sergeantVisual.Position = Vector3.new(baseX - 8 + numSergeants * 2, GROUND_Y + 2, baseZ + 8)
-        sergeantVisual.Anchored = true
-        sergeantVisual.Material = Enum.Material.SmoothPlastic
-        sergeantVisual.Color = Color3.fromRGB(70, 70, 90) -- Dark military uniform
-        sergeantVisual.Parent = barracksModel
-
-        local sergeantHead = Instance.new("Part")
-        sergeantHead.Name = "SergeantHead" .. numSergeants + 1
-        sergeantHead.Shape = Enum.PartType.Ball
-        sergeantHead.Size = Vector3.new(1.2, 1.2, 1.2)
-        sergeantHead.Position = Vector3.new(baseX - 8 + numSergeants * 2, GROUND_Y + 4.6, baseZ + 8)
-        sergeantHead.Anchored = true
-        sergeantHead.Material = Enum.Material.SmoothPlastic
-        sergeantHead.Color = Color3.fromRGB(227, 183, 151)
-        sergeantHead.Parent = barracksModel
-    end)
-
-    -- ========================================================================
-    -- STATION 6: FORGE (Upgrade dummies, weapons, armor)
-    -- ========================================================================
-    local forge = Instance.new("Part")
-    forge.Name = "Forge"
-    forge.Size = Vector3.new(7, 5, 6)
-    forge.Position = Vector3.new(baseX + 12, GROUND_Y + 2.5, baseZ - 12)
-    forge.Anchored = true
-    forge.Material = Enum.Material.Cobblestone
-    forge.Color = Color3.fromRGB(80, 70, 65)
-    forge.Parent = barracksModel
-
-    -- Forge chimney
-    local forgeChimney = Instance.new("Part")
-    forgeChimney.Name = "ForgeChimney"
-    forgeChimney.Size = Vector3.new(2, 4, 2)
-    forgeChimney.Position = Vector3.new(baseX + 14, GROUND_Y + 7, baseZ - 13)
-    forgeChimney.Anchored = true
-    forgeChimney.Material = Enum.Material.Brick
-    forgeChimney.Color = Color3.fromRGB(100, 60, 50)
-    forgeChimney.Parent = barracksModel
-
-    -- Forge smoke
-    local forgeSmoke = Instance.new("Smoke")
-    forgeSmoke.Size = 3
-    forgeSmoke.Opacity = 0.3
-    forgeSmoke.RiseVelocity = 4
-    forgeSmoke.Color = Color3.fromRGB(60, 60, 60)
-    forgeSmoke.Parent = forgeChimney
-
-    -- Anvil
-    local anvil = Instance.new("Part")
-    anvil.Name = "Anvil"
-    anvil.Size = Vector3.new(2, 1.5, 1)
-    anvil.Position = Vector3.new(baseX + 10, GROUND_Y + 0.75, baseZ - 10)
-    anvil.Anchored = true
-    anvil.Material = Enum.Material.Metal
-    anvil.Color = Color3.fromRGB(50, 50, 55)
-    anvil.Parent = barracksModel
-
-    -- Forge fire
-    local forgeFire = Instance.new("Part")
-    forgeFire.Name = "ForgeFire"
-    forgeFire.Size = Vector3.new(3, 2, 2)
-    forgeFire.Position = Vector3.new(baseX + 12, GROUND_Y + 1, baseZ - 14)
-    forgeFire.Anchored = true
-    forgeFire.Material = Enum.Material.Neon
-    forgeFire.Color = Color3.fromRGB(255, 100, 30)
-    forgeFire.Parent = barracksModel
-
-    local forgeFlames = Instance.new("Fire")
-    forgeFlames.Size = 5
-    forgeFlames.Heat = 10
-    forgeFlames.Parent = forgeFire
-
-    createInteraction(forge, "Upgrade Equipment", "Military Forge", 2.5, function(player)
-        print("[Barracks] === FORGE UPGRADES ===")
-        print(string.format("  Current Dummies: %s", BarracksState.equipment.dummies))
-        print(string.format("  Current Weapons: %s", BarracksState.equipment.weapons))
-        print(string.format("  Current Armor: %s", BarracksState.equipment.armor))
-
-        -- Auto-upgrade to next tier (simplified)
-        local tiers = {"Basic", "Iron", "Steel", "Mithril"}
-        local dummyTiers = {"Basic", "Reinforced", "Steel", "Enchanted"}
-
-        -- Find current tier and upgrade weapons
-        for i, tier in ipairs(tiers) do
-            if BarracksState.equipment.weapons == tier and i < #tiers then
-                local nextTier = tiers[i + 1]
-                local cost = WeaponStats[nextTier].cost
-                print(string.format("[Barracks] Upgrading weapons to %s (Cost: %d Gold)", nextTier, cost))
-                BarracksState.equipment.weapons = nextTier
-                addBarracksXP(40)
-
-                -- Forge sparks
-                local sparks = Instance.new("ParticleEmitter")
-                sparks.Color = ColorSequence.new(Color3.fromRGB(255, 200, 100))
-                sparks.Size = NumberSequence.new(0.4, 0)
-                sparks.Lifetime = NumberRange.new(0.3, 0.6)
-                sparks.Rate = 60
-                sparks.Speed = NumberRange.new(5, 10)
-                sparks.SpreadAngle = Vector2.new(60, 60)
-                sparks.Parent = anvil
-                task.delay(1, function() sparks:Destroy() end)
-                return
-            end
-        end
-
-        -- If weapons maxed, upgrade armor
-        for i, tier in ipairs(tiers) do
-            if BarracksState.equipment.armor == tier and i < #tiers then
-                local nextTier = tiers[i + 1]
-                local cost = ArmorStats[nextTier].cost
-                print(string.format("[Barracks] Upgrading armor to %s (Cost: %d Gold)", nextTier, cost))
-                BarracksState.equipment.armor = nextTier
-                addBarracksXP(40)
-                return
-            end
-        end
-
-        -- If armor maxed, upgrade dummies
-        for i, tier in ipairs(dummyTiers) do
-            if BarracksState.equipment.dummies == tier and i < #dummyTiers then
-                local nextTier = dummyTiers[i + 1]
-                local cost = DummyStats[nextTier].cost
-                print(string.format("[Barracks] Upgrading training dummies to %s (Cost: %d Gold)", nextTier, cost))
-                BarracksState.equipment.dummies = nextTier
-                addBarracksXP(40)
-                return
-            end
-        end
-
-        print("[Barracks] All equipment at maximum level!")
-    end)
 
     -- Parent the barracks interior
     barracksModel.Parent = interiorsFolder
     BarracksState.model = barracksModel
 
-    print("  ✓ Barracks created (MILITARY TRAINING GROUNDS interior):")
-    print("    - Enter building in village to teleport inside")
-    print("    - Full progression: Recruit → Train → Equip → Deploy")
+    print("  ✓ Barracks created (ARMY TRAINING SYSTEM interior):")
+    print("    - Training Station: Train Soldiers, Archers, Catapults")
+    print("    - Research Station: Unlock new troop types")
+    print("    - Queue Expansion: Buy more training slots")
+    print("    - Army Display: View your troop counts")
 end
 
 -- ============================================================================
@@ -14522,43 +14167,7 @@ local function spawnCarrierWorker(farmNumber, ownerUserId)
     print(string.format("[Reconstruct] Spawned Carrier #%d for Farm %d", carrierId, farmNumber))
 end
 
--- Spawn a drill sergeant (data entry + visual only, no full AI loop)
-local function spawnDrillSergeant()
-    local model = BarracksState.model
-    if not model then return end
-
-    local numSergeants = #BarracksState.drillSergeants
-    local basePos = INTERIOR_POSITIONS.Barracks
-    local baseX = basePos and basePos.X or 0
-    local baseZ = basePos and basePos.Z or 0
-
-    table.insert(BarracksState.drillSergeants, {
-        id = numSergeants + 1,
-        efficiency = 1.0 + numSergeants * 0.1,
-        hiredAt = tick(),
-    })
-
-    local sergeantVisual = Instance.new("Part")
-    sergeantVisual.Name = "Sergeant" .. numSergeants + 1
-    sergeantVisual.Size = Vector3.new(1.5, 4, 1.5)
-    sergeantVisual.Position = Vector3.new(baseX - 8 + numSergeants * 2, GROUND_Y + 2, baseZ + 8)
-    sergeantVisual.Anchored = true
-    sergeantVisual.Material = Enum.Material.SmoothPlastic
-    sergeantVisual.Color = Color3.fromRGB(70, 70, 90)
-    sergeantVisual.Parent = model
-
-    local sergeantHead = Instance.new("Part")
-    sergeantHead.Name = "SergeantHead" .. numSergeants + 1
-    sergeantHead.Shape = Enum.PartType.Ball
-    sergeantHead.Size = Vector3.new(1.2, 1.2, 1.2)
-    sergeantHead.Position = Vector3.new(baseX - 8 + numSergeants * 2, GROUND_Y + 4.6, baseZ + 8)
-    sergeantHead.Anchored = true
-    sergeantHead.Material = Enum.Material.SmoothPlastic
-    sergeantHead.Color = Color3.fromRGB(227, 183, 151)
-    sergeantHead.Parent = model
-
-    print(string.format("[Reconstruct] Spawned Drill Sergeant #%d", numSergeants + 1))
-end
+-- (Drill sergeant spawning removed - replaced by Army Training System)
 
 -- ============================================================================
 -- VILLAGE STATE OVERRIDE (apply saved state before building creation reads it)
@@ -14677,12 +14286,6 @@ local function applyLoadedState(savedState)
         BarracksState.level = br.level or 1
         BarracksState.xp = br.xp or 0
         BarracksState.xpToNextLevel = br.xpToNextLevel or 100
-        if br.equipment then
-            BarracksState.equipment.dummies = br.equipment.dummies or "Basic"
-            BarracksState.equipment.weapons = br.equipment.weapons or "Basic"
-            BarracksState.equipment.armor = br.equipment.armor or "Basic"
-        end
-        BarracksState.totalTroopsTrained = br.totalTroopsTrained or 0
     end
 
     -- Town Hall
@@ -14882,26 +14485,45 @@ local function reconstructWorkers(savedState, ownerUserId)
         end
     end
 
-    -- Drill Sergeants
-    local drillCount = savedState.barracks and savedState.barracks.drillSergeantCount or 0
-    for i = 1, drillCount do
-        spawnDrillSergeant()
-    end
-
-    print(string.format("[SimpleTest] Worker reconstruction complete: %d miners, %d collectors, %d loggers, %d haulers, %d sergeants",
-        minerCount, collectorCount, loggerCount, haulerCount, drillCount))
+    print(string.format("[SimpleTest] Worker reconstruction complete: %d miners, %d collectors, %d loggers, %d haulers",
+        minerCount, collectorCount, loggerCount, haulerCount))
 end
 
 -- ============================================================================
 -- MAIN EXECUTION
 -- ============================================================================
 
+-- In reserved server mode, Main.server.lua blocks at PlayerAdded:Wait() before
+-- calling VillageStateService:Init(). We must wait for that initialization to
+-- complete so GetLoadedState() returns saved data instead of nil.
+local _isReservedServer = (game.PrivateServerId ~= "" and game.PrivateServerOwnerId == 0)
+
+if _isReservedServer and VillageStateService then
+    print("[SimpleTest] Reserved server detected, waiting for VillageStateService init...")
+    local waitStart = os.clock()
+    while not VillageStateService:GetOwnerUserId() do
+        if os.clock() - waitStart > 30 then
+            warn("[SimpleTest] Timed out waiting for VillageStateService init (30s), proceeding with defaults")
+            break
+        end
+        task.wait(0.1)
+    end
+    local ownerId = VillageStateService:GetOwnerUserId()
+    if ownerId then
+        _villageOwnerUserId = ownerId
+        print(string.format("[SimpleTest] VillageStateService ready, owner: %d", ownerId))
+    end
+end
+
 -- Load saved state BEFORE building creation (so state tables have correct values)
 local savedState = nil
 if VillageStateService then
     savedState = VillageStateService:GetLoadedState()
     if savedState then
+        print("[SimpleTest] Applying saved village state...")
         applyLoadedState(savedState)
+    else
+        print("[SimpleTest] No saved state found, building with defaults")
     end
 end
 
@@ -14972,6 +14594,41 @@ Players.PlayerAdded:Connect(function(player)
         _playerRoles[player.UserId] = "owner"
         _villageOwnerUserId = player.UserId
         print(string.format("[Village] %s joined as OWNER", player.Name))
+
+        -- Safety net: if saved state wasn't applied during main execution (e.g.
+        -- VillageStateService init timed out), apply it now
+        if VillageStateService and VillageStateService:GetOwnerUserId() then
+            local lateState = VillageStateService:GetLoadedState()
+            if lateState and not savedState then
+                print("[Village] Applying saved state on owner join (late recovery)")
+                applyLoadedState(lateState)
+                pcall(function()
+                    reconstructWorkers(lateState, player.UserId)
+                end)
+            end
+        end
+
+        -- Sync owner's HUD with their resources (wait for DataService to load)
+        if DataService then
+            task.defer(function()
+                -- Wait for DataService to load player data (may take a moment after join)
+                local waitStart2 = os.clock()
+                local playerData = DataService:GetPlayerData(player)
+                while not playerData and os.clock() - waitStart2 < 10 do
+                    task.wait(0.5)
+                    playerData = DataService:GetPlayerData(player)
+                end
+                if playerData and player.Parent then
+                    local Events = ReplicatedStorage:FindFirstChild("Events")
+                    if Events then
+                        local SyncPlayerData = Events:FindFirstChild("SyncPlayerData")
+                        if SyncPlayerData then
+                            SyncPlayerData:FireClient(player, playerData)
+                        end
+                    end
+                end
+            end)
+        end
     elseif teleportData and teleportData.ownerUserId then
         _playerRoles[player.UserId] = "visitor"
         print(string.format("[Village] %s joined as VISITOR", player.Name))
