@@ -2220,12 +2220,20 @@ local function createWorkerNPC(name, position, color, workerType)
             humanoid.WalkSpeed = 8
         end
 
-        -- Set all parts non-collidable (NPCs ghost through objects like old system)
+        -- Set all parts non-collidable and ensure body parts are visible
+        -- (CreateHumanoidModelFromDescription can leave MeshParts at Transparency=1
+        --  because the avatar pipeline normally renders them for player characters,
+        --  but server-created NPCs bypass that pipeline)
         -- Only anchor HumanoidRootPart; other parts stay unanchored so Motor6D joints
         -- and the Animator can move them for animations (idle, walk)
         for _, part in npc:GetDescendants() do
             if part:IsA("BasePart") then
                 part.CanCollide = false
+                if part.Name == "HumanoidRootPart" then
+                    part.Transparency = 1 -- Physics root is always invisible
+                else
+                    part.Transparency = 0 -- Force body parts visible
+                end
             end
         end
         local rootPart = npc:FindFirstChild("HumanoidRootPart")
