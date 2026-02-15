@@ -1542,7 +1542,7 @@ do
                     billboard.AlwaysOnTop = true
                     billboard.MaxDistance = 25
                     billboard.Adornee = adornee
-                    billboard.Parent = adornee
+                    billboard.Parent = PlayerGui
 
                     local btn = Instance.new("TextButton")
                     btn.Name = "TradeButton"
