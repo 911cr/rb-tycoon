@@ -12,6 +12,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Components = require(script.Parent.Components)
 local ClientAPI = require(ReplicatedStorage.Shared.Modules.ClientAPI)
 local Signal = require(ReplicatedStorage.Shared.Modules.Signal)
+local TroopData = require(ReplicatedStorage.Shared.Constants.TroopData)
 
 --[[
     Formats a number for display.
@@ -48,12 +49,15 @@ local _initialized = false
 local _goldLabel: TextLabel
 local _woodLabel: TextLabel
 local _foodLabel: TextLabel
+local _foodAmountLabel: TextLabel
 local _foodProductionLabel: TextLabel
 local _foodUsageLabel: TextLabel
 local _buildersLabel: TextLabel
 local _trophyLabel: TextLabel
 local _troopsLabel: TextLabel
 local _troopsDisplay: Frame
+local _troopsData: {[string]: number} = {}
+local _armyPanel: Frame? = nil
 
 --[[
     Creates the resource bar at the top of the screen.
@@ -64,7 +68,7 @@ local function createResourceBar(parent: ScreenGui): Frame
     -- Roblox menu button is ~48px, chat is ~48px, plus some padding
     local bar = Components.CreateFrame({
         Name = "ResourceBar",
-        Size = UDim2.new(0, 380, 0, 46),  -- Smaller now without gems
+        Size = UDim2.new(0, 440, 0, 46),  -- Gold + Wood + Food (with amount)
         Position = UDim2.new(0.5, 0, 0, 8),  -- Centered at top with padding
         AnchorPoint = Vector2.new(0.5, 0),
         BackgroundColor = Components.Colors.Background,
@@ -126,10 +130,10 @@ local function createResourceBar(parent: ScreenGui): Frame
     _woodLabel = woodDisplay:FindFirstChild("Amount", true) :: TextLabel
     _resourceDisplays["Wood"] = woodDisplay
 
-    -- Food supply display (production/usage)
+    -- Food supply display (amount + production/usage)
     local foodSupplyDisplay = Components.CreateFrame({
         Name = "FoodSupplyDisplay",
-        Size = UDim2.new(0, 140, 0, 34),
+        Size = UDim2.new(0, 200, 0, 34),
         BackgroundColor = Components.Colors.BackgroundLight,
         CornerRadius = Components.Sizes.CornerRadius,
         Parent = resourceContainer,
@@ -147,12 +151,25 @@ local function createResourceBar(parent: ScreenGui): Frame
     foodIcon.ScaleType = Enum.ScaleType.Fit
     foodIcon.Parent = foodSupplyDisplay
 
+    -- Food amount label
+    _foodAmountLabel = Components.CreateLabel({
+        Name = "Amount",
+        Text = "0",
+        Size = UDim2.new(0, 50, 1, 0),
+        Position = UDim2.new(0, 30, 0, 0),
+        TextColor = Components.Colors.TextPrimary,
+        TextSize = Components.Sizes.FontSizeSmall,
+        Font = Enum.Font.GothamBold,
+        TextXAlignment = Enum.TextXAlignment.Center,
+        Parent = foodSupplyDisplay,
+    })
+
     -- Production label (green)
     _foodProductionLabel = Components.CreateLabel({
         Name = "Production",
         Text = "+0/m",
-        Size = UDim2.new(0, 50, 1, 0),
-        Position = UDim2.new(0, 30, 0, 0),
+        Size = UDim2.new(0, 45, 1, 0),
+        Position = UDim2.new(0, 82, 0, 0),
         TextColor = Color3.fromRGB(100, 200, 100),
         TextSize = Components.Sizes.FontSizeSmall,
         Font = Enum.Font.GothamBold,
@@ -164,8 +181,8 @@ local function createResourceBar(parent: ScreenGui): Frame
     _foodUsageLabel = Components.CreateLabel({
         Name = "Usage",
         Text = "-0/m",
-        Size = UDim2.new(0, 50, 1, 0),
-        Position = UDim2.new(0, 85, 0, 0),
+        Size = UDim2.new(0, 45, 1, 0),
+        Position = UDim2.new(0, 130, 0, 0),
         TextColor = Color3.fromRGB(200, 200, 100),
         TextSize = Components.Sizes.FontSizeSmall,
         Font = Enum.Font.GothamBold,
@@ -338,10 +355,9 @@ local function createTroopDisplay(parent: ScreenGui): Frame
     stroke.Thickness = 2
     stroke.Parent = container
 
-    -- Click handler (could open troop menu in future)
+    -- Click handler opens army panel
     container.MouseButton1Click:Connect(function()
-        -- Could open army/troop panel
-        print("[HUD] Troop display clicked")
+        HUD:ToggleArmyPanel()
     end)
 
     -- Troop icon background
@@ -485,6 +501,9 @@ function HUD:UpdateResources(resources: {gold: number, wood: number, food: numbe
     if _woodLabel then
         _woodLabel.Text = formatNumber(resources.wood or 0)
     end
+    if _foodAmountLabel then
+        _foodAmountLabel.Text = formatNumber(resources.food or 0)
+    end
 end
 
 --[[
@@ -549,6 +568,175 @@ function HUD:UpdateTroops(currentTroops: number, maxTroops: number)
     end
 end
 
+-- Troop type display order and colors
+local TROOP_ORDER = {"Barbarian", "Archer", "Giant", "WallBreaker", "Wizard", "Dragon", "PEKKA"}
+local TROOP_COLORS = {
+    Barbarian = Color3.fromRGB(220, 180, 80),
+    Archer = Color3.fromRGB(200, 100, 200),
+    Giant = Color3.fromRGB(200, 150, 100),
+    WallBreaker = Color3.fromRGB(180, 120, 60),
+    Wizard = Color3.fromRGB(100, 140, 220),
+    Dragon = Color3.fromRGB(200, 80, 80),
+    PEKKA = Color3.fromRGB(100, 80, 180),
+}
+
+--[[
+    Creates the army breakdown panel.
+]]
+local function createArmyPanel(parent: ScreenGui): Frame
+    local panel = Components.CreatePanel({
+        Name = "ArmyPanel",
+        Title = "Your Army",
+        Size = UDim2.new(0, 260, 0, 300),
+        Position = UDim2.new(0.5, 0, 0.5, 0),
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        ShowCloseButton = true,
+        OnClose = function()
+            if _armyPanel then
+                _armyPanel.Visible = false
+            end
+        end,
+        Parent = parent,
+    })
+
+    return panel
+end
+
+--[[
+    Updates army panel content rows from _troopsData.
+]]
+local function updateArmyPanel()
+    if not _armyPanel then return end
+
+    local content = _armyPanel:FindFirstChild("Content") :: Frame
+    if not content then return end
+
+    -- Clear existing rows
+    for _, child in content:GetChildren() do
+        if child:IsA("Frame") or child:IsA("TextLabel") then
+            child:Destroy()
+        end
+    end
+
+    local listLayout = content:FindFirstChildOfClass("UIListLayout")
+    if not listLayout then
+        listLayout = Components.CreateListLayout({
+            FillDirection = Enum.FillDirection.Vertical,
+            Padding = UDim.new(0, 4),
+            Parent = content,
+        })
+    end
+
+    local hasTroops = false
+    local totalHousing = 0
+
+    for _, troopType in TROOP_ORDER do
+        local count = _troopsData[troopType] or 0
+        if count > 0 then
+            hasTroops = true
+            local troopInfo = TroopData[troopType]
+            local displayName = if troopInfo then troopInfo.displayName else troopType
+            local housingSpace = if troopInfo then troopInfo.housingSpace else 1
+            totalHousing = totalHousing + (count * housingSpace)
+
+            local row = Components.CreateFrame({
+                Name = "Row_" .. troopType,
+                Size = UDim2.new(1, 0, 0, 30),
+                BackgroundColor = Components.Colors.BackgroundLight,
+                CornerRadius = Components.Sizes.CornerRadiusSmall,
+                Parent = content,
+            })
+
+            -- Color indicator circle
+            local indicator = Components.CreateFrame({
+                Name = "Indicator",
+                Size = UDim2.new(0, 20, 0, 20),
+                Position = UDim2.new(0, 6, 0.5, 0),
+                AnchorPoint = Vector2.new(0, 0.5),
+                BackgroundColor = TROOP_COLORS[troopType] or Components.Colors.TextSecondary,
+                CornerRadius = UDim.new(0.5, 0),
+                Parent = row,
+            })
+
+            -- Troop name
+            Components.CreateLabel({
+                Name = "Name",
+                Text = displayName,
+                Size = UDim2.new(0, 120, 1, 0),
+                Position = UDim2.new(0, 32, 0, 0),
+                TextColor = Components.Colors.TextPrimary,
+                TextSize = Components.Sizes.FontSizeSmall,
+                Font = Enum.Font.GothamMedium,
+                Parent = row,
+            })
+
+            -- Count
+            Components.CreateLabel({
+                Name = "Count",
+                Text = "x " .. tostring(count),
+                Size = UDim2.new(0, 50, 1, 0),
+                Position = UDim2.new(1, -56, 0, 0),
+                TextColor = Components.Colors.TextGold,
+                TextSize = Components.Sizes.FontSizeSmall,
+                Font = Enum.Font.GothamBold,
+                TextXAlignment = Enum.TextXAlignment.Right,
+                Parent = row,
+            })
+        end
+    end
+
+    if not hasTroops then
+        Components.CreateLabel({
+            Name = "EmptyMessage",
+            Text = "No troops trained",
+            Size = UDim2.new(1, 0, 0, 30),
+            TextColor = Components.Colors.TextMuted,
+            TextSize = Components.Sizes.FontSizeSmall,
+            Font = Enum.Font.GothamMedium,
+            TextXAlignment = Enum.TextXAlignment.Center,
+            Parent = content,
+        })
+    end
+
+    -- Separator line
+    local separator = Components.CreateFrame({
+        Name = "Separator",
+        Size = UDim2.new(1, -12, 0, 1),
+        BackgroundColor = Components.Colors.GoldDark,
+        Parent = content,
+    })
+
+    -- Total footer
+    Components.CreateLabel({
+        Name = "Total",
+        Text = string.format("Total: %d housing", totalHousing),
+        Size = UDim2.new(1, 0, 0, 28),
+        TextColor = Components.Colors.TextSecondary,
+        TextSize = Components.Sizes.FontSizeSmall,
+        Font = Enum.Font.GothamBold,
+        TextXAlignment = Enum.TextXAlignment.Center,
+        Parent = content,
+    })
+end
+
+--[[
+    Toggles the army panel visibility.
+]]
+function HUD:ToggleArmyPanel()
+    if not _screenGui then return end
+
+    if not _armyPanel then
+        _armyPanel = createArmyPanel(_screenGui)
+    end
+
+    if _armyPanel.Visible then
+        _armyPanel.Visible = false
+    else
+        updateArmyPanel()
+        _armyPanel.Visible = true
+    end
+end
+
 --[[
     Shows or hides the HUD.
 ]]
@@ -604,11 +792,12 @@ function HUD:Init()
         end
         -- Troop count
         if data.troops ~= nil or data.armyCampCapacity ~= nil then
-            local totalTroops = 0
             if data.troops then
-                for _, count in data.troops do
-                    totalTroops = totalTroops + count
-                end
+                _troopsData = data.troops
+            end
+            local totalTroops = 0
+            for _, count in _troopsData do
+                totalTroops = totalTroops + count
             end
             self:UpdateTroops(totalTroops, data.armyCampCapacity or 25)
         end
@@ -657,11 +846,12 @@ function HUD:Init()
             end
             -- Troop count
             if existingData.troops ~= nil or existingData.armyCampCapacity ~= nil then
-                local totalTroops = 0
                 if existingData.troops then
-                    for _, count in existingData.troops do
-                        totalTroops = totalTroops + count
-                    end
+                    _troopsData = existingData.troops
+                end
+                local totalTroops = 0
+                for _, count in _troopsData do
+                    totalTroops = totalTroops + count
                 end
                 self:UpdateTroops(totalTroops, existingData.armyCampCapacity or 25)
             end
