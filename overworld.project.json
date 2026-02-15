@@ -20,6 +20,21 @@
         "$path": "src/overworld/Services",
         "DataService": {
           "$path": "src/server/Services/DataService.lua"
+        },
+        "TradeService": {
+          "$path": "src/server/Services/TradeService.lua"
+        },
+        "BattleArenaService": {
+          "$path": "src/server/Services/BattleArenaService.lua"
+        },
+        "MatchmakingService": {
+          "$path": "src/server/Services/MatchmakingService.lua"
+        },
+        "GoblinCampService": {
+          "$path": "src/server/Services/GoblinCampService.lua"
+        },
+        "ResourceNodeService": {
+          "$path": "src/server/Services/ResourceNodeService.lua"
         }
       },
       "WorldBuilder": {
