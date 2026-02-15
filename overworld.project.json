@@ -17,7 +17,10 @@
         "$path": "src/overworld/Main.server.lua"
       },
       "Services": {
-        "$path": "src/overworld/Services"
+        "$path": "src/overworld/Services",
+        "DataService": {
+          "$path": "src/server/Services/DataService.lua"
+        }
       },
       "WorldBuilder": {
         "$path": "src/overworld/WorldBuilder.lua"
