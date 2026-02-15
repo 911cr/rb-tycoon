@@ -451,17 +451,16 @@ function Components.CreateResourceDisplay(props: {
     })
     iconGradient.Parent = iconBg
 
-    -- Resource icon image
-    local iconImage = Instance.new("ImageLabel")
-    iconImage.Name = "IconImage"
-    iconImage.Size = UDim2.new(0, 24, 0, 24)
-    iconImage.Position = UDim2.new(0.5, 0, 0.5, 0)
-    iconImage.AnchorPoint = Vector2.new(0.5, 0.5)
-    iconImage.BackgroundTransparency = 1
-    iconImage.Image = config.imageId
-    iconImage.ImageColor3 = Color3.new(1, 1, 1)
-    iconImage.ScaleType = Enum.ScaleType.Fit
-    iconImage.Parent = iconBg
+    -- Resource icon emoji text (replaces ImageLabel — asset IDs were unreliable)
+    local iconText = Instance.new("TextLabel")
+    iconText.Name = "IconText"
+    iconText.Size = UDim2.new(1, 0, 1, 0)
+    iconText.BackgroundTransparency = 1
+    iconText.Text = config.fallbackText
+    iconText.TextSize = 18
+    iconText.Font = Enum.Font.GothamBold
+    iconText.TextColor3 = Color3.new(1, 1, 1)
+    iconText.Parent = iconBg
 
     -- Amount label
     local amountLabel = Components.CreateLabel({

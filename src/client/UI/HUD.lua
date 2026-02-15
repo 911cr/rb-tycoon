@@ -139,16 +139,17 @@ local function createResourceBar(parent: ScreenGui): Frame
         Parent = resourceContainer,
     })
 
-    -- Food icon
-    local foodIcon = Instance.new("ImageLabel")
+    -- Food icon (emoji text — asset IDs were unreliable)
+    local foodIcon = Instance.new("TextLabel")
     foodIcon.Name = "FoodIcon"
     foodIcon.Size = UDim2.new(0, 24, 0, 24)
     foodIcon.Position = UDim2.new(0, 4, 0.5, 0)
     foodIcon.AnchorPoint = Vector2.new(0, 0.5)
     foodIcon.BackgroundTransparency = 1
-    foodIcon.Image = "rbxassetid://2958706766" -- Red apple (matches resource display)
-    foodIcon.ImageColor3 = Color3.new(1, 1, 1)
-    foodIcon.ScaleType = Enum.ScaleType.Fit
+    foodIcon.Text = "🍎"
+    foodIcon.TextSize = 18
+    foodIcon.Font = Enum.Font.GothamBold
+    foodIcon.TextColor3 = Color3.new(1, 1, 1)
     foodIcon.Parent = foodSupplyDisplay
 
     -- Food amount label
@@ -236,17 +237,16 @@ local function createBuilderDisplay(parent: ScreenGui): Frame
         Parent = container,
     })
 
-    -- Builder icon (hammer image)
-    local iconImage = Instance.new("ImageLabel")
-    iconImage.Name = "IconImage"
-    iconImage.Size = UDim2.new(0, 20, 0, 20)
-    iconImage.Position = UDim2.new(0.5, 0, 0.5, 0)
-    iconImage.AnchorPoint = Vector2.new(0.5, 0.5)
-    iconImage.BackgroundTransparency = 1
-    iconImage.Image = "rbxassetid://6035053746"  -- Hammer/tool icon
-    iconImage.ImageColor3 = Color3.new(1, 1, 1)
-    iconImage.ScaleType = Enum.ScaleType.Fit
-    iconImage.Parent = iconBg
+    -- Builder icon (emoji text — asset IDs were unreliable)
+    local iconText = Instance.new("TextLabel")
+    iconText.Name = "IconText"
+    iconText.Size = UDim2.new(1, 0, 1, 0)
+    iconText.BackgroundTransparency = 1
+    iconText.Text = "B"
+    iconText.TextSize = 16
+    iconText.Font = Enum.Font.GothamBold
+    iconText.TextColor3 = Color3.new(1, 1, 1)
+    iconText.Parent = iconBg
 
     -- Builder count
     _buildersLabel = Components.CreateLabel({
@@ -304,17 +304,16 @@ local function createTrophyDisplay(parent: ScreenGui): Frame
         Parent = container,
     })
 
-    -- Trophy icon (trophy/star image)
-    local iconImage = Instance.new("ImageLabel")
-    iconImage.Name = "IconImage"
-    iconImage.Size = UDim2.new(0, 20, 0, 20)
-    iconImage.Position = UDim2.new(0.5, 0, 0.5, 0)
-    iconImage.AnchorPoint = Vector2.new(0.5, 0.5)
-    iconImage.BackgroundTransparency = 1
-    iconImage.Image = "rbxassetid://6034767593"  -- Trophy/star icon
-    iconImage.ImageColor3 = Color3.new(1, 1, 1)
-    iconImage.ScaleType = Enum.ScaleType.Fit
-    iconImage.Parent = iconBg
+    -- Trophy icon (emoji text — asset IDs were unreliable)
+    local iconText = Instance.new("TextLabel")
+    iconText.Name = "IconText"
+    iconText.Size = UDim2.new(1, 0, 1, 0)
+    iconText.BackgroundTransparency = 1
+    iconText.Text = "T"
+    iconText.TextSize = 16
+    iconText.Font = Enum.Font.GothamBold
+    iconText.TextColor3 = Color3.new(1, 1, 1)
+    iconText.Parent = iconBg
 
     -- Trophy count
     _trophyLabel = Components.CreateLabel({
@@ -371,17 +370,16 @@ local function createTroopDisplay(parent: ScreenGui): Frame
         Parent = container,
     })
 
-    -- Troop icon (sword/soldier image)
-    local iconImage = Instance.new("ImageLabel")
-    iconImage.Name = "IconImage"
-    iconImage.Size = UDim2.new(0, 20, 0, 20)
-    iconImage.Position = UDim2.new(0.5, 0, 0.5, 0)
-    iconImage.AnchorPoint = Vector2.new(0.5, 0.5)
-    iconImage.BackgroundTransparency = 1
-    iconImage.Image = "rbxassetid://6034509993"  -- Sword/soldier icon
-    iconImage.ImageColor3 = Color3.new(1, 1, 1)
-    iconImage.ScaleType = Enum.ScaleType.Fit
-    iconImage.Parent = iconBg
+    -- Troop icon (emoji text — asset IDs were unreliable)
+    local iconText = Instance.new("TextLabel")
+    iconText.Name = "IconText"
+    iconText.Size = UDim2.new(1, 0, 1, 0)
+    iconText.BackgroundTransparency = 1
+    iconText.Text = "S"
+    iconText.TextSize = 16
+    iconText.Font = Enum.Font.GothamBold
+    iconText.TextColor3 = Color3.new(1, 1, 1)
+    iconText.Parent = iconBg
 
     -- Troop count (current/max)
     _troopsLabel = Components.CreateLabel({
@@ -569,10 +567,12 @@ function HUD:UpdateTroops(currentTroops: number, maxTroops: number)
 end
 
 -- Troop type display order and colors
-local TROOP_ORDER = {"Barbarian", "Archer", "Giant", "WallBreaker", "Wizard", "Dragon", "PEKKA"}
+local TROOP_ORDER = {"Soldier", "Archer", "Catapult", "Barbarian", "Giant", "WallBreaker", "Wizard", "Dragon", "PEKKA"}
 local TROOP_COLORS = {
-    Barbarian = Color3.fromRGB(220, 180, 80),
+    Soldier = Color3.fromRGB(140, 140, 150),
     Archer = Color3.fromRGB(200, 100, 200),
+    Catapult = Color3.fromRGB(100, 70, 45),
+    Barbarian = Color3.fromRGB(220, 180, 80),
     Giant = Color3.fromRGB(200, 150, 100),
     WallBreaker = Color3.fromRGB(180, 120, 60),
     Wizard = Color3.fromRGB(100, 140, 220),
