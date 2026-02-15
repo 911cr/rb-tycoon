@@ -215,6 +215,41 @@ function TeleportManager:Init()
 end
 
 --[[
+    Ensures a player has a village access code (reserved server).
+    Called on first join so other players can always visit their base.
+
+    @param player Player - The player
+    @return boolean - True if access code exists or was created
+]]
+function TeleportManager:EnsureVillageAccessCode(player: Player): boolean
+    local config = OverworldConfig.Teleport
+    if config.VillagePlaceId == 0 then return false end
+
+    local dataService = getDataService()
+    if not dataService then return false end
+
+    local playerData = dataService:GetPlayerData(player)
+    if not playerData then return false end
+
+    -- Already has one
+    if playerData.villageAccessCode then return true end
+
+    -- Reserve a new server
+    local reserveSuccess, accessCode = pcall(function()
+        return TeleportService:ReserveServer(config.VillagePlaceId)
+    end)
+
+    if reserveSuccess and accessCode then
+        playerData.villageAccessCode = accessCode
+        print(string.format("[TeleportManager] Auto-created village access code for %s", player.Name))
+        return true
+    end
+
+    warn(string.format("[TeleportManager] Failed to create village access code for %s", player.Name))
+    return false
+end
+
+--[[
     Teleports a player from overworld to their OWN village (private reserved server).
 
     Uses ReserveServer to create a private server per player. The access code

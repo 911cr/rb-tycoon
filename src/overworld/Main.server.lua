@@ -266,6 +266,9 @@ if TradeService then
     end)
 end
 
+-- Track players who are teleporting (village/visit) so their base isn't destroyed
+local _teleportingPlayers: {[number]: boolean} = {}
+
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- STEP 7: Connect event handlers
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -473,9 +476,13 @@ connectEvent(RequestTeleportToVillage, function(player)
         local state = OverworldService:GetPlayerState(player)
         local currentPos = state and state.position or Vector3.new(500, 0, 500)
 
+        -- Mark as teleporting so PlayerRemoving keeps their base
+        _teleportingPlayers[player.UserId] = true
+
         local success, teleportErr = TeleportManager:TeleportToVillage(player, currentPos)
 
         if not success then
+            _teleportingPlayers[player.UserId] = nil -- Clear on failure
             ServerResponse:FireClient(player, "TeleportToVillage", { success = false, error = teleportErr })
         end
     end
@@ -993,11 +1000,15 @@ connectEvent(RequestVisitBase, function(player, data)
         local state = OverworldService:GetPlayerState(player)
         local currentPos = state and state.position or Vector3.new(500, 0, 500)
 
+        -- Mark as teleporting so PlayerRemoving keeps their base
+        _teleportingPlayers[player.UserId] = true
+
         local success, teleportErr = TeleportManager:TeleportToVillageAsVisitor(
             player, data.targetUserId, currentPos
         )
 
         if not success then
+            _teleportingPlayers[player.UserId] = nil -- Clear on failure
             ServerResponse:FireClient(player, "VisitBase", { success = false, error = teleportErr })
         else
             print(string.format("[OVERWORLD] %s teleporting to visit %d's village", player.Name, data.targetUserId))
@@ -1015,8 +1026,9 @@ print("[OVERWORLD] Setting up player handlers...")
 Players.PlayerAdded:Connect(function(player)
     print(string.format("[OVERWORLD] Player joined: %s (%d)", player.Name, player.UserId))
 
-    -- Check if player arrived via teleport
+    -- Check if player arrived via teleport (returning from village/visit/battle)
     local teleportData = nil
+    local isReturning = OverworldService and OverworldService:IsPlayerInVillage(player.UserId)
     if TeleportManager then
         teleportData = TeleportManager:GetJoinData(player)
         if teleportData then
@@ -1025,8 +1037,7 @@ Players.PlayerAdded:Connect(function(player)
         end
     end
 
-    -- Sync player resources to client HUD (DataService.Init() auto-loads on PlayerAdded,
-    -- but we need to explicitly fire SyncPlayerData so the overworld client HUD updates)
+    -- Sync player resources to client HUD and auto-create village access code
     task.delay(2, function()
         if player.Parent == nil then return end -- Player already left
         if DataService and DataService.GetPlayerData then
@@ -1036,18 +1047,26 @@ Players.PlayerAdded:Connect(function(player)
                 print(string.format("[OVERWORLD] Synced player data to %s", player.Name))
             end
         end
+
+        -- Ensure player has a village access code so others can visit them
+        if TeleportManager and TeleportManager.EnsureVillageAccessCode then
+            TeleportManager:EnsureVillageAccessCode(player)
+        end
     end)
 
-    -- Register player in overworld
+    -- Register player in overworld (handles returning-from-village automatically)
     if OverworldService then
         local spawnPos = OverworldService:RegisterPlayer(player)
 
-        -- If returning from village/battle, use return position
-        if teleportData and TeleportManager then
-            local returnPos = TeleportManager:ParseReturnPosition(teleportData)
-            if returnPos then
-                spawnPos = returnPos
-                OverworldService:UpdatePlayerPosition(player, returnPos)
+        -- If returning from village/visit, update banner to show online again
+        if isReturning then
+            local existingBase = MiniBaseBuilder.GetBase(player.UserId)
+            if existingBase then
+                local baseData = OverworldService:GetOwnBaseData(player)
+                if baseData then
+                    MiniBaseBuilder.Update(existingBase, baseData)
+                    UpdateBase:FireAllClients(baseData)
+                end
             end
         end
 
@@ -1107,8 +1126,37 @@ Players.PlayerRemoving:Connect(function(player)
 
     _visitRateLimit[player.UserId] = nil
 
-    if OverworldService then
-        OverworldService:UnregisterPlayer(player)
+    if _teleportingPlayers[player.UserId] then
+        -- Player is teleporting to their village or visiting another base
+        -- Keep their base on the map, just mark as away
+        _teleportingPlayers[player.UserId] = nil
+        if OverworldService then
+            OverworldService:MarkPlayerInVillage(player.UserId)
+            -- Update banner to show offline/away
+            local existingBase = MiniBaseBuilder.GetBase(player.UserId)
+            if existingBase then
+                local state = OverworldService:GetPlayerState(player)
+                if state then
+                    MiniBaseBuilder.Update(existingBase, {
+                        username = state.username,
+                        trophies = state.trophies,
+                        townHallLevel = state.townHallLevel,
+                        isOnline = false,
+                        hasShield = state.hasShield,
+                    })
+                    UpdateBase:FireAllClients({
+                        userId = player.UserId,
+                        isOnline = false,
+                    })
+                end
+            end
+        end
+        print(string.format("[OVERWORLD] Player %s teleported — base kept on map", player.Name))
+    else
+        -- Player actually leaving the game — remove their base
+        if OverworldService then
+            OverworldService:UnregisterPlayer(player)
+        end
     end
 end)
 

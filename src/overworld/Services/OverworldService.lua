@@ -51,6 +51,7 @@ type PlayerState = {
 local _initialized = false
 local _players: {[number]: PlayerState} = {} -- userId -> state
 local _basesCache: {[number]: PlayerState} = {} -- userId -> cached state for bases
+local _playersInVillage: {[number]: boolean} = {} -- userId -> true when player is in their village
 local _lastCacheUpdate = 0
 local _updateInterval = OverworldConfig.Interaction.UpdateInterval
 local _cacheRefreshInterval = 30 -- seconds
@@ -217,6 +218,25 @@ end
 ]]
 function OverworldService:RegisterPlayer(player: Player): Vector3
     local userId = player.UserId
+
+    -- If returning from village/visit, their base is already on the map
+    if _playersInVillage[userId] and _players[userId] then
+        _playersInVillage[userId] = nil
+        local state = _players[userId]
+        state.isOnline = true
+        state.lastUpdate = os.time()
+        -- Refresh stats in case they changed in village
+        local thLevel, trophies, hasShield, allianceId, friends = getPlayerData(player)
+        state.townHallLevel = thLevel
+        state.trophies = trophies
+        state.hasShield = hasShield
+        state.allianceId = allianceId
+        state.friends = friends
+        -- DON'T fire PlayerEnteredOverworld — base already exists
+        print(string.format("[OverworldService] Player returned from village: %s", player.Name))
+        return state.position
+    end
+
     local spawnPos = getSpawnPosition(player)
     local thLevel, trophies, hasShield, allianceId, friends = getPlayerData(player)
 
@@ -235,7 +255,7 @@ function OverworldService:RegisterPlayer(player: Player): Vector3
 
     _players[userId] = state
 
-    -- Fire event
+    -- Fire event (spawns mini-base)
     self.PlayerEnteredOverworld:Fire(player, state)
 
     print(string.format("[OverworldService] Player registered: %s at (%.0f, %.0f)",
@@ -259,6 +279,32 @@ function OverworldService:UnregisterPlayer(player: Player)
 
         print(string.format("[OverworldService] Player unregistered: %s", player.Name))
     end
+end
+
+--[[
+    Marks a player as "in village" — they teleported to their village but their
+    base stays on the overworld map. Called instead of UnregisterPlayer when
+    the player is teleporting rather than disconnecting.
+
+    @param userId number - The player's user ID
+]]
+function OverworldService:MarkPlayerInVillage(userId: number)
+    local state = _players[userId]
+    if state then
+        state.isOnline = false
+        _playersInVillage[userId] = true
+        print(string.format("[OverworldService] Player marked in village: %s", state.username))
+    end
+end
+
+--[[
+    Checks if a player is currently in their village (base still on map).
+
+    @param userId number - The player's user ID
+    @return boolean
+]]
+function OverworldService:IsPlayerInVillage(userId: number): boolean
+    return _playersInVillage[userId] == true
 end
 
 --[[
