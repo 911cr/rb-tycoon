@@ -34,6 +34,16 @@ local _sessionLocks: {[number]: number} = {}
 local _dataStore = nil
 local _useLocalData = false -- True when DataStore is unavailable (Studio testing)
 local _initialized = false
+local _preSaveCallbacks = {} -- Callbacks fired before every DataStore save
+
+--[[
+    Registers a callback fired before every DataStore save.
+    Signature: callback(player: Player, data: PlayerData)
+    Used by VillageStateService to serialize village state into playerData.
+]]
+function DataService:RegisterPreSaveCallback(callback)
+    table.insert(_preSaveCallbacks, callback)
+end
 
 -- Try to get DataStore, fall back to local-only mode if unavailable
 local success, result = pcall(function()
@@ -186,6 +196,7 @@ local function createDefaultData(userId: number, username: string): Types.Player
 
         -- Village Instance
         villageAccessCode = nil, -- Reserved server access code for private village
+        villageState = nil, -- Populated by VillageStateService serialization
     }
 end
 
@@ -540,6 +551,11 @@ function DataService:SavePlayerData(player: Player): boolean
     if not data then
         warn("No data to save for", userId)
         return false
+    end
+
+    -- Fire pre-save callbacks (e.g. VillageStateService serialization)
+    for _, callback in _preSaveCallbacks do
+        pcall(callback, player, data)
     end
 
     -- In local mode, data is only in memory (no persistence)

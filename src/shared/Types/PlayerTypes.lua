@@ -144,6 +144,9 @@ export type PlayerData = {
         sfxEnabled: boolean,
         notificationsEnabled: boolean,
     },
+
+    -- Village state (persisted by VillageStateService via pre-save callback)
+    villageState: any?,
 }
 
 export type PlayerDataResult = {

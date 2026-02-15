@@ -769,13 +769,14 @@ end)
 game:BindToClose(function()
     print("[SERVER] Game closing, saving all player data...")
 
-    -- Save village state first
+    -- Serialize village state into playerData (no separate DataStore write)
     if VillageStateService_main then
         pcall(function()
             VillageStateService_main:Shutdown()
         end)
     end
 
+    -- DataService saves everything (resources + village state) in one DataStore write
     if DataService and DataService.SaveAllData then
         DataService:SaveAllData()
     end
@@ -811,7 +812,7 @@ connectEvent(RequestTeleportToOverworld, function(player)
         return
     end
 
-    -- Save village state before teleport (if owner is leaving)
+    -- Serialize village state into playerData before teleport (PrepareForTeleport will persist it)
     if player.UserId == _villageOwnerUserId and VillageStateService_main then
         pcall(function()
             VillageStateService_main:SaveState()

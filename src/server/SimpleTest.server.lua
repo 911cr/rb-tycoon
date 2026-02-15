@@ -14749,10 +14749,10 @@ end
 -- Save village state when owner leaves
 Players.PlayerRemoving:Connect(function(player)
     if player.UserId == _villageOwnerUserId then
-        print(string.format("[Village] Owner %s leaving, saving village state...", player.Name))
+        print(string.format("[Village] Owner %s leaving, saving and releasing lock...", player.Name))
         if VillageStateService then
             pcall(function()
-                VillageStateService:SaveState()
+                VillageStateService:Shutdown()
             end)
         end
     end
@@ -14764,14 +14764,12 @@ Players.PlayerRemoving:Connect(function(player)
     PlayerFarmData[player.UserId] = nil
 end)
 
--- Save village state on server shutdown
+-- Serialize village state on server shutdown (DataService handles actual persistence)
 game:BindToClose(function()
     if VillageStateService then
-        print("[Village] Server shutting down, saving village state...")
+        print("[Village] Server shutting down, serializing village state into playerData...")
         pcall(function()
             VillageStateService:SaveState()
         end)
-        -- Give time for DataStore write with retry backoff
-        task.wait(5)
     end
 end)

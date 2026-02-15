@@ -2,8 +2,8 @@
 --[[
     VillageStateService.lua
 
-    Serializes and persists per-player village state to DataStore.
-    Handles loading saved state on server startup and saving on shutdown/leave.
+    Serializes per-player village state into DataService's playerData.
+    ONE DataStore, ONE session lock, ONE save cycle — all managed by DataService.
 
     Village state includes: building levels, equipment levels, worker counts,
     smelter/sawmill queues, crop progress, prospecting state, and farm data.
@@ -15,160 +15,62 @@
 ]]
 
 local DataStoreService = game:GetService("DataStoreService")
-local RunService = game:GetService("RunService")
+local ServerScriptService = game:GetService("ServerScriptService")
+local Players = game:GetService("Players")
 
 local VillageStateService = {}
 VillageStateService.__index = VillageStateService
 
 -- Constants
-local DATASTORE_NAME = "BattleTycoon_VillageState_v1"
-local LOCK_DATASTORE_NAME = "BattleTycoon_VillageLock"
 local AUTO_SAVE_INTERVAL = 300 -- 5 minutes
-local SESSION_LOCK_TIMEOUT = 600 -- 10 minutes (must be > auto-save interval to prevent lock expiry between saves)
-local LOCK_HEARTBEAT_INTERVAL = 60 -- Refresh lock every 60 seconds (independent of save cycle)
-local LOCK_ACQUIRE_RETRIES = 3
-local LOCK_ACQUIRE_RETRY_DELAY = 2 -- seconds between retries
 local CURRENT_VERSION = 1
-local SAVE_MAX_RETRIES = 3
-local SAVE_RETRY_BASE_DELAY = 1 -- seconds (exponential backoff: 1, 2, 4)
+
+-- Old DataStore names for one-time migration
+local OLD_DATASTORE_NAME = "BattleTycoon_VillageState_v1"
+local OLD_LOCK_DATASTORE_NAME = "BattleTycoon_VillageLock"
 
 -- Private state
 local _initialized = false
 local _ownerUserId: number? = nil
 local _loadedState: any = nil
-local _dataStore: any = nil
-local _lockStore: any = nil
-local _useLocalData = false
-local _sessionLocked = false
 local _autoSaveThread: thread? = nil
 local _stateTablesRef: any = nil -- Reference to SimpleTest state tables
-local _loadFailed = false -- True if DataStore load errored (prevents overwriting saved data)
-
--- Unique session identifier for ownership-aware locking
-local _villageSessionId = game.JobId .. "_village_" .. tostring(os.time())
-
--- Try to get DataStore
-local success, result = pcall(function()
-    return DataStoreService:GetDataStore(DATASTORE_NAME)
-end)
-
-if success then
-    _dataStore = result
-else
-    _useLocalData = true
-    warn("[VillageStateService] DataStore unavailable, using local-only mode")
-end
-
-local lockSuccess, lockResult = pcall(function()
-    return DataStoreService:GetDataStore(LOCK_DATASTORE_NAME)
-end)
-
-if lockSuccess then
-    _lockStore = lockResult
-end
+local _migrationAttempted = false
+local _dataServiceRef: any = nil -- Lazy-loaded DataService reference
 
 -- ============================================================================
--- SESSION LOCKING (prevents two servers loading same village)
+-- HELPERS
 -- ============================================================================
 
-local function acquireVillageLock(userId: number): boolean
-    if _useLocalData then
-        _sessionLocked = true
-        return true
-    end
-
-    if not _lockStore then return true end
-
-    local lockKey = "VillageLock_" .. userId
-
-    -- Retry loop: previous server may still be releasing the lock
-    for attempt = 1, LOCK_ACQUIRE_RETRIES do
-        local acquired = false
-        local now = os.time()
-
-        local lockSuccess2, lockErr = pcall(function()
-            _lockStore:UpdateAsync(lockKey, function(currentValue)
-                -- Lock value format: { owner = sessionId, timestamp = os.time() }
-                -- Legacy format: plain number (os.time()) — handle migration
-                local lockTimestamp = 0
-                if typeof(currentValue) == "table" then
-                    lockTimestamp = currentValue.timestamp or 0
-                elseif typeof(currentValue) == "number" then
-                    lockTimestamp = currentValue -- Legacy format
-                end
-
-                if not currentValue or (now - lockTimestamp) >= SESSION_LOCK_TIMEOUT then
-                    acquired = true
-                    return { owner = _villageSessionId, timestamp = now }
-                end
-                acquired = false
-                return nil
-            end)
-        end)
-
-        if not lockSuccess2 then
-            warn(string.format("[VillageStateService] Lock acquire attempt %d/%d failed: %s",
-                attempt, LOCK_ACQUIRE_RETRIES, tostring(lockErr)))
-        elseif acquired then
-            _sessionLocked = true
-            return true
-        end
-
-        if attempt < LOCK_ACQUIRE_RETRIES then
-            warn(string.format("[VillageStateService] Village lock busy for %d, retrying in %ds (attempt %d/%d)",
-                userId, LOCK_ACQUIRE_RETRY_DELAY, attempt, LOCK_ACQUIRE_RETRIES))
-            task.wait(LOCK_ACQUIRE_RETRY_DELAY)
+--[[
+    Lazy-loads DataService to avoid require-time circular dependency.
+]]
+local function _getDataService(): any
+    if _dataServiceRef then return _dataServiceRef end
+    local ServicesFolder = ServerScriptService:FindFirstChild("Services")
+    if ServicesFolder then
+        local dsModule = ServicesFolder:FindFirstChild("DataService")
+        if dsModule then
+            local ok, ds = pcall(function() return require(dsModule) end)
+            if ok then
+                _dataServiceRef = ds
+                return ds
+            end
         end
     end
-
-    warn(string.format("[VillageStateService] Village lock still active for %d after %d attempts",
-        userId, LOCK_ACQUIRE_RETRIES))
-    _sessionLocked = false
-    return false
+    return nil
 end
 
 --[[
-    Ownership-aware lock release: only clears if we own the lock.
-    Uses UpdateAsync instead of RemoveAsync to prevent deleting another server's lock.
+    Gets the owner player's cached playerData from DataService.
 ]]
-local function releaseVillageLock(userId: number)
-    if _useLocalData or not _lockStore then
-        _sessionLocked = false
-        return
-    end
-
-    local lockKey = "VillageLock_" .. userId
-    pcall(function()
-        _lockStore:UpdateAsync(lockKey, function(currentValue)
-            if typeof(currentValue) == "table" and currentValue.owner == _villageSessionId then
-                -- We own this lock — mark as expired
-                return { owner = _villageSessionId, timestamp = 0 }
-            end
-            -- Not our lock — leave it alone
-            return nil
-        end)
-    end)
-    _sessionLocked = false
-end
-
---[[
-    Refreshes the village lock timestamp to prevent expiry during long sessions.
-    Only refreshes if we still own the lock.
-]]
-local function refreshVillageLock(userId: number)
-    if _useLocalData or not _lockStore then return end
-
-    local lockKey = "VillageLock_" .. userId
-    local now = os.time()
-    pcall(function()
-        _lockStore:UpdateAsync(lockKey, function(currentValue)
-            if typeof(currentValue) == "table" and currentValue.owner == _villageSessionId then
-                return { owner = _villageSessionId, timestamp = now }
-            end
-            -- Not our lock — don't touch it
-            return nil
-        end)
-    end)
+local function _getOwnerPlayerData(): any
+    if not _ownerUserId then return nil end
+    local DataService = _getDataService()
+    if not DataService then return nil end
+    local player = Players:GetPlayerByUserId(_ownerUserId)
+    if not player then return nil end
+    return DataService:GetPlayerData(player)
 end
 
 -- ============================================================================
@@ -496,12 +398,13 @@ function VillageStateService:SerializeState(): any
 end
 
 -- ============================================================================
--- PERSISTENCE (DataStore Read/Write)
+-- PERSISTENCE (via DataService's playerData)
 -- ============================================================================
 
 --[[
     Initializes the service for a specific owner.
-    Loads their village state from DataStore if it exists.
+    No DataStore access — just sets the owner ID.
+    Data is loaded via GetLoadedState() which reads from DataService.
 ]]
 function VillageStateService:Init(ownerUserId: number)
     if _initialized then
@@ -510,56 +413,92 @@ function VillageStateService:Init(ownerUserId: number)
     end
 
     _ownerUserId = ownerUserId
-    print(string.format("[VillageStateService] Initializing for owner %d", ownerUserId))
-
-    -- Acquire session lock
-    if not acquireVillageLock(ownerUserId) then
-        warn("[VillageStateService] Could not acquire village lock, using default state")
-        _loadedState = nil
-        _initialized = true
-        return
-    end
-
-    -- Load from DataStore
-    if _useLocalData then
-        _loadedState = nil
-        _initialized = true
-        print("[VillageStateService] Local mode: no saved state to load")
-        return
-    end
-
-    local loadSuccess, loadResult = pcall(function()
-        return _dataStore:GetAsync(tostring(ownerUserId))
-    end)
-
-    if loadSuccess and loadResult then
-        -- Validate version
-        if loadResult.version and loadResult.version <= CURRENT_VERSION then
-            _loadedState = loadResult
-            print(string.format("[VillageStateService] Loaded saved village state (v%d) for %d",
-                loadResult.version or 0, ownerUserId))
-        else
-            warn(string.format("[VillageStateService] Unknown state version %s, using default",
-                tostring(loadResult.version)))
-            _loadedState = nil
-        end
-    elseif loadSuccess then
-        print(string.format("[VillageStateService] No saved state for %d (new village)", ownerUserId))
-        _loadedState = nil
-    else
-        warn(string.format("[VillageStateService] DataStore load error: %s", tostring(loadResult)))
-        _loadedState = nil
-        _loadFailed = true -- Prevent overwriting potentially valid saved data
-    end
-
     _initialized = true
+    print(string.format("[VillageStateService] Initialized for owner %d (using DataService persistence)", ownerUserId))
 end
 
 --[[
-    Returns the loaded village state (from DataStore), or nil if new village.
+    Returns the loaded village state, polling DataService for playerData.
+    On first call, performs one-time migration from old DataStore if needed.
 ]]
 function VillageStateService:GetLoadedState(): any
-    return _loadedState
+    if _loadedState then return _loadedState end
+    if not _ownerUserId then return nil end
+
+    -- Wait for DataService to have player data (up to 15s)
+    local DataService = _getDataService()
+    if not DataService then
+        warn("[VillageStateService] DataService not available")
+        return nil
+    end
+
+    local player, playerData
+    local waitStart = os.clock()
+    repeat
+        player = Players:GetPlayerByUserId(_ownerUserId)
+        if player then playerData = DataService:GetPlayerData(player) end
+        if not playerData then task.wait(0.5) end
+    until playerData or os.clock() - waitStart > 15
+
+    if not playerData then
+        warn(string.format("[VillageStateService] Timed out waiting for playerData for owner %d", _ownerUserId))
+        return nil
+    end
+
+    -- Found in new location (DataService's playerData.villageState)
+    if playerData.villageState then
+        _loadedState = playerData.villageState
+        print(string.format("[VillageStateService] Loaded village state from playerData (v%d) for %d",
+            _loadedState.version or 0, _ownerUserId))
+        return _loadedState
+    end
+
+    -- One-time migration from old DataStore
+    if not _migrationAttempted then
+        _migrationAttempted = true
+        local oldStore = nil
+        pcall(function()
+            oldStore = DataStoreService:GetDataStore(OLD_DATASTORE_NAME)
+        end)
+
+        if oldStore then
+            local migSuccess, migResult = pcall(function()
+                return oldStore:GetAsync(tostring(_ownerUserId))
+            end)
+
+            if migSuccess and migResult and migResult.version then
+                _loadedState = migResult
+                playerData.villageState = migResult
+                print(string.format("[VillageStateService] MIGRATION: Copied village state (v%d) from old DataStore for %d",
+                    migResult.version or 0, _ownerUserId))
+
+                -- Fire-and-forget cleanup of old DataStore keys
+                task.spawn(function()
+                    pcall(function()
+                        oldStore:RemoveAsync(tostring(_ownerUserId))
+                        print(string.format("[VillageStateService] MIGRATION: Removed old village state key for %d", _ownerUserId))
+                    end)
+                    -- Also clean up old lock key
+                    pcall(function()
+                        local oldLockStore = DataStoreService:GetDataStore(OLD_LOCK_DATASTORE_NAME)
+                        if oldLockStore then
+                            oldLockStore:RemoveAsync("VillageLock_" .. _ownerUserId)
+                            print(string.format("[VillageStateService] MIGRATION: Removed old village lock key for %d", _ownerUserId))
+                        end
+                    end)
+                end)
+
+                return _loadedState
+            elseif migSuccess then
+                print(string.format("[VillageStateService] No old village state for %d (new village)", _ownerUserId))
+            else
+                warn(string.format("[VillageStateService] MIGRATION: Failed to read old DataStore for %d: %s",
+                    _ownerUserId, tostring(migResult)))
+            end
+        end
+    end
+
+    return nil
 end
 
 --[[
@@ -579,18 +518,12 @@ function VillageStateService:SetStateTables(tables: any)
 end
 
 --[[
-    Serializes current live state and saves to DataStore.
+    Serializes current live state into DataService's playerData (in-memory).
+    DataService handles actual DataStore persistence on its save cycle.
 ]]
 function VillageStateService:SaveState(): boolean
     if not _ownerUserId then
         warn("[VillageStateService] Cannot save: no owner set")
-        return false
-    end
-
-    -- Guard: If the initial DataStore load failed, do NOT overwrite
-    -- potentially valid saved data with a fresh default state
-    if _loadFailed then
-        warn("[VillageStateService] Skipping save: initial load failed, refusing to overwrite potential saved data")
         return false
     end
 
@@ -600,42 +533,25 @@ function VillageStateService:SaveState(): boolean
         return false
     end
 
-    if _useLocalData then
-        print("[VillageStateService] Local mode: state serialized but not persisted")
+    local playerData = _getOwnerPlayerData()
+    if playerData then
+        playerData.villageState = state
+        print(string.format("[VillageStateService] Serialized village state into playerData for %d", _ownerUserId))
         return true
     end
 
-    -- Retry with exponential backoff
-    for attempt = 1, SAVE_MAX_RETRIES do
-        local saveSuccess, saveErr = pcall(function()
-            _dataStore:SetAsync(tostring(_ownerUserId), state)
-        end)
-
-        if saveSuccess then
-            print(string.format("[VillageStateService] Saved village state for %d (attempt %d)", _ownerUserId, attempt))
-            -- Refresh lock to prevent it from expiring during long sessions
-            refreshVillageLock(_ownerUserId)
-            return true
-        else
-            warn(string.format("[VillageStateService] Save attempt %d/%d failed: %s",
-                attempt, SAVE_MAX_RETRIES, tostring(saveErr)))
-            if attempt < SAVE_MAX_RETRIES then
-                local delay = SAVE_RETRY_BASE_DELAY * (2 ^ (attempt - 1))
-                task.wait(delay)
-            end
-        end
-    end
-
-    warn(string.format("[VillageStateService] All %d save attempts failed for %d", SAVE_MAX_RETRIES, _ownerUserId))
+    warn(string.format("[VillageStateService] Cannot save: no playerData for owner %d", _ownerUserId))
     return false
 end
 
 --[[
     Sets the access code for this village's reserved server.
+    Stored in DataService's playerData.villageAccessCode (already in schema).
 ]]
 function VillageStateService:SetAccessCode(code: string)
-    if _loadedState then
-        _loadedState.accessCode = code
+    local pd = _getOwnerPlayerData()
+    if pd then
+        pd.villageAccessCode = code
     end
 end
 
@@ -643,10 +559,8 @@ end
     Gets the access code for this village's reserved server.
 ]]
 function VillageStateService:GetAccessCode(): string?
-    if _loadedState then
-        return _loadedState.accessCode
-    end
-    return nil
+    local pd = _getOwnerPlayerData()
+    return pd and pd.villageAccessCode
 end
 
 -- ============================================================================
@@ -654,33 +568,39 @@ end
 -- ============================================================================
 
 --[[
-    Starts the auto-save loop. Should be called after Init + state tables are set.
+    Starts the auto-save loop and registers a pre-save callback with DataService.
+    The pre-save callback ensures village state is always fresh before DataStore writes.
 ]]
 function VillageStateService:StartAutoSave()
     if _autoSaveThread then return end
 
+    -- Periodic serialize into playerData
     _autoSaveThread = task.spawn(function()
         while _initialized do
             task.wait(AUTO_SAVE_INTERVAL)
             if _stateTablesRef and _ownerUserId then
-                print("[VillageStateService] Auto-saving...")
+                print("[VillageStateService] Auto-serializing village state...")
                 self:SaveState()
             end
         end
     end)
 
-    -- Lock heartbeat: refresh village lock every 60s to prevent expiry during long sessions
-    task.spawn(function()
-        while _initialized do
-            task.wait(LOCK_HEARTBEAT_INTERVAL)
-            if _ownerUserId and _sessionLocked then
-                refreshVillageLock(_ownerUserId)
+    -- Register pre-save callback so DataService always gets fresh village data
+    -- This fires inside SavePlayerData() before every DataStore write
+    local DataService = _getDataService()
+    if DataService and DataService.RegisterPreSaveCallback then
+        DataService:RegisterPreSaveCallback(function(player, data)
+            if player.UserId == _ownerUserId and _stateTablesRef then
+                local state = self:SerializeState()
+                if state then
+                    data.villageState = state
+                end
             end
-        end
-    end)
+        end)
+        print("[VillageStateService] Registered pre-save callback with DataService")
+    end
 
     print("[VillageStateService] Auto-save loop started (every " .. AUTO_SAVE_INTERVAL .. "s)")
-    print("[VillageStateService] Lock heartbeat started (every " .. LOCK_HEARTBEAT_INTERVAL .. "s)")
 end
 
 -- ============================================================================
@@ -688,20 +608,18 @@ end
 -- ============================================================================
 
 --[[
-    Final save and release lock. Call in BindToClose or on owner leave.
+    Final serialize into playerData. DataService's own PlayerRemoving/BindToClose
+    handles the actual DataStore write and session lock release.
 ]]
 function VillageStateService:Shutdown()
     if not _ownerUserId then return end
 
     print(string.format("[VillageStateService] Shutting down for owner %d", _ownerUserId))
 
-    -- Final save
+    -- Final serialize into playerData (DataService will persist it)
     if _stateTablesRef then
         self:SaveState()
     end
-
-    -- Release lock
-    releaseVillageLock(_ownerUserId)
 
     _initialized = false
 end
