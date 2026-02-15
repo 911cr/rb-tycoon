@@ -2,8 +2,12 @@
 --[[
     TradeUI.lua
 
-    Trading interface for player-to-player resource exchanges.
-    Split-screen panel: left side = your offer, right side = your request.
+    Trading interface for player-to-player resource and troop exchanges.
+    4-column layout:
+      Col 1: Your Resources (read-only)
+      Col 2: You Give (input)
+      Col 3: You Request (input)
+      Col 4: Their Resources (read-only)
 
     Two modes:
     1. Proposal mode: Player fills in what they offer and request, then proposes.
@@ -11,6 +15,7 @@
 
     Dependencies:
     - Signal (for events)
+    - TroopData (for troop display names)
 
     Events:
     - TradeProposed(targetUserId, offering, requesting)
@@ -28,6 +33,7 @@ local UserInputService = game:GetService("UserInputService")
 repeat task.wait() until ReplicatedStorage:FindFirstChild("Shared")
 
 local Signal = require(ReplicatedStorage.Shared.Modules.Signal)
+local TroopData = require(ReplicatedStorage.Shared.Constants.TroopData)
 
 local TradeUI = {}
 TradeUI.__index = TradeUI
@@ -57,16 +63,27 @@ local _currentTradeId: string? = nil
 local _targetData: any? = nil
 local _playerResources = { gold = 0, wood = 0, food = 0 }
 local _targetResources = { gold = 0, wood = 0, food = 0 }
+local _playerTroops: {[string]: number} = {}
+local _targetTroops: {[string]: number} = {}
 
 -- Proposal panel input values
 local _offerValues = { gold = 0, wood = 0, food = 0 }
 local _requestValues = { gold = 0, wood = 0, food = 0 }
+local _offerTroops: {[string]: number} = {}
+local _requestTroops: {[string]: number} = {}
 
 -- Incoming panel countdown
 local _incomingCountdownThread: thread? = nil
 
 -- Result panel auto-hide
 local _resultHideThread: thread? = nil
+
+-- Content frame references for dynamic population
+local _col1Content: Frame? = nil
+local _col2Content: Frame? = nil
+local _col3Content: Frame? = nil
+local _col4Content: Frame? = nil
+local _proposalPanelInner: TextButton? = nil
 
 -- ============================================================================
 -- CONSTANTS
@@ -85,24 +102,28 @@ local TRADE_THEME = {
     goldColor = Color3.fromRGB(255, 200, 80),     -- Gold
     woodColor = Color3.fromRGB(139, 100, 60),     -- Wood
     foodColor = Color3.fromRGB(100, 180, 80),     -- Food
+    troopColor = Color3.fromRGB(140, 120, 200),   -- Troops (purple)
     acceptGreen = Color3.fromRGB(60, 160, 60),    -- Accept button
     declineRed = Color3.fromRGB(180, 60, 60),     -- Decline button
     cancelGray = Color3.fromRGB(100, 90, 80),     -- Cancel button
     successGreen = Color3.fromRGB(50, 180, 80),   -- Success result
     failureRed = Color3.fromRGB(200, 60, 60),     -- Failure result
+    separatorColor = Color3.fromRGB(70, 65, 55),  -- Section divider
 }
 
 local RESOURCE_STEP = 100
 local RESOURCE_STEP_SHIFT = 1000
+local TROOP_STEP = 1
+local TROOP_STEP_SHIFT = 10
 local TRADE_TIMEOUT = 60
+
+-- Ordered list of troop types for consistent display
+local TROOP_ORDER = { "Barbarian", "Archer", "Giant", "WallBreaker", "Wizard", "Dragon", "PEKKA" }
 
 -- ============================================================================
 -- HELPER FUNCTIONS
 -- ============================================================================
 
---[[
-    Formats a number with comma separators for readability.
-]]
 local function formatNumber(num: number): string
     local formatted = tostring(math.floor(num))
     local k
@@ -113,81 +134,150 @@ local function formatNumber(num: number): string
     return formatted
 end
 
---[[
-    Checks if shift key is currently held.
-]]
 local function isShiftHeld(): boolean
     return UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
         or UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
 end
 
+local function getTroopDisplayName(troopType: string): string
+    local data = TroopData.GetByType(troopType)
+    return if data then data.displayName else troopType
+end
+
+local function hasAnyTradeValue(): boolean
+    if _offerValues.gold > 0 or _offerValues.wood > 0 or _offerValues.food > 0 then return true end
+    if _requestValues.gold > 0 or _requestValues.wood > 0 or _requestValues.food > 0 then return true end
+    for _, count in _offerTroops do if count > 0 then return true end end
+    for _, count in _requestTroops do if count > 0 then return true end end
+    return false
+end
+
+local function updateProposeButton()
+    if not _proposalPanelInner then return end
+    local proposeBtn = _proposalPanelInner:FindFirstChild("ProposeButton", true) :: TextButton?
+    if proposeBtn then
+        proposeBtn.BackgroundColor3 = if hasAnyTradeValue() then TRADE_THEME.primary else TRADE_THEME.cancelGray
+    end
+end
+
 -- ============================================================================
--- UI CREATION - PROPOSAL PANEL
+-- UI ROW CREATION HELPERS
 -- ============================================================================
 
 --[[
-    Creates a +/- resource input row.
-    Returns the frame and a table with refs to update values.
+    Creates a read-only resource/troop display row.
 ]]
-local function createResourceInput(
+local function createDisplayRow(
+    name: string,
+    color: Color3,
+    parent: Frame,
+    value: number,
+    zIndex: number
+): Frame
+    local row = Instance.new("Frame")
+    row.Name = name:gsub("%.", "") .. "DisplayRow"
+    row.Size = UDim2.new(1, -8, 0, 26)
+    row.BackgroundTransparency = 1
+    row.ZIndex = zIndex
+    row.Parent = parent
+
+    local label = Instance.new("TextLabel")
+    label.Name = "Label"
+    label.Size = UDim2.new(0, 70, 1, 0)
+    label.BackgroundTransparency = 1
+    label.Text = name .. ":"
+    label.TextColor3 = color
+    label.TextSize = 12
+    label.Font = Enum.Font.GothamBold
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.TextTruncate = Enum.TextTruncate.AtEnd
+    label.ZIndex = zIndex
+    label.Parent = row
+
+    local valueLabel = Instance.new("TextLabel")
+    valueLabel.Name = "Value"
+    valueLabel.Size = UDim2.new(1, -75, 1, 0)
+    valueLabel.Position = UDim2.new(0, 75, 0, 0)
+    valueLabel.BackgroundTransparency = 1
+    valueLabel.Text = formatNumber(value)
+    valueLabel.TextColor3 = TRADE_THEME.textPrimary
+    valueLabel.TextSize = 13
+    valueLabel.Font = Enum.Font.GothamBold
+    valueLabel.TextXAlignment = Enum.TextXAlignment.Left
+    valueLabel.ZIndex = zIndex
+    valueLabel.Parent = row
+
+    return row
+end
+
+--[[
+    Creates an input row with +/- buttons.
+]]
+local function createInputRow(
     name: string,
     color: Color3,
     parent: Frame,
     onChanged: (number) -> (),
-    maxValue: number?
-): (Frame, TextBox, TextLabel?)
-    local clampMax = maxValue or 99999999999999
+    stepSize: number,
+    shiftStepSize: number,
+    zIndex: number
+): Frame
+    local clampMax = 99999999999999
 
     local row = Instance.new("Frame")
-    row.Name = name .. "Row"
-    row.Size = UDim2.new(1, -16, 0, 36)
+    row.Name = name:gsub("%.", "") .. "InputRow"
+    row.Size = UDim2.new(1, -4, 0, 30)
     row.BackgroundTransparency = 1
+    row.ZIndex = zIndex
     row.Parent = parent
 
-    -- Resource label
+    -- Label
     local label = Instance.new("TextLabel")
     label.Name = "Label"
     label.Size = UDim2.new(0, 50, 1, 0)
-    label.Position = UDim2.new(0, 0, 0, 0)
     label.BackgroundTransparency = 1
     label.Text = name .. ":"
     label.TextColor3 = color
-    label.TextSize = 14
+    label.TextSize = 11
     label.Font = Enum.Font.GothamBold
     label.TextXAlignment = Enum.TextXAlignment.Left
+    label.TextTruncate = Enum.TextTruncate.AtEnd
+    label.ZIndex = zIndex
     label.Parent = row
 
     -- Minus button
     local minusButton = Instance.new("TextButton")
     minusButton.Name = "MinusButton"
-    minusButton.Size = UDim2.new(0, 30, 0, 30)
-    minusButton.Position = UDim2.new(0, 55, 0.5, -15)
+    minusButton.Size = UDim2.new(0, 26, 0, 26)
+    minusButton.Position = UDim2.new(0, 52, 0.5, -13)
     minusButton.BackgroundColor3 = Color3.fromRGB(80, 40, 40)
     minusButton.Text = "-"
     minusButton.TextColor3 = Color3.fromRGB(255, 180, 180)
-    minusButton.TextSize = 18
+    minusButton.TextSize = 16
     minusButton.Font = Enum.Font.GothamBold
     minusButton.BorderSizePixel = 0
+    minusButton.ZIndex = zIndex
     minusButton.Parent = row
 
     local minusCorner = Instance.new("UICorner")
-    minusCorner.CornerRadius = UDim.new(0, 6)
+    minusCorner.CornerRadius = UDim.new(0, 5)
     minusCorner.Parent = minusButton
 
-    -- Value display (TextBox for direct typing)
+    -- Value display (TextBox)
     local valueLabel = Instance.new("TextBox")
     valueLabel.Name = "Value"
-    valueLabel.Size = UDim2.new(0, 70, 0, 28)
-    valueLabel.Position = UDim2.new(0, 90, 0.5, -14)
+    valueLabel.Size = UDim2.new(0, 55, 0, 24)
+    valueLabel.Position = UDim2.new(0, 80, 0.5, -12)
     valueLabel.BackgroundColor3 = Color3.fromRGB(50, 48, 42)
     valueLabel.BackgroundTransparency = 0.3
     valueLabel.Text = "0"
     valueLabel.PlaceholderText = "0"
     valueLabel.TextColor3 = TRADE_THEME.textPrimary
-    valueLabel.TextSize = 16
+    valueLabel.TextSize = 13
     valueLabel.Font = Enum.Font.GothamBold
     valueLabel.ClearTextOnFocus = false
     valueLabel.BorderSizePixel = 0
+    valueLabel.ZIndex = zIndex
     valueLabel.Parent = row
 
     local valueCorner = Instance.new("UICorner")
@@ -197,18 +287,19 @@ local function createResourceInput(
     -- Plus button
     local plusButton = Instance.new("TextButton")
     plusButton.Name = "PlusButton"
-    plusButton.Size = UDim2.new(0, 30, 0, 30)
-    plusButton.Position = UDim2.new(0, 165, 0.5, -15)
+    plusButton.Size = UDim2.new(0, 26, 0, 26)
+    plusButton.Position = UDim2.new(0, 137, 0.5, -13)
     plusButton.BackgroundColor3 = Color3.fromRGB(40, 80, 40)
     plusButton.Text = "+"
     plusButton.TextColor3 = Color3.fromRGB(180, 255, 180)
-    plusButton.TextSize = 18
+    plusButton.TextSize = 16
     plusButton.Font = Enum.Font.GothamBold
     plusButton.BorderSizePixel = 0
+    plusButton.ZIndex = zIndex
     plusButton.Parent = row
 
     local plusCorner = Instance.new("UICorner")
-    plusCorner.CornerRadius = UDim.new(0, 6)
+    plusCorner.CornerRadius = UDim.new(0, 5)
     plusCorner.Parent = plusButton
 
     -- Handle typed input
@@ -217,81 +308,69 @@ local function createResourceInput(
         parsed = math.clamp(math.floor(parsed), 0, clampMax)
         valueLabel.Text = formatNumber(parsed)
         onChanged(parsed)
+        updateProposeButton()
     end)
 
     -- Wire buttons
     minusButton.MouseButton1Click:Connect(function()
-        local step = if isShiftHeld() then RESOURCE_STEP_SHIFT else RESOURCE_STEP
+        local step = if isShiftHeld() then shiftStepSize else stepSize
         local current = tonumber(valueLabel.Text:gsub(",", "")) or 0
         local newVal = math.clamp(current - step, 0, clampMax)
         valueLabel.Text = formatNumber(newVal)
         onChanged(newVal)
+        updateProposeButton()
     end)
 
     plusButton.MouseButton1Click:Connect(function()
-        local step = if isShiftHeld() then RESOURCE_STEP_SHIFT else RESOURCE_STEP
+        local step = if isShiftHeld() then shiftStepSize else stepSize
         local current = tonumber(valueLabel.Text:gsub(",", "")) or 0
         local newVal = math.clamp(current + step, 0, clampMax)
         valueLabel.Text = formatNumber(newVal)
         onChanged(newVal)
+        updateProposeButton()
     end)
 
-    return row, valueLabel, nil
+    return row
 end
 
 --[[
-    Creates a resource display row (read-only, for incoming trades).
+    Creates a separator label inside a content frame.
 ]]
-local function createResourceDisplay(
-    name: string,
-    color: Color3,
-    parent: Frame
-): (Frame, TextLabel)
-    local row = Instance.new("Frame")
-    row.Name = name .. "Row"
-    row.Size = UDim2.new(1, -16, 0, 30)
-    row.BackgroundTransparency = 1
-    row.Parent = parent
-
-    -- Resource label
-    local label = Instance.new("TextLabel")
-    label.Name = "Label"
-    label.Size = UDim2.new(0, 60, 1, 0)
-    label.Position = UDim2.new(0, 0, 0, 0)
-    label.BackgroundTransparency = 1
-    label.Text = name .. ":"
-    label.TextColor3 = color
-    label.TextSize = 14
-    label.Font = Enum.Font.GothamBold
-    label.TextXAlignment = Enum.TextXAlignment.Left
-    label.Parent = row
-
-    -- Value display
-    local valueLabel = Instance.new("TextLabel")
-    valueLabel.Name = "Value"
-    valueLabel.Size = UDim2.new(1, -70, 1, 0)
-    valueLabel.Position = UDim2.new(0, 65, 0, 0)
-    valueLabel.BackgroundTransparency = 1
-    valueLabel.Text = "0"
-    valueLabel.TextColor3 = TRADE_THEME.textPrimary
-    valueLabel.TextSize = 16
-    valueLabel.Font = Enum.Font.GothamBold
-    valueLabel.TextXAlignment = Enum.TextXAlignment.Left
-    valueLabel.Parent = row
-
-    return row, valueLabel
+local function createSeparator(text: string, parent: Frame, zIndex: number): TextLabel
+    local sep = Instance.new("TextLabel")
+    sep.Name = "Separator_" .. text
+    sep.Size = UDim2.new(1, -8, 0, 20)
+    sep.BackgroundTransparency = 1
+    sep.Text = "— " .. text .. " —"
+    sep.TextColor3 = TRADE_THEME.separatorColor
+    sep.TextSize = 10
+    sep.Font = Enum.Font.GothamBold
+    sep.ZIndex = zIndex
+    sep.Parent = parent
+    return sep
 end
 
 --[[
-    Creates a section frame (left or right column).
+    Creates a column section frame for the 4-column layout.
 ]]
-local function createSection(title: string, parent: Frame, posX: number, width: number): Frame
+local function createColumnSection(
+    title: string,
+    parent: Frame,
+    posX: number,
+    width: number,
+    height: number,
+    titleColor: Color3,
+    titleBg: Color3,
+    borderColor: Color3,
+    zIndex: number
+): (Frame, Frame)
     local section = Instance.new("Frame")
     section.Name = title:gsub(" ", "") .. "Section"
-    section.Size = UDim2.new(0, width, 0, 220)
-    section.Position = UDim2.new(0, posX, 0, 55)
+    section.Size = UDim2.new(0, width, 0, height)
+    section.Position = UDim2.new(0, posX, 0, 52)
     section.BackgroundColor3 = TRADE_THEME.sectionBg
     section.BorderSizePixel = 0
+    section.ZIndex = zIndex
     section.Parent = parent
 
     local sectionCorner = Instance.new("UICorner")
@@ -299,61 +378,67 @@ local function createSection(title: string, parent: Frame, posX: number, width: 
     sectionCorner.Parent = section
 
     local sectionStroke = Instance.new("UIStroke")
-    sectionStroke.Color = TRADE_THEME.primaryDark
+    sectionStroke.Color = borderColor
     sectionStroke.Thickness = 1
     sectionStroke.Parent = section
 
     -- Section title
     local titleLabel = Instance.new("TextLabel")
     titleLabel.Name = "Title"
-    titleLabel.Size = UDim2.new(1, 0, 0, 30)
-    titleLabel.Position = UDim2.new(0, 0, 0, 0)
-    titleLabel.BackgroundColor3 = TRADE_THEME.headerBg
+    titleLabel.Size = UDim2.new(1, 0, 0, 26)
+    titleLabel.BackgroundColor3 = titleBg
     titleLabel.Text = title
-    titleLabel.TextColor3 = TRADE_THEME.primary
-    titleLabel.TextSize = 13
+    titleLabel.TextColor3 = titleColor
+    titleLabel.TextSize = 11
     titleLabel.Font = Enum.Font.GothamBold
+    titleLabel.ZIndex = zIndex
     titleLabel.Parent = section
 
-    local titleCorner = Instance.new("UICorner")
-    titleCorner.CornerRadius = UDim.new(0, 8)
-    titleCorner.Parent = titleLabel
+    local titleCornerEl = Instance.new("UICorner")
+    titleCornerEl.CornerRadius = UDim.new(0, 8)
+    titleCornerEl.Parent = titleLabel
 
-    -- Fix bottom corners of title
     local titleFix = Instance.new("Frame")
-    titleFix.Name = "TitleFix"
     titleFix.Size = UDim2.new(1, 0, 0, 8)
     titleFix.Position = UDim2.new(0, 0, 1, -8)
-    titleFix.BackgroundColor3 = TRADE_THEME.headerBg
+    titleFix.BackgroundColor3 = titleBg
     titleFix.BorderSizePixel = 0
+    titleFix.ZIndex = zIndex
     titleFix.Parent = titleLabel
 
-    -- Content area
-    local content = Instance.new("Frame")
+    -- Scrollable content area
+    local content = Instance.new("ScrollingFrame")
     content.Name = "Content"
-    content.Size = UDim2.new(1, 0, 1, -35)
-    content.Position = UDim2.new(0, 0, 0, 35)
+    content.Size = UDim2.new(1, 0, 1, -30)
+    content.Position = UDim2.new(0, 0, 0, 30)
     content.BackgroundTransparency = 1
+    content.BorderSizePixel = 0
+    content.ScrollBarThickness = 3
+    content.ScrollBarImageColor3 = TRADE_THEME.primaryDark
+    content.CanvasSize = UDim2.new(0, 0, 0, 0) -- auto-sized by layout
+    content.AutomaticCanvasSize = Enum.AutomaticSize.Y
+    content.ZIndex = zIndex
     content.Parent = section
 
     local contentLayout = Instance.new("UIListLayout")
     contentLayout.FillDirection = Enum.FillDirection.Vertical
-    contentLayout.Padding = UDim.new(0, 4)
+    contentLayout.Padding = UDim.new(0, 3)
     contentLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
     contentLayout.Parent = content
 
     local contentPadding = Instance.new("UIPadding")
-    contentPadding.PaddingTop = UDim.new(0, 6)
-    contentPadding.PaddingLeft = UDim.new(0, 8)
-    contentPadding.PaddingRight = UDim.new(0, 8)
+    contentPadding.PaddingTop = UDim.new(0, 4)
+    contentPadding.PaddingLeft = UDim.new(0, 4)
+    contentPadding.PaddingRight = UDim.new(0, 4)
     contentPadding.Parent = content
 
-    return section
+    return section, content :: Frame
 end
 
---[[
-    Creates the proposal panel (for initiating a trade).
-]]
+-- ============================================================================
+-- UI CREATION - PROPOSAL PANEL (4-column layout)
+-- ============================================================================
+
 local function createProposalPanel(parent: ScreenGui): Frame
     local overlay = Instance.new("Frame")
     overlay.Name = "ProposalOverlay"
@@ -372,10 +457,10 @@ local function createProposalPanel(parent: ScreenGui): Frame
     overlayButton.ZIndex = 10
     overlayButton.Parent = overlay
 
-    -- Main panel (TextButton to absorb clicks and prevent fall-through to overlay)
+    -- Main panel (TextButton to absorb clicks)
     local panel = Instance.new("TextButton")
     panel.Name = "ProposalPanel"
-    panel.Size = UDim2.new(0, 520, 0, 380)
+    panel.Size = UDim2.new(0, 780, 0, 500)
     panel.Position = UDim2.new(0.5, 0, 0.5, 0)
     panel.AnchorPoint = Vector2.new(0.5, 0.5)
     panel.BackgroundColor3 = TRADE_THEME.panelBg
@@ -384,6 +469,7 @@ local function createProposalPanel(parent: ScreenGui): Frame
     panel.Text = ""
     panel.AutoButtonColor = false
     panel.Parent = overlay
+    _proposalPanelInner = panel
 
     local panelCorner = Instance.new("UICorner")
     panelCorner.CornerRadius = UDim.new(0, 12)
@@ -397,11 +483,11 @@ local function createProposalPanel(parent: ScreenGui): Frame
     -- Title
     local title = Instance.new("TextLabel")
     title.Name = "Title"
-    title.Size = UDim2.new(1, 0, 0, 45)
+    title.Size = UDim2.new(1, 0, 0, 42)
     title.BackgroundColor3 = TRADE_THEME.headerBg
     title.Text = "TRADE WITH Player"
     title.TextColor3 = TRADE_THEME.textPrimary
-    title.TextSize = 20
+    title.TextSize = 18
     title.Font = Enum.Font.GothamBold
     title.ZIndex = 12
     title.Parent = panel
@@ -418,142 +504,46 @@ local function createProposalPanel(parent: ScreenGui): Frame
     titleFix.ZIndex = 12
     titleFix.Parent = title
 
-    -- YOUR OFFER section (left)
-    local offerSection = createSection("YOUR OFFER", panel, 15, 235)
-    offerSection.ZIndex = 12
+    -- Column dimensions
+    local colHeight = 355
+    local displayW = 155
+    local inputW = 195
+    local gap = 8
+    local leftPad = 15
 
-    -- Set ZIndex for all children
-    for _, child in offerSection:GetDescendants() do
-        if child:IsA("GuiObject") then
-            child.ZIndex = 12
-        end
-    end
+    -- Col 1: YOUR RESOURCES (read-only display)
+    local _, col1 = createColumnSection(
+        "YOUR RESOURCES", panel, leftPad, displayW, colHeight,
+        TRADE_THEME.textSecondary, Color3.fromRGB(35, 40, 38), TRADE_THEME.primaryDark, 12
+    )
+    _col1Content = col1
 
-    local offerContent = offerSection:FindFirstChild("Content") :: Frame
-    if offerContent then
-        -- Gold input (maxValue = player's gold, resolved dynamically)
-        local _, goldVal = createResourceInput("Gold", TRADE_THEME.goldColor, offerContent, function(newVal)
-            _offerValues.gold = newVal
-            local proposeBtn = panel:FindFirstChild("ProposeButton", true) :: TextButton?
-            if proposeBtn then
-                local hasValue = _offerValues.gold > 0 or _offerValues.wood > 0 or _offerValues.food > 0
-                    or _requestValues.gold > 0 or _requestValues.wood > 0 or _requestValues.food > 0
-                proposeBtn.BackgroundColor3 = if hasValue then TRADE_THEME.primary else TRADE_THEME.cancelGray
-            end
-        end)
-        for _, c in goldVal.Parent:GetDescendants() do if c:IsA("GuiObject") then c.ZIndex = 12 end end
-        goldVal.Parent.ZIndex = 12
+    -- Col 2: YOU GIVE (input)
+    local _, col2 = createColumnSection(
+        "YOU GIVE", panel, leftPad + displayW + gap, inputW, colHeight,
+        TRADE_THEME.primaryLight, TRADE_THEME.headerBg, TRADE_THEME.primary, 12
+    )
+    _col2Content = col2
 
-        -- Wood input
-        local _, woodVal = createResourceInput("Wood", TRADE_THEME.woodColor, offerContent, function(newVal)
-            _offerValues.wood = newVal
-            local proposeBtn = panel:FindFirstChild("ProposeButton", true) :: TextButton?
-            if proposeBtn then
-                local hasValue = _offerValues.gold > 0 or _offerValues.wood > 0 or _offerValues.food > 0
-                    or _requestValues.gold > 0 or _requestValues.wood > 0 or _requestValues.food > 0
-                proposeBtn.BackgroundColor3 = if hasValue then TRADE_THEME.primary else TRADE_THEME.cancelGray
-            end
-        end)
-        for _, c in woodVal.Parent:GetDescendants() do if c:IsA("GuiObject") then c.ZIndex = 12 end end
-        woodVal.Parent.ZIndex = 12
+    -- Col 3: YOU REQUEST (input)
+    local _, col3 = createColumnSection(
+        "YOU REQUEST", panel, leftPad + displayW + gap + inputW + gap, inputW, colHeight,
+        Color3.fromRGB(255, 180, 100), Color3.fromRGB(50, 40, 30), Color3.fromRGB(180, 130, 60), 12
+    )
+    _col3Content = col3
 
-        -- Food input
-        local _, foodVal = createResourceInput("Food", TRADE_THEME.foodColor, offerContent, function(newVal)
-            _offerValues.food = newVal
-            local proposeBtn = panel:FindFirstChild("ProposeButton", true) :: TextButton?
-            if proposeBtn then
-                local hasValue = _offerValues.gold > 0 or _offerValues.wood > 0 or _offerValues.food > 0
-                    or _requestValues.gold > 0 or _requestValues.wood > 0 or _requestValues.food > 0
-                proposeBtn.BackgroundColor3 = if hasValue then TRADE_THEME.primary else TRADE_THEME.cancelGray
-            end
-        end)
-        for _, c in foodVal.Parent:GetDescendants() do if c:IsA("GuiObject") then c.ZIndex = 12 end end
-        foodVal.Parent.ZIndex = 12
-
-        -- "You have" reference labels
-        local haveLabel = Instance.new("TextLabel")
-        haveLabel.Name = "HaveLabel"
-        haveLabel.Size = UDim2.new(1, -16, 0, 40)
-        haveLabel.BackgroundTransparency = 1
-        haveLabel.Text = "You have: 0g / 0w / 0f"
-        haveLabel.TextColor3 = TRADE_THEME.textMuted
-        haveLabel.TextSize = 11
-        haveLabel.Font = Enum.Font.Gotham
-        haveLabel.TextWrapped = true
-        haveLabel.ZIndex = 12
-        haveLabel.Parent = offerContent
-    end
-
-    -- YOU REQUEST section (right)
-    local requestSection = createSection("YOU REQUEST", panel, 270, 235)
-    requestSection.ZIndex = 12
-
-    for _, child in requestSection:GetDescendants() do
-        if child:IsA("GuiObject") then
-            child.ZIndex = 12
-        end
-    end
-
-    local requestContent = requestSection:FindFirstChild("Content") :: Frame
-    if requestContent then
-        -- Gold input (request side - clamped to target's resources)
-        local _, goldReqVal = createResourceInput("Gold", TRADE_THEME.goldColor, requestContent, function(newVal)
-            _requestValues.gold = newVal
-            local proposeBtn = panel:FindFirstChild("ProposeButton", true) :: TextButton?
-            if proposeBtn then
-                local hasValue = _offerValues.gold > 0 or _offerValues.wood > 0 or _offerValues.food > 0
-                    or _requestValues.gold > 0 or _requestValues.wood > 0 or _requestValues.food > 0
-                proposeBtn.BackgroundColor3 = if hasValue then TRADE_THEME.primary else TRADE_THEME.cancelGray
-            end
-        end)
-        for _, c in goldReqVal.Parent:GetDescendants() do if c:IsA("GuiObject") then c.ZIndex = 12 end end
-        goldReqVal.Parent.ZIndex = 12
-
-        -- Wood input
-        local _, woodReqVal = createResourceInput("Wood", TRADE_THEME.woodColor, requestContent, function(newVal)
-            _requestValues.wood = newVal
-            local proposeBtn = panel:FindFirstChild("ProposeButton", true) :: TextButton?
-            if proposeBtn then
-                local hasValue = _offerValues.gold > 0 or _offerValues.wood > 0 or _offerValues.food > 0
-                    or _requestValues.gold > 0 or _requestValues.wood > 0 or _requestValues.food > 0
-                proposeBtn.BackgroundColor3 = if hasValue then TRADE_THEME.primary else TRADE_THEME.cancelGray
-            end
-        end)
-        for _, c in woodReqVal.Parent:GetDescendants() do if c:IsA("GuiObject") then c.ZIndex = 12 end end
-        woodReqVal.Parent.ZIndex = 12
-
-        -- Food input
-        local _, foodReqVal = createResourceInput("Food", TRADE_THEME.foodColor, requestContent, function(newVal)
-            _requestValues.food = newVal
-            local proposeBtn = panel:FindFirstChild("ProposeButton", true) :: TextButton?
-            if proposeBtn then
-                local hasValue = _offerValues.gold > 0 or _offerValues.wood > 0 or _offerValues.food > 0
-                    or _requestValues.gold > 0 or _requestValues.wood > 0 or _requestValues.food > 0
-                proposeBtn.BackgroundColor3 = if hasValue then TRADE_THEME.primary else TRADE_THEME.cancelGray
-            end
-        end)
-        for _, c in foodReqVal.Parent:GetDescendants() do if c:IsA("GuiObject") then c.ZIndex = 12 end end
-        foodReqVal.Parent.ZIndex = 12
-
-        -- "They have" reference labels
-        local theyHaveLabel = Instance.new("TextLabel")
-        theyHaveLabel.Name = "TheyHaveLabel"
-        theyHaveLabel.Size = UDim2.new(1, -16, 0, 40)
-        theyHaveLabel.BackgroundTransparency = 1
-        theyHaveLabel.Text = "They have: 0g / 0w / 0f"
-        theyHaveLabel.TextColor3 = TRADE_THEME.textMuted
-        theyHaveLabel.TextSize = 11
-        theyHaveLabel.Font = Enum.Font.Gotham
-        theyHaveLabel.TextWrapped = true
-        theyHaveLabel.ZIndex = 12
-        theyHaveLabel.Parent = requestContent
-    end
+    -- Col 4: THEIR RESOURCES (read-only display)
+    local _, col4 = createColumnSection(
+        "THEIR RESOURCES", panel, leftPad + displayW + gap + inputW + gap + inputW + gap, displayW, colHeight,
+        TRADE_THEME.textSecondary, Color3.fromRGB(35, 40, 38), TRADE_THEME.primaryDark, 12
+    )
+    _col4Content = col4
 
     -- Buttons row at bottom
     local buttonsFrame = Instance.new("Frame")
     buttonsFrame.Name = "Buttons"
-    buttonsFrame.Size = UDim2.new(1, -30, 0, 45)
-    buttonsFrame.Position = UDim2.new(0, 15, 1, -60)
+    buttonsFrame.Size = UDim2.new(1, -30, 0, 42)
+    buttonsFrame.Position = UDim2.new(0, 15, 1, -55)
     buttonsFrame.BackgroundTransparency = 1
     buttonsFrame.ZIndex = 12
     buttonsFrame.Parent = panel
@@ -567,7 +557,7 @@ local function createProposalPanel(parent: ScreenGui): Frame
     -- Propose button
     local proposeButton = Instance.new("TextButton")
     proposeButton.Name = "ProposeButton"
-    proposeButton.Size = UDim2.new(0, 200, 0, 42)
+    proposeButton.Size = UDim2.new(0, 200, 0, 40)
     proposeButton.BackgroundColor3 = TRADE_THEME.cancelGray -- Starts disabled
     proposeButton.Text = "PROPOSE TRADE"
     proposeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -589,7 +579,7 @@ local function createProposalPanel(parent: ScreenGui): Frame
     -- Cancel button
     local cancelButton = Instance.new("TextButton")
     cancelButton.Name = "CancelButton"
-    cancelButton.Size = UDim2.new(0, 120, 0, 42)
+    cancelButton.Size = UDim2.new(0, 120, 0, 40)
     cancelButton.BackgroundColor3 = TRADE_THEME.cancelGray
     cancelButton.Text = "CANCEL"
     cancelButton.TextColor3 = Color3.fromRGB(220, 210, 190)
@@ -606,21 +596,19 @@ local function createProposalPanel(parent: ScreenGui): Frame
     -- Shift hint
     local shiftHint = Instance.new("TextLabel")
     shiftHint.Name = "ShiftHint"
-    shiftHint.Size = UDim2.new(1, 0, 0, 16)
-    shiftHint.Position = UDim2.new(0, 0, 1, -18)
+    shiftHint.Size = UDim2.new(1, 0, 0, 14)
+    shiftHint.Position = UDim2.new(0, 0, 1, -14)
     shiftHint.BackgroundTransparency = 1
-    shiftHint.Text = "Click a value to type. Shift+click +/- for 1,000"
+    shiftHint.Text = "Click value to type. Shift+click +/- for 1,000 (resources) or 10 (troops)"
     shiftHint.TextColor3 = TRADE_THEME.textMuted
-    shiftHint.TextSize = 10
+    shiftHint.TextSize = 9
     shiftHint.Font = Enum.Font.Gotham
     shiftHint.ZIndex = 12
     shiftHint.Parent = panel
 
     -- Wire propose button
     proposeButton.MouseButton1Click:Connect(function()
-        local hasValue = _offerValues.gold > 0 or _offerValues.wood > 0 or _offerValues.food > 0
-            or _requestValues.gold > 0 or _requestValues.wood > 0 or _requestValues.food > 0
-        if not hasValue then return end
+        if not hasAnyTradeValue() then return end
         if not _targetData then return end
 
         -- Disable button and show proposing state
@@ -628,11 +616,21 @@ local function createProposalPanel(parent: ScreenGui): Frame
         proposeButton.Text = "Proposing..."
         proposeButton.BackgroundColor3 = TRADE_THEME.cancelGray
 
+        -- Build troop tables (only include non-zero)
+        local offerTroopsCopy: {[string]: number} = {}
+        for troopType, count in _offerTroops do
+            if count > 0 then offerTroopsCopy[troopType] = count end
+        end
+        local requestTroopsCopy: {[string]: number} = {}
+        for troopType, count in _requestTroops do
+            if count > 0 then requestTroopsCopy[troopType] = count end
+        end
+
         -- Fire the signal
         TradeUI.TradeProposed:Fire(
             _targetData.userId,
-            { gold = _offerValues.gold, wood = _offerValues.wood, food = _offerValues.food },
-            { gold = _requestValues.gold, wood = _requestValues.wood, food = _requestValues.food }
+            { gold = _offerValues.gold, wood = _offerValues.wood, food = _offerValues.food, troops = offerTroopsCopy },
+            { gold = _requestValues.gold, wood = _requestValues.wood, food = _requestValues.food, troops = requestTroopsCopy }
         )
 
         -- Hide panel after a brief delay
@@ -660,9 +658,6 @@ end
 -- UI CREATION - INCOMING PANEL
 -- ============================================================================
 
---[[
-    Creates the incoming trade proposal panel.
-]]
 local function createIncomingPanel(parent: ScreenGui): Frame
     local overlay = Instance.new("Frame")
     overlay.Name = "IncomingOverlay"
@@ -676,7 +671,7 @@ local function createIncomingPanel(parent: ScreenGui): Frame
     -- Main panel
     local panel = Instance.new("Frame")
     panel.Name = "IncomingPanel"
-    panel.Size = UDim2.new(0, 480, 0, 340)
+    panel.Size = UDim2.new(0, 500, 0, 400)
     panel.Position = UDim2.new(0.5, 0, 0.5, 0)
     panel.AnchorPoint = Vector2.new(0.5, 0.5)
     panel.BackgroundColor3 = TRADE_THEME.panelBg
@@ -722,7 +717,7 @@ local function createIncomingPanel(parent: ScreenGui): Frame
     -- THEY OFFER section (left)
     local offerSection = Instance.new("Frame")
     offerSection.Name = "TheyOfferSection"
-    offerSection.Size = UDim2.new(0, 210, 0, 170)
+    offerSection.Size = UDim2.new(0, 220, 0, 240)
     offerSection.Position = UDim2.new(0, 15, 0, 68)
     offerSection.BackgroundColor3 = TRADE_THEME.sectionBg
     offerSection.BorderSizePixel = 0
@@ -761,45 +756,33 @@ local function createIncomingPanel(parent: ScreenGui): Frame
     offerTitleFix.ZIndex = 22
     offerTitleFix.Parent = offerTitle
 
-    local offerContent = Instance.new("Frame")
+    local offerContent = Instance.new("ScrollingFrame")
     offerContent.Name = "Content"
     offerContent.Size = UDim2.new(1, 0, 1, -35)
     offerContent.Position = UDim2.new(0, 0, 0, 35)
     offerContent.BackgroundTransparency = 1
+    offerContent.BorderSizePixel = 0
+    offerContent.ScrollBarThickness = 3
+    offerContent.AutomaticCanvasSize = Enum.AutomaticSize.Y
     offerContent.ZIndex = 22
     offerContent.Parent = offerSection
 
     local offerLayout = Instance.new("UIListLayout")
     offerLayout.FillDirection = Enum.FillDirection.Vertical
-    offerLayout.Padding = UDim.new(0, 6)
+    offerLayout.Padding = UDim.new(0, 4)
     offerLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
     offerLayout.Parent = offerContent
 
-    local offerPadding = Instance.new("UIPadding")
-    offerPadding.PaddingTop = UDim.new(0, 10)
-    offerPadding.PaddingLeft = UDim.new(0, 10)
-    offerPadding.Parent = offerContent
-
-    local _, offerGoldVal = createResourceDisplay("Gold", TRADE_THEME.goldColor, offerContent)
-    offerGoldVal.ZIndex = 22
-    for _, c in offerGoldVal.Parent:GetDescendants() do if c:IsA("GuiObject") then c.ZIndex = 22 end end
-    offerGoldVal.Parent.ZIndex = 22
-
-    local _, offerWoodVal = createResourceDisplay("Wood", TRADE_THEME.woodColor, offerContent)
-    offerWoodVal.ZIndex = 22
-    for _, c in offerWoodVal.Parent:GetDescendants() do if c:IsA("GuiObject") then c.ZIndex = 22 end end
-    offerWoodVal.Parent.ZIndex = 22
-
-    local _, offerFoodVal = createResourceDisplay("Food", TRADE_THEME.foodColor, offerContent)
-    offerFoodVal.ZIndex = 22
-    for _, c in offerFoodVal.Parent:GetDescendants() do if c:IsA("GuiObject") then c.ZIndex = 22 end end
-    offerFoodVal.Parent.ZIndex = 22
+    local offerPaddingEl = Instance.new("UIPadding")
+    offerPaddingEl.PaddingTop = UDim.new(0, 8)
+    offerPaddingEl.PaddingLeft = UDim.new(0, 8)
+    offerPaddingEl.Parent = offerContent
 
     -- THEY WANT section (right)
     local wantSection = Instance.new("Frame")
     wantSection.Name = "TheyWantSection"
-    wantSection.Size = UDim2.new(0, 210, 0, 170)
-    wantSection.Position = UDim2.new(0, 250, 0, 68)
+    wantSection.Size = UDim2.new(0, 220, 0, 240)
+    wantSection.Position = UDim2.new(0, 260, 0, 68)
     wantSection.BackgroundColor3 = TRADE_THEME.sectionBg
     wantSection.BorderSizePixel = 0
     wantSection.ZIndex = 22
@@ -837,39 +820,27 @@ local function createIncomingPanel(parent: ScreenGui): Frame
     wantTitleFix.ZIndex = 22
     wantTitleFix.Parent = wantTitle
 
-    local wantContent = Instance.new("Frame")
+    local wantContent = Instance.new("ScrollingFrame")
     wantContent.Name = "Content"
     wantContent.Size = UDim2.new(1, 0, 1, -35)
     wantContent.Position = UDim2.new(0, 0, 0, 35)
     wantContent.BackgroundTransparency = 1
+    wantContent.BorderSizePixel = 0
+    wantContent.ScrollBarThickness = 3
+    wantContent.AutomaticCanvasSize = Enum.AutomaticSize.Y
     wantContent.ZIndex = 22
     wantContent.Parent = wantSection
 
     local wantLayout = Instance.new("UIListLayout")
     wantLayout.FillDirection = Enum.FillDirection.Vertical
-    wantLayout.Padding = UDim.new(0, 6)
+    wantLayout.Padding = UDim.new(0, 4)
     wantLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
     wantLayout.Parent = wantContent
 
     local wantPadding = Instance.new("UIPadding")
-    wantPadding.PaddingTop = UDim.new(0, 10)
-    wantPadding.PaddingLeft = UDim.new(0, 10)
+    wantPadding.PaddingTop = UDim.new(0, 8)
+    wantPadding.PaddingLeft = UDim.new(0, 8)
     wantPadding.Parent = wantContent
-
-    local _, wantGoldVal = createResourceDisplay("Gold", TRADE_THEME.goldColor, wantContent)
-    wantGoldVal.ZIndex = 22
-    for _, c in wantGoldVal.Parent:GetDescendants() do if c:IsA("GuiObject") then c.ZIndex = 22 end end
-    wantGoldVal.Parent.ZIndex = 22
-
-    local _, wantWoodVal = createResourceDisplay("Wood", TRADE_THEME.woodColor, wantContent)
-    wantWoodVal.ZIndex = 22
-    for _, c in wantWoodVal.Parent:GetDescendants() do if c:IsA("GuiObject") then c.ZIndex = 22 end end
-    wantWoodVal.Parent.ZIndex = 22
-
-    local _, wantFoodVal = createResourceDisplay("Food", TRADE_THEME.foodColor, wantContent)
-    wantFoodVal.ZIndex = 22
-    for _, c in wantFoodVal.Parent:GetDescendants() do if c:IsA("GuiObject") then c.ZIndex = 22 end end
-    wantFoodVal.Parent.ZIndex = 22
 
     -- Buttons row
     local buttonsFrame = Instance.new("Frame")
@@ -935,13 +906,11 @@ local function createIncomingPanel(parent: ScreenGui): Frame
 
         TradeUI.TradeAccepted:Fire(_currentTradeId)
 
-        -- Stop countdown
         if _incomingCountdownThread then
             task.cancel(_incomingCountdownThread)
             _incomingCountdownThread = nil
         end
 
-        -- Hide panel
         task.delay(0.5, function()
             if overlay.Visible then
                 overlay.Visible = false
@@ -955,7 +924,6 @@ local function createIncomingPanel(parent: ScreenGui): Frame
 
         TradeUI.TradeDeclined:Fire(_currentTradeId)
 
-        -- Stop countdown
         if _incomingCountdownThread then
             task.cancel(_incomingCountdownThread)
             _incomingCountdownThread = nil
@@ -971,9 +939,6 @@ end
 -- UI CREATION - RESULT PANEL
 -- ============================================================================
 
---[[
-    Creates the result notification panel.
-]]
 local function createResultPanel(parent: ScreenGui): Frame
     local frame = Instance.new("Frame")
     frame.Name = "ResultPanel"
@@ -1013,12 +978,106 @@ local function createResultPanel(parent: ScreenGui): Frame
 end
 
 -- ============================================================================
--- PUBLIC API
+-- DYNAMIC CONTENT POPULATION
 -- ============================================================================
 
 --[[
-    Initializes the TradeUI.
+    Clears a content frame of all non-layout children (rows, separators).
 ]]
+local function clearContent(content: Frame)
+    for _, child in content:GetChildren() do
+        if child:IsA("Frame") or (child:IsA("TextLabel") and child.Name:find("Separator")) then
+            child:Destroy()
+        end
+    end
+end
+
+--[[
+    Gets the list of troop types that either player has.
+]]
+local function getActiveTroopTypes(): {string}
+    local types = {}
+    for _, troopType in TROOP_ORDER do
+        local playerCount = _playerTroops[troopType] or 0
+        local targetCount = _targetTroops[troopType] or 0
+        if playerCount > 0 or targetCount > 0 then
+            table.insert(types, troopType)
+        end
+    end
+    return types
+end
+
+--[[
+    Populates a display column (columns 1 or 4) with resource and troop values.
+]]
+local function populateDisplayColumn(
+    content: Frame,
+    resources: {gold: number, wood: number, food: number},
+    troops: {[string]: number},
+    activeTroopTypes: {string},
+    zIndex: number
+)
+    clearContent(content)
+
+    -- Resources
+    createDisplayRow("Gold", TRADE_THEME.goldColor, content, resources.gold, zIndex)
+    createDisplayRow("Wood", TRADE_THEME.woodColor, content, resources.wood, zIndex)
+    createDisplayRow("Food", TRADE_THEME.foodColor, content, resources.food, zIndex)
+
+    -- Troop separator and rows (only if troops exist)
+    if #activeTroopTypes > 0 then
+        createSeparator("TROOPS", content, zIndex)
+        for _, troopType in activeTroopTypes do
+            local displayName = getTroopDisplayName(troopType)
+            local count = troops[troopType] or 0
+            createDisplayRow(displayName, TRADE_THEME.troopColor, content, count, zIndex)
+        end
+    end
+end
+
+--[[
+    Populates an input column (columns 2 or 3) with resource and troop inputs.
+]]
+local function populateInputColumn(
+    content: Frame,
+    valueTable: {gold: number, wood: number, food: number},
+    troopTable: {[string]: number},
+    isOfferSide: boolean,
+    activeTroopTypes: {string},
+    zIndex: number
+)
+    clearContent(content)
+
+    -- Resource inputs
+    createInputRow("Gold", TRADE_THEME.goldColor, content, function(val)
+        valueTable.gold = val
+    end, RESOURCE_STEP, RESOURCE_STEP_SHIFT, zIndex)
+
+    createInputRow("Wood", TRADE_THEME.woodColor, content, function(val)
+        valueTable.wood = val
+    end, RESOURCE_STEP, RESOURCE_STEP_SHIFT, zIndex)
+
+    createInputRow("Food", TRADE_THEME.foodColor, content, function(val)
+        valueTable.food = val
+    end, RESOURCE_STEP, RESOURCE_STEP_SHIFT, zIndex)
+
+    -- Troop inputs (only if troops exist)
+    if #activeTroopTypes > 0 then
+        createSeparator("TROOPS", content, zIndex)
+        for _, troopType in activeTroopTypes do
+            local displayName = getTroopDisplayName(troopType)
+            troopTable[troopType] = 0 -- Initialize
+            createInputRow(displayName, TRADE_THEME.troopColor, content, function(val)
+                troopTable[troopType] = val
+            end, TROOP_STEP, TROOP_STEP_SHIFT, zIndex)
+        end
+    end
+end
+
+-- ============================================================================
+-- PUBLIC API
+-- ============================================================================
+
 function TradeUI:Init()
     if _initialized then
         warn("[TradeUI] Already initialized")
@@ -1047,87 +1106,64 @@ end
 --[[
     Shows the proposal panel for initiating a trade with a target player.
 
-    @param baseData table - Target player data with .userId, .username, .resources (target's resources)
-    @param playerResources table - Current player's resources {gold, wood, food}
+    @param baseData table - Target player data with .userId, .username, .resources, .troops
+    @param playerResources table - Current player's resources {gold, wood, food, troops}
 ]]
-function TradeUI:ShowProposalPanel(baseData: any, playerResources: {gold: number, wood: number, food: number})
+function TradeUI:ShowProposalPanel(baseData: any, playerResources: any)
     if not _proposalPanel then return end
 
     _targetData = baseData
-    _playerResources = playerResources or { gold = 0, wood = 0, food = 0 }
-    _targetResources = (baseData and baseData.resources) or { gold = 0, wood = 0, food = 0 }
+    _playerResources = {
+        gold = (playerResources and playerResources.gold) or 0,
+        wood = (playerResources and playerResources.wood) or 0,
+        food = (playerResources and playerResources.food) or 0,
+    }
+    _targetResources = {
+        gold = (baseData and baseData.resources and baseData.resources.gold) or 0,
+        wood = (baseData and baseData.resources and baseData.resources.wood) or 0,
+        food = (baseData and baseData.resources and baseData.resources.food) or 0,
+    }
+    _playerTroops = (playerResources and playerResources.troops) or {}
+    _targetTroops = (baseData and baseData.troops) or {}
 
     -- Reset values
     _offerValues = { gold = 0, wood = 0, food = 0 }
     _requestValues = { gold = 0, wood = 0, food = 0 }
+    _offerTroops = {}
+    _requestTroops = {}
 
     -- Update title
-    local panel = _proposalPanel:FindFirstChild("ProposalPanel") :: Frame?
+    local panel = _proposalPanelInner
     if panel then
-        local title = panel:FindFirstChild("Title") :: TextLabel?
-        if title then
-            title.Text = "TRADE WITH " .. (baseData.username or "Unknown")
-        end
-
-        -- Reset all value displays
-        local offerSection = panel:FindFirstChild("YOUROFFERSection") :: Frame?
-        if offerSection then
-            local content = offerSection:FindFirstChild("Content") :: Frame?
-            if content then
-                for _, row in content:GetChildren() do
-                    if row:IsA("Frame") and row.Name:find("Row") then
-                        local val = row:FindFirstChild("Value") :: TextLabel?
-                        if val then val.Text = "0" end
-                    end
-                end
-
-                -- Update "You have" label
-                local haveLabel = content:FindFirstChild("HaveLabel") :: TextLabel?
-                if haveLabel then
-                    haveLabel.Text = string.format(
-                        "You have: %sg / %sw / %sf",
-                        formatNumber(_playerResources.gold),
-                        formatNumber(_playerResources.wood),
-                        formatNumber(_playerResources.food)
-                    )
-                end
-            end
-        end
-
-        local requestSection = panel:FindFirstChild("YOUREQUESTSection") :: Frame?
-        if requestSection then
-            local content = requestSection:FindFirstChild("Content") :: Frame?
-            if content then
-                for _, row in content:GetChildren() do
-                    if row:IsA("Frame") and row.Name:find("Row") then
-                        local val = row:FindFirstChild("Value") :: TextLabel?
-                        if val then val.Text = "0" end
-                    end
-                end
-
-                -- Update "They have" label
-                local theyHaveLabel = content:FindFirstChild("TheyHaveLabel") :: TextLabel?
-                if theyHaveLabel then
-                    theyHaveLabel.Text = string.format(
-                        "They have: %sg / %sw / %sf",
-                        formatNumber(_targetResources.gold),
-                        formatNumber(_targetResources.wood),
-                        formatNumber(_targetResources.food)
-                    )
-                end
-            end
+        local titleEl = panel:FindFirstChild("Title") :: TextLabel?
+        if titleEl then
+            titleEl.Text = "TRADE WITH " .. (baseData and baseData.username or "Unknown")
         end
 
         -- Reset propose button
-        local buttonsFrame = panel:FindFirstChild("Buttons") :: Frame?
-        if buttonsFrame then
-            local proposeBtn = buttonsFrame:FindFirstChild("ProposeButton") :: TextButton?
-            if proposeBtn then
-                proposeBtn.Active = true
-                proposeBtn.Text = "PROPOSE TRADE"
-                proposeBtn.BackgroundColor3 = TRADE_THEME.cancelGray
-            end
+        local proposeBtn = panel:FindFirstChild("ProposeButton", true) :: TextButton?
+        if proposeBtn then
+            proposeBtn.Active = true
+            proposeBtn.Text = "PROPOSE TRADE"
+            proposeBtn.BackgroundColor3 = TRADE_THEME.cancelGray
         end
+    end
+
+    -- Get which troop types to show
+    local activeTroopTypes = getActiveTroopTypes()
+
+    -- Populate all 4 columns
+    if _col1Content then
+        populateDisplayColumn(_col1Content, _playerResources, _playerTroops, activeTroopTypes, 12)
+    end
+    if _col2Content then
+        populateInputColumn(_col2Content, _offerValues, _offerTroops, true, activeTroopTypes, 12)
+    end
+    if _col3Content then
+        populateInputColumn(_col3Content, _requestValues, _requestTroops, false, activeTroopTypes, 12)
+    end
+    if _col4Content then
+        populateDisplayColumn(_col4Content, _targetResources, _targetTroops, activeTroopTypes, 12)
     end
 
     -- Show
@@ -1146,7 +1182,6 @@ function TradeUI:ShowIncomingTrade(tradeData: any)
 
     _currentTradeId = tradeData.tradeId
 
-    -- Update title
     local panel = _incomingPanel:FindFirstChild("IncomingPanel") :: Frame?
     if not panel then return end
 
@@ -1155,48 +1190,62 @@ function TradeUI:ShowIncomingTrade(tradeData: any)
         title.Text = (tradeData.proposerName or "Someone") .. " wants to trade!"
     end
 
-    -- Update offer values
+    -- Populate offer section
     local offerSection = panel:FindFirstChild("TheyOfferSection") :: Frame?
     if offerSection then
         local content = offerSection:FindFirstChild("Content") :: Frame?
         if content then
-            local goldRow = content:FindFirstChild("GoldRow") :: Frame?
-            if goldRow then
-                local val = goldRow:FindFirstChild("Value") :: TextLabel?
-                if val then val.Text = formatNumber(tradeData.offering and tradeData.offering.gold or 0) end
-            end
-            local woodRow = content:FindFirstChild("WoodRow") :: Frame?
-            if woodRow then
-                local val = woodRow:FindFirstChild("Value") :: TextLabel?
-                if val then val.Text = formatNumber(tradeData.offering and tradeData.offering.wood or 0) end
-            end
-            local foodRow = content:FindFirstChild("FoodRow") :: Frame?
-            if foodRow then
-                local val = foodRow:FindFirstChild("Value") :: TextLabel?
-                if val then val.Text = formatNumber(tradeData.offering and tradeData.offering.food or 0) end
+            clearContent(content)
+            local offering = tradeData.offering or {}
+            createDisplayRow("Gold", TRADE_THEME.goldColor, content, offering.gold or 0, 22)
+            createDisplayRow("Wood", TRADE_THEME.woodColor, content, offering.wood or 0, 22)
+            createDisplayRow("Food", TRADE_THEME.foodColor, content, offering.food or 0, 22)
+
+            -- Troop rows
+            if offering.troops then
+                local hasTroops = false
+                for _, count in offering.troops do
+                    if count > 0 then hasTroops = true break end
+                end
+                if hasTroops then
+                    createSeparator("TROOPS", content, 22)
+                    for _, troopType in TROOP_ORDER do
+                        local count = offering.troops[troopType]
+                        if count and count > 0 then
+                            createDisplayRow(getTroopDisplayName(troopType), TRADE_THEME.troopColor, content, count, 22)
+                        end
+                    end
+                end
             end
         end
     end
 
-    -- Update want values
+    -- Populate want section
     local wantSection = panel:FindFirstChild("TheyWantSection") :: Frame?
     if wantSection then
         local content = wantSection:FindFirstChild("Content") :: Frame?
         if content then
-            local goldRow = content:FindFirstChild("GoldRow") :: Frame?
-            if goldRow then
-                local val = goldRow:FindFirstChild("Value") :: TextLabel?
-                if val then val.Text = formatNumber(tradeData.requesting and tradeData.requesting.gold or 0) end
-            end
-            local woodRow = content:FindFirstChild("WoodRow") :: Frame?
-            if woodRow then
-                local val = woodRow:FindFirstChild("Value") :: TextLabel?
-                if val then val.Text = formatNumber(tradeData.requesting and tradeData.requesting.wood or 0) end
-            end
-            local foodRow = content:FindFirstChild("FoodRow") :: Frame?
-            if foodRow then
-                local val = foodRow:FindFirstChild("Value") :: TextLabel?
-                if val then val.Text = formatNumber(tradeData.requesting and tradeData.requesting.food or 0) end
+            clearContent(content)
+            local requesting = tradeData.requesting or {}
+            createDisplayRow("Gold", TRADE_THEME.goldColor, content, requesting.gold or 0, 22)
+            createDisplayRow("Wood", TRADE_THEME.woodColor, content, requesting.wood or 0, 22)
+            createDisplayRow("Food", TRADE_THEME.foodColor, content, requesting.food or 0, 22)
+
+            -- Troop rows
+            if requesting.troops then
+                local hasTroops = false
+                for _, count in requesting.troops do
+                    if count > 0 then hasTroops = true break end
+                end
+                if hasTroops then
+                    createSeparator("TROOPS", content, 22)
+                    for _, troopType in TROOP_ORDER do
+                        local count = requesting.troops[troopType]
+                        if count and count > 0 then
+                            createDisplayRow(getTroopDisplayName(troopType), TRADE_THEME.troopColor, content, count, 22)
+                        end
+                    end
+                end
             end
         end
     end
@@ -1231,7 +1280,6 @@ function TradeUI:ShowIncomingTrade(tradeData: any)
             if countdownLabel then
                 countdownLabel.Text = "Expires in: " .. remaining .. "s"
 
-                -- Color changes as time runs out
                 if remaining <= 10 then
                     countdownLabel.TextColor3 = TRADE_THEME.declineRed
                 elseif remaining <= 30 then
@@ -1242,7 +1290,6 @@ function TradeUI:ShowIncomingTrade(tradeData: any)
             end
 
             if remaining <= 0 then
-                -- Auto-decline
                 if _currentTradeId then
                     TradeUI.TradeDeclined:Fire(_currentTradeId)
                 end
@@ -1255,9 +1302,6 @@ function TradeUI:ShowIncomingTrade(tradeData: any)
     end)
 end
 
---[[
-    Hides both panels.
-]]
 function TradeUI:Hide()
     if _proposalPanel then
         _proposalPanel.Visible = false
@@ -1266,7 +1310,6 @@ function TradeUI:Hide()
         _incomingPanel.Visible = false
     end
 
-    -- Stop countdown
     if _incomingCountdownThread then
         task.cancel(_incomingCountdownThread)
         _incomingCountdownThread = nil
@@ -1276,26 +1319,17 @@ function TradeUI:Hide()
     _targetData = nil
 end
 
---[[
-    Shows a result notification.
-
-    @param message string - Result message to display
-    @param isSuccess boolean - Whether the result is positive
-]]
 function TradeUI:ShowResult(message: string, isSuccess: boolean)
     if not _resultPanel then return end
 
-    -- Hide any open panels
     if _proposalPanel then _proposalPanel.Visible = false end
     if _incomingPanel then _incomingPanel.Visible = false end
 
-    -- Cancel any existing hide thread
     if _resultHideThread then
         task.cancel(_resultHideThread)
         _resultHideThread = nil
     end
 
-    -- Update text and color
     local resultText = _resultPanel:FindFirstChild("ResultText") :: TextLabel?
     if resultText then
         resultText.Text = message
@@ -1307,7 +1341,6 @@ function TradeUI:ShowResult(message: string, isSuccess: boolean)
         resultStroke.Color = if isSuccess then TRADE_THEME.successGreen else TRADE_THEME.failureRed
     end
 
-    -- Show and animate in
     _resultPanel.Position = UDim2.new(0.5, 0, 0, -60)
     _resultPanel.Visible = true
 
@@ -1318,7 +1351,6 @@ function TradeUI:ShowResult(message: string, isSuccess: boolean)
     )
     slideIn:Play()
 
-    -- Auto-hide after 3 seconds
     _resultHideThread = task.delay(3, function()
         if not _resultPanel then return end
 

@@ -331,7 +331,7 @@ GetOwnBaseData.OnServerInvoke = function(player)
     return nil
 end
 
--- Get player resources (for HUD)
+-- Get player resources (for HUD) — includes troops for trade UI
 GetPlayerResources.OnServerInvoke = function(player)
     if DataService and DataService.GetPlayerData then
         local data = DataService:GetPlayerData(player)
@@ -340,6 +340,7 @@ GetPlayerResources.OnServerInvoke = function(player)
                 gold = data.resources.gold or 0,
                 wood = data.resources.wood or 0,
                 food = data.resources.food or 0,
+                troops = data.troops or {},
             }
         end
     end
@@ -349,6 +350,7 @@ GetPlayerResources.OnServerInvoke = function(player)
         gold = 0,
         wood = 0,
         food = 0,
+        troops = {},
     }
 end
 
@@ -891,12 +893,32 @@ connectEvent(ProposeTrade, function(player, data)
         gold = math.max(0, math.floor(tonumber(data.offering.gold) or 0)),
         wood = math.max(0, math.floor(tonumber(data.offering.wood) or 0)),
         food = math.max(0, math.floor(tonumber(data.offering.food) or 0)),
+        troops = nil :: {[string]: number}?,
     }
     local requesting = {
         gold = math.max(0, math.floor(tonumber(data.requesting.gold) or 0)),
         wood = math.max(0, math.floor(tonumber(data.requesting.wood) or 0)),
         food = math.max(0, math.floor(tonumber(data.requesting.food) or 0)),
+        troops = nil :: {[string]: number}?,
     }
+
+    -- Sanitize troop values
+    if typeof(data.offering.troops) == "table" then
+        offering.troops = {}
+        for k, v in data.offering.troops do
+            if typeof(k) == "string" and typeof(v) == "number" then
+                offering.troops[k] = math.max(0, math.floor(v))
+            end
+        end
+    end
+    if typeof(data.requesting.troops) == "table" then
+        requesting.troops = {}
+        for k, v in data.requesting.troops do
+            if typeof(k) == "string" and typeof(v) == "number" then
+                requesting.troops[k] = math.max(0, math.floor(v))
+            end
+        end
+    end
 
     local success, tradeIdOrErr = TradeService:ProposeTrade(player, data.targetUserId, offering, requesting)
 

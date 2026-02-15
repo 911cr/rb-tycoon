@@ -429,6 +429,7 @@ function OverworldService:GetBaseData(targetUserId: number, viewerPlayer: Player
     -- Estimate available loot (20% of target resources) + get actual resources for trade
     local lootEstimate = nil
     local targetResources = nil
+    local targetTroops = nil
     if not isOwnBase then
         local dataService = getDataService()
         if dataService and dataService.GetPlayerData then
@@ -447,6 +448,7 @@ function OverworldService:GetBaseData(targetUserId: number, viewerPlayer: Player
                         wood = targetData.resources.wood or 0,
                         food = targetData.resources.food or 0,
                     }
+                    targetTroops = targetData.troops or {}
                 end
             end
         end
@@ -465,6 +467,7 @@ function OverworldService:GetBaseData(targetUserId: number, viewerPlayer: Player
         viewerTownHallLevel = viewerTH,
         lootEstimate = lootEstimate,
         resources = targetResources,
+        troops = targetTroops,
     }
 end
 

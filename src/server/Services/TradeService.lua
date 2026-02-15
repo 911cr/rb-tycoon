@@ -24,6 +24,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerScriptService = game:GetService("ServerScriptService")
 
 local Signal = require(ReplicatedStorage.Shared.Modules.Signal)
+local TroopData = require(ReplicatedStorage.Shared.Constants.TroopData)
 
 -- Forward declaration for DataService (resolved in Init)
 local DataService
@@ -46,8 +47,8 @@ local _activeTrades: {[string]: {
     proposerUserId: number,
     target: Player,
     targetUserId: number,
-    offering: { gold: number, wood: number, food: number },
-    requesting: { gold: number, wood: number, food: number },
+    offering: { gold: number, wood: number, food: number, troops: {[string]: number}? },
+    requesting: { gold: number, wood: number, food: number, troops: {[string]: number}? },
     status: string,
     createdAt: number,
     expiresAt: number,
@@ -120,6 +121,37 @@ local function hasNonZeroResources(resources: {gold: number, wood: number, food:
     return resources.gold > 0 or resources.wood > 0 or resources.food > 0
 end
 
+local function validateTroopTable(troops: any): boolean
+    if troops == nil then return true end
+    if typeof(troops) ~= "table" then return false end
+    for troopType, count in troops do
+        if typeof(troopType) ~= "string" then return false end
+        if typeof(count) ~= "number" then return false end
+        if count ~= count or count == math.huge then return false end
+        if count < 0 or math.floor(count) ~= count then return false end
+        if not TroopData.GetByType(troopType) then return false end
+    end
+    return true
+end
+
+local function hasNonZeroTroops(troops: {[string]: number}?): boolean
+    if not troops then return false end
+    for _, count in troops do
+        if count > 0 then return true end
+    end
+    return false
+end
+
+local function playerHasTroops(playerData: any, troops: {[string]: number}?): boolean
+    if not troops then return true end
+    for troopType, count in troops do
+        if count > 0 and (playerData.troops[troopType] or 0) < count then
+            return false
+        end
+    end
+    return true
+end
+
 --[[
     Initializes TradeService. Resolves DataService reference and
     sets up player cleanup on disconnect.
@@ -164,8 +196,8 @@ end
 function TradeService:ProposeTrade(
     proposer: Player,
     targetUserId: number,
-    offering: { gold: number, wood: number, food: number },
-    requesting: { gold: number, wood: number, food: number }
+    offering: { gold: number, wood: number, food: number, troops: {[string]: number}? },
+    requesting: { gold: number, wood: number, food: number, troops: {[string]: number}? }
 ): (boolean, string?)
     -- 1. Rate limit: 5 seconds between proposals
     local now = os.clock()
@@ -203,9 +235,16 @@ function TradeService:ProposeTrade(
     if not validateResourceTable(requesting) then
         return false, "INVALID_REQUESTING"
     end
+    if not validateTroopTable(offering.troops) then
+        return false, "INVALID_OFFERING"
+    end
+    if not validateTroopTable(requesting.troops) then
+        return false, "INVALID_REQUESTING"
+    end
 
-    -- 7. Validate at least one side has non-zero resources
-    if not hasNonZeroResources(offering) and not hasNonZeroResources(requesting) then
+    -- 7. Validate at least one side has non-zero resources or troops
+    if not hasNonZeroResources(offering) and not hasNonZeroResources(requesting)
+        and not hasNonZeroTroops(offering.troops) and not hasNonZeroTroops(requesting.troops) then
         return false, "EMPTY_TRADE"
     end
 
@@ -223,6 +262,17 @@ function TradeService:ProposeTrade(
         return false, "INSUFFICIENT_RESOURCES"
     end
 
+    -- 8b. Validate proposer has the troops they're offering
+    if hasNonZeroTroops(offering.troops) then
+        local proposerData = DataService:GetPlayerData(proposer)
+        if not proposerData then
+            return false, "SERVICE_UNAVAILABLE"
+        end
+        if not playerHasTroops(proposerData, offering.troops) then
+            return false, "INSUFFICIENT_TROOPS"
+        end
+    end
+
     -- 9. Generate trade ID
     local tradeId = HttpService:GenerateGUID(false)
 
@@ -238,11 +288,13 @@ function TradeService:ProposeTrade(
             gold = offering.gold,
             wood = offering.wood,
             food = offering.food,
+            troops = offering.troops,
         },
         requesting = {
             gold = requesting.gold,
             wood = requesting.wood,
             food = requesting.food,
+            troops = requesting.troops,
         },
         status = "pending",
         createdAt = createdAt,
@@ -347,6 +399,28 @@ function TradeService:RespondToTrade(responder: Player, tradeId: string, accepte
         return false, "TARGET_INSUFFICIENT_RESOURCES"
     end
 
+    -- Validate proposer has troops they're offering
+    if hasNonZeroTroops(trade.offering.troops) then
+        local pData = DataService:GetPlayerData(proposer)
+        if not pData or not playerHasTroops(pData, trade.offering.troops) then
+            trade.status = "cancelled"
+            TradeService.TradeCancelled:Fire(trade, "proposer_insufficient_troops")
+            cleanupTrade(tradeId)
+            return false, "PROPOSER_INSUFFICIENT_TROOPS"
+        end
+    end
+
+    -- Validate target has troops being requested
+    if hasNonZeroTroops(trade.requesting.troops) then
+        local tData = DataService:GetPlayerData(responder)
+        if not tData or not playerHasTroops(tData, trade.requesting.troops) then
+            trade.status = "cancelled"
+            TradeService.TradeCancelled:Fire(trade, "target_insufficient_troops")
+            cleanupTrade(tradeId)
+            return false, "TARGET_INSUFFICIENT_TROOPS"
+        end
+    end
+
     -- 5. Perform atomic swap
     -- Step A: Deduct offering from proposer
     local deductProposer = DataService:DeductResources(proposer, {
@@ -393,6 +467,37 @@ function TradeService:RespondToTrade(responder: Player, tradeId: string, accepte
         wood = trade.requesting.wood,
         food = trade.requesting.food,
     })
+
+    -- Step E: Swap troops (direct playerData manipulation)
+    if hasNonZeroTroops(trade.offering.troops) or hasNonZeroTroops(trade.requesting.troops) then
+        local proposerData = DataService:GetPlayerData(proposer)
+        local targetData = DataService:GetPlayerData(responder)
+
+        if proposerData and targetData then
+            proposerData.troops = proposerData.troops or {}
+            targetData.troops = targetData.troops or {}
+
+            -- Deduct offered troops from proposer, add to target
+            if trade.offering.troops then
+                for troopType, count in trade.offering.troops do
+                    if count > 0 then
+                        proposerData.troops[troopType] = (proposerData.troops[troopType] or 0) - count
+                        targetData.troops[troopType] = (targetData.troops[troopType] or 0) + count
+                    end
+                end
+            end
+
+            -- Deduct requested troops from target, add to proposer
+            if trade.requesting.troops then
+                for troopType, count in trade.requesting.troops do
+                    if count > 0 then
+                        targetData.troops[troopType] = (targetData.troops[troopType] or 0) - count
+                        proposerData.troops[troopType] = (proposerData.troops[troopType] or 0) + count
+                    end
+                end
+            end
+        end
+    end
 
     -- 6. Sync HUD for both players
     local eventsFolder = ReplicatedStorage:FindFirstChild("Events")
