@@ -48,6 +48,21 @@ local _interactionCallbacks = {}
 -- Parts where visitors can interact (help the owner mine/chop/farm)
 local _visitorAllowedParts = {}
 
+-- Helper: send notification to player via ServerResponse event
+local function notifyPlayer(player, action, success, message)
+    local Events = ReplicatedStorage:FindFirstChild("Events")
+    if Events then
+        local ServerResponse = Events:FindFirstChild("ServerResponse")
+        if ServerResponse then
+            if success then
+                ServerResponse:FireClient(player, action, { success = true, message = message })
+            else
+                ServerResponse:FireClient(player, action, { success = false, error = message })
+            end
+        end
+    end
+end
+
 -- Helper: deduct resources from player, sync HUD, return true/false
 local function deductPlayerResources(player, costs, contextMsg)
     if not DataService then
@@ -4607,6 +4622,7 @@ local function createGoldMine()
         -- Check if any waiting workers left at the stand
         if #GoldMineState.waitingMiners == 0 then
             print(string.format("[GoldMine] %s: No workers available to hire!", player.Name))
+            notifyPlayer(player, "HireWorker", false, "No miners available to hire!")
             return
         end
 
@@ -4615,11 +4631,16 @@ local function createGoldMine()
 
         if minerCount >= maxMiners then
             print(string.format("[GoldMine] %s: Max miners (3) reached!", player.Name))
+            notifyPlayer(player, "HireWorker", false, "Max miners (3) already hired!")
             return
         end
 
         local cost = MinerCosts[minerCount + 1]
-        if not deductPlayerResources(player, {gold = cost.gold, food = cost.food}, "GoldMine") then return end
+        if not deductPlayerResources(player, {gold = cost.gold, food = cost.food}, "GoldMine") then
+            notifyPlayer(player, "HireWorker", false, string.format("Need %dg + %df to hire!", cost.gold, cost.food))
+            return
+        end
+        notifyPlayer(player, "HireWorker", true, "Miner hired!")
         local minerId = minerCount + 1
 
         -- Remove one waiting worker from the stand (they walk away to work)
@@ -4879,6 +4900,7 @@ local function createGoldMine()
         -- Check if any waiting workers left at the stand
         if #GoldMineState.waitingCollectors == 0 then
             print(string.format("[GoldMine] %s: No collectors available to hire!", player.Name))
+            notifyPlayer(player, "HireWorker", false, "No collectors available to hire!")
             return
         end
 
@@ -4887,11 +4909,16 @@ local function createGoldMine()
 
         if collectorCount >= maxCollectors then
             print(string.format("[GoldMine] %s: Max collectors (3) reached!", player.Name))
+            notifyPlayer(player, "HireWorker", false, "Max collectors (3) already hired!")
             return
         end
 
         local cost = CollectorCosts[collectorCount + 1]
-        if not deductPlayerResources(player, {gold = cost.gold, food = cost.food}, "GoldMine") then return end
+        if not deductPlayerResources(player, {gold = cost.gold, food = cost.food}, "GoldMine") then
+            notifyPlayer(player, "HireWorker", false, string.format("Need %dg + %df to hire!", cost.gold, cost.food))
+            return
+        end
+        notifyPlayer(player, "HireWorker", true, "Collector hired!")
         local collectorId = collectorCount + 1
 
         -- Remove one waiting worker from the stand (they walk away to work)
@@ -7313,17 +7340,23 @@ local function createLumberMill()
 
         if loggerCount >= maxLoggers then
             print(string.format("[LumberMill] %s: Max loggers (3) reached!", player.Name))
+            notifyPlayer(player, "HireWorker", false, "Max loggers (3) already hired!")
             return
         end
 
         -- Check if there are waiting workers
         if #LumberMillState.waitingLoggers == 0 then
             print(string.format("[LumberMill] %s: No loggers available to hire!", player.Name))
+            notifyPlayer(player, "HireWorker", false, "No loggers available to hire!")
             return
         end
 
         local cost = LoggerCosts[loggerCount + 1]
-        if not deductPlayerResources(player, {gold = cost.gold, food = cost.food}, "LumberMill") then return end
+        if not deductPlayerResources(player, {gold = cost.gold, food = cost.food}, "LumberMill") then
+            notifyPlayer(player, "HireWorker", false, string.format("Need %dg + %df to hire!", cost.gold, cost.food))
+            return
+        end
+        notifyPlayer(player, "HireWorker", true, "Logger hired!")
         local loggerId = loggerCount + 1
 
         -- Remove one waiting worker from the stand (they walk away to work)
@@ -9715,6 +9748,7 @@ local function createFarm(farmNumber)
         -- Check if any waiting workers left at the stand
         if #FarmState.waitingFarmers == 0 then
             print(string.format("[Farm] %s: No workers available to hire!", player.Name))
+            notifyPlayer(player, "HireWorker", false, "No farmers available to hire!")
             return
         end
 
@@ -9723,11 +9757,16 @@ local function createFarm(farmNumber)
 
         if farmerCount >= maxFarmers then
             print(string.format("[Farm] %s: Max farmers (3) reached!", player.Name))
+            notifyPlayer(player, "HireWorker", false, "Max farmers (3) already hired!")
             return
         end
 
         local cost = FarmerCosts[farmerCount + 1]
-        if not deductPlayerResources(player, {gold = cost.gold, food = cost.food}, "Farm") then return end
+        if not deductPlayerResources(player, {gold = cost.gold, food = cost.food}, "Farm") then
+            notifyPlayer(player, "HireWorker", false, string.format("Need %dg + %df to hire!", cost.gold, cost.food))
+            return
+        end
+        notifyPlayer(player, "HireWorker", true, "Farmer hired!")
         local farmerId = farmerCount + 1
 
         -- Remove one waiting worker from the stand (they walk away to work)
@@ -9968,6 +10007,7 @@ local function createFarm(farmNumber)
         -- Check if any waiting workers left at the stand
         if #FarmState.waitingCarriers == 0 then
             print(string.format("[Farm] %s: No carriers available to hire!", player.Name))
+            notifyPlayer(player, "HireWorker", false, "No carriers available to hire!")
             return
         end
 
@@ -9976,11 +10016,16 @@ local function createFarm(farmNumber)
 
         if carrierCount >= maxCarriers then
             print(string.format("[Farm] %s: Max carriers (3) reached!", player.Name))
+            notifyPlayer(player, "HireWorker", false, "Max carriers (3) already hired!")
             return
         end
 
         local cost = CarrierCosts[carrierCount + 1]
-        if not deductPlayerResources(player, {gold = cost.gold, food = cost.food}, "Farm") then return end
+        if not deductPlayerResources(player, {gold = cost.gold, food = cost.food}, "Farm") then
+            notifyPlayer(player, "HireWorker", false, string.format("Need %dg + %df to hire!", cost.gold, cost.food))
+            return
+        end
+        notifyPlayer(player, "HireWorker", true, "Carrier hired!")
 
         -- Remove one waiting worker from the stand (they walk away to work)
         local waitingWorker = table.remove(FarmState.waitingCarriers, 1)

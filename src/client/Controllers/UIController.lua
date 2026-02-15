@@ -702,6 +702,8 @@ function UIController:Init()
                     Notifications:Success("Spell brewing started!")
                 elseif action == "CancelSpellBrewing" then
                     Notifications:Info("Spell brewing cancelled")
+                elseif action == "HireWorker" then
+                    Notifications:Success(result.message or "Worker hired!")
                 end
             else
                 local errorMsg = result.error or "Action failed"
@@ -745,6 +747,8 @@ function UIController:Init()
                     Notifications:Info("You have the maximum number of farm plots!")
                 elseif errorMsg == "Not enough gold" then
                     Notifications:Error("Not enough gold!")
+                elseif action == "HireWorker" then
+                    Notifications:Warning(errorMsg)
                 else
                     Notifications:Error(action .. " failed")
                 end
