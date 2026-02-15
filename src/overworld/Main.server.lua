@@ -1037,22 +1037,33 @@ Players.PlayerAdded:Connect(function(player)
         end
     end
 
-    -- Sync player resources to client HUD and auto-create village access code
-    task.delay(2, function()
-        if player.Parent == nil then return end -- Player already left
-        if DataService and DataService.GetPlayerData then
-            local playerData = DataService:GetPlayerData(player)
-            if playerData then
-                SyncPlayerData:FireClient(player, playerData)
-                print(string.format("[OVERWORLD] Synced player data to %s", player.Name))
+    -- Wait for DataService to load player data before registering.
+    -- DataService.Init() connects its own PlayerAdded handler which calls LoadPlayerData,
+    -- but that's async (DataStore:GetAsync). We must wait for it to finish so
+    -- getSpawnPosition() reads the correct saved mapPosition instead of generating
+    -- a random one. Returning players skip this (their state is already in memory).
+    if DataService and not isReturning then
+        local waitStart = os.clock()
+        while not DataService:GetPlayerData(player) do
+            if player.Parent == nil then return end -- Player left during load
+            if os.clock() - waitStart > 10 then
+                warn(string.format("[OVERWORLD] Timed out waiting for data load: %s", player.Name))
+                break
             end
+            task.wait(0.2)
         end
+    end
 
-        -- Ensure player has a village access code so others can visit them
-        if TeleportManager and TeleportManager.EnsureVillageAccessCode then
-            TeleportManager:EnsureVillageAccessCode(player)
+    -- Now that data is loaded, sync resources to client and ensure access code
+    if DataService and DataService.GetPlayerData then
+        local playerData = DataService:GetPlayerData(player)
+        if playerData then
+            SyncPlayerData:FireClient(player, playerData)
         end
-    end)
+    end
+    if TeleportManager and TeleportManager.EnsureVillageAccessCode then
+        TeleportManager:EnsureVillageAccessCode(player)
+    end
 
     -- Register player in overworld (handles returning-from-village automatically)
     if OverworldService then
@@ -1101,7 +1112,7 @@ Players.PlayerAdded:Connect(function(player)
         end
     end
 
-    -- Send initial data to client after brief delay
+    -- Send initial data to client after brief delay (data is now loaded)
     task.delay(1, function()
         if player.Parent == nil then return end -- Player left
 
