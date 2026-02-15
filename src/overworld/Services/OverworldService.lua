@@ -426,8 +426,9 @@ function OverworldService:GetBaseData(targetUserId: number, viewerPlayer: Player
         viewerTH = viewerState.townHallLevel or 1
     end
 
-    -- Estimate available loot (20% of target resources)
+    -- Estimate available loot (20% of target resources) + get actual resources for trade
     local lootEstimate = nil
+    local targetResources = nil
     if not isOwnBase then
         local dataService = getDataService()
         if dataService and dataService.GetPlayerData then
@@ -440,6 +441,11 @@ function OverworldService:GetBaseData(targetUserId: number, viewerPlayer: Player
                         gold = math.floor((targetData.resources.gold or 0) * lootPercent),
                         wood = math.floor((targetData.resources.wood or 0) * lootPercent),
                         food = math.floor((targetData.resources.food or 0) * lootPercent),
+                    }
+                    targetResources = {
+                        gold = targetData.resources.gold or 0,
+                        wood = targetData.resources.wood or 0,
+                        food = targetData.resources.food or 0,
                     }
                 end
             end
@@ -458,6 +464,7 @@ function OverworldService:GetBaseData(targetUserId: number, viewerPlayer: Player
         isOwnBase = isOwnBase,
         viewerTownHallLevel = viewerTH,
         lootEstimate = lootEstimate,
+        resources = targetResources,
     }
 end
 

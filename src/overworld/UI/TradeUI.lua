@@ -56,6 +56,7 @@ local _resultPanel: Frame? = nil
 local _currentTradeId: string? = nil
 local _targetData: any? = nil
 local _playerResources = { gold = 0, wood = 0, food = 0 }
+local _targetResources = { gold = 0, wood = 0, food = 0 }
 
 -- Proposal panel input values
 local _offerValues = { gold = 0, wood = 0, food = 0 }
@@ -133,9 +134,9 @@ local function createResourceInput(
     color: Color3,
     parent: Frame,
     onChanged: (number) -> (),
-    maxValue: number?
+    maxValue: (number | (() -> number))?
 ): (Frame, TextBox, TextLabel?)
-    local clampMax = maxValue or 999999
+    local getClampMax = if type(maxValue) == "function" then maxValue else function() return (maxValue :: number?) or 99999999999999 end
 
     local row = Instance.new("Frame")
     row.Name = name .. "Row"
@@ -213,7 +214,7 @@ local function createResourceInput(
     -- Handle typed input
     valueLabel.FocusLost:Connect(function(_enterPressed)
         local parsed = tonumber(valueLabel.Text:gsub(",", "")) or 0
-        parsed = math.clamp(math.floor(parsed), 0, clampMax)
+        parsed = math.clamp(math.floor(parsed), 0, getClampMax())
         valueLabel.Text = formatNumber(parsed)
         onChanged(parsed)
     end)
@@ -222,14 +223,16 @@ local function createResourceInput(
     minusButton.MouseButton1Click:Connect(function()
         local step = if isShiftHeld() then RESOURCE_STEP_SHIFT else RESOURCE_STEP
         local current = tonumber(valueLabel.Text:gsub(",", "")) or 0
-        local newVal = math.clamp(current - step, 0, clampMax)
+        local newVal = math.clamp(current - step, 0, getClampMax())
+        valueLabel.Text = formatNumber(newVal)
         onChanged(newVal)
     end)
 
     plusButton.MouseButton1Click:Connect(function()
         local step = if isShiftHeld() then RESOURCE_STEP_SHIFT else RESOURCE_STEP
         local current = tonumber(valueLabel.Text:gsub(",", "")) or 0
-        local newVal = math.clamp(current + step, 0, clampMax)
+        local newVal = math.clamp(current + step, 0, getClampMax())
+        valueLabel.Text = formatNumber(newVal)
         onChanged(newVal)
     end)
 
@@ -428,52 +431,42 @@ local function createProposalPanel(parent: ScreenGui): Frame
 
     local offerContent = offerSection:FindFirstChild("Content") :: Frame
     if offerContent then
-        -- Gold input (maxValue = player's gold, clamped in createResourceInput)
+        -- Gold input (maxValue = player's gold, resolved dynamically)
         local _, goldVal = createResourceInput("Gold", TRADE_THEME.goldColor, offerContent, function(newVal)
-            _offerValues.gold = math.min(newVal, _playerResources.gold)
-            if goldVal then
-                goldVal.Text = formatNumber(_offerValues.gold)
-            end
-            -- Update propose button state
+            _offerValues.gold = newVal
             local proposeBtn = panel:FindFirstChild("ProposeButton") :: TextButton?
             if proposeBtn then
                 local hasValue = _offerValues.gold > 0 or _offerValues.wood > 0 or _offerValues.food > 0
                     or _requestValues.gold > 0 or _requestValues.wood > 0 or _requestValues.food > 0
                 proposeBtn.BackgroundColor3 = if hasValue then TRADE_THEME.primary else TRADE_THEME.cancelGray
             end
-        end, _playerResources.gold)
+        end, function() return _playerResources.gold end)
         for _, c in goldVal.Parent:GetDescendants() do if c:IsA("GuiObject") then c.ZIndex = 12 end end
         goldVal.Parent.ZIndex = 12
 
         -- Wood input
         local _, woodVal = createResourceInput("Wood", TRADE_THEME.woodColor, offerContent, function(newVal)
-            _offerValues.wood = math.min(newVal, _playerResources.wood)
-            if woodVal then
-                woodVal.Text = formatNumber(_offerValues.wood)
-            end
+            _offerValues.wood = newVal
             local proposeBtn = panel:FindFirstChild("ProposeButton") :: TextButton?
             if proposeBtn then
                 local hasValue = _offerValues.gold > 0 or _offerValues.wood > 0 or _offerValues.food > 0
                     or _requestValues.gold > 0 or _requestValues.wood > 0 or _requestValues.food > 0
                 proposeBtn.BackgroundColor3 = if hasValue then TRADE_THEME.primary else TRADE_THEME.cancelGray
             end
-        end, _playerResources.wood)
+        end, function() return _playerResources.wood end)
         for _, c in woodVal.Parent:GetDescendants() do if c:IsA("GuiObject") then c.ZIndex = 12 end end
         woodVal.Parent.ZIndex = 12
 
         -- Food input
         local _, foodVal = createResourceInput("Food", TRADE_THEME.foodColor, offerContent, function(newVal)
-            _offerValues.food = math.min(newVal, _playerResources.food)
-            if foodVal then
-                foodVal.Text = formatNumber(_offerValues.food)
-            end
+            _offerValues.food = newVal
             local proposeBtn = panel:FindFirstChild("ProposeButton") :: TextButton?
             if proposeBtn then
                 local hasValue = _offerValues.gold > 0 or _offerValues.wood > 0 or _offerValues.food > 0
                     or _requestValues.gold > 0 or _requestValues.wood > 0 or _requestValues.food > 0
                 proposeBtn.BackgroundColor3 = if hasValue then TRADE_THEME.primary else TRADE_THEME.cancelGray
             end
-        end, _playerResources.food)
+        end, function() return _playerResources.food end)
         for _, c in foodVal.Parent:GetDescendants() do if c:IsA("GuiObject") then c.ZIndex = 12 end end
         foodVal.Parent.ZIndex = 12
 
@@ -503,53 +496,57 @@ local function createProposalPanel(parent: ScreenGui): Frame
 
     local requestContent = requestSection:FindFirstChild("Content") :: Frame
     if requestContent then
-        -- Gold input (request side - no player cap)
+        -- Gold input (request side - clamped to target's resources)
         local _, goldReqVal = createResourceInput("Gold", TRADE_THEME.goldColor, requestContent, function(newVal)
             _requestValues.gold = newVal
-            if goldReqVal then
-                goldReqVal.Text = formatNumber(_requestValues.gold)
-            end
             local proposeBtn = panel:FindFirstChild("ProposeButton") :: TextButton?
             if proposeBtn then
                 local hasValue = _offerValues.gold > 0 or _offerValues.wood > 0 or _offerValues.food > 0
                     or _requestValues.gold > 0 or _requestValues.wood > 0 or _requestValues.food > 0
                 proposeBtn.BackgroundColor3 = if hasValue then TRADE_THEME.primary else TRADE_THEME.cancelGray
             end
-        end, 999999)
+        end, function() return _targetResources.gold end)
         for _, c in goldReqVal.Parent:GetDescendants() do if c:IsA("GuiObject") then c.ZIndex = 12 end end
         goldReqVal.Parent.ZIndex = 12
 
         -- Wood input
         local _, woodReqVal = createResourceInput("Wood", TRADE_THEME.woodColor, requestContent, function(newVal)
             _requestValues.wood = newVal
-            if woodReqVal then
-                woodReqVal.Text = formatNumber(_requestValues.wood)
-            end
             local proposeBtn = panel:FindFirstChild("ProposeButton") :: TextButton?
             if proposeBtn then
                 local hasValue = _offerValues.gold > 0 or _offerValues.wood > 0 or _offerValues.food > 0
                     or _requestValues.gold > 0 or _requestValues.wood > 0 or _requestValues.food > 0
                 proposeBtn.BackgroundColor3 = if hasValue then TRADE_THEME.primary else TRADE_THEME.cancelGray
             end
-        end, 999999)
+        end, function() return _targetResources.wood end)
         for _, c in woodReqVal.Parent:GetDescendants() do if c:IsA("GuiObject") then c.ZIndex = 12 end end
         woodReqVal.Parent.ZIndex = 12
 
         -- Food input
         local _, foodReqVal = createResourceInput("Food", TRADE_THEME.foodColor, requestContent, function(newVal)
             _requestValues.food = newVal
-            if foodReqVal then
-                foodReqVal.Text = formatNumber(_requestValues.food)
-            end
             local proposeBtn = panel:FindFirstChild("ProposeButton") :: TextButton?
             if proposeBtn then
                 local hasValue = _offerValues.gold > 0 or _offerValues.wood > 0 or _offerValues.food > 0
                     or _requestValues.gold > 0 or _requestValues.wood > 0 or _requestValues.food > 0
                 proposeBtn.BackgroundColor3 = if hasValue then TRADE_THEME.primary else TRADE_THEME.cancelGray
             end
-        end, 999999)
+        end, function() return _targetResources.food end)
         for _, c in foodReqVal.Parent:GetDescendants() do if c:IsA("GuiObject") then c.ZIndex = 12 end end
         foodReqVal.Parent.ZIndex = 12
+
+        -- "They have" reference labels
+        local theyHaveLabel = Instance.new("TextLabel")
+        theyHaveLabel.Name = "TheyHaveLabel"
+        theyHaveLabel.Size = UDim2.new(1, -16, 0, 40)
+        theyHaveLabel.BackgroundTransparency = 1
+        theyHaveLabel.Text = "They have: 0g / 0w / 0f"
+        theyHaveLabel.TextColor3 = TRADE_THEME.textMuted
+        theyHaveLabel.TextSize = 11
+        theyHaveLabel.Font = Enum.Font.Gotham
+        theyHaveLabel.TextWrapped = true
+        theyHaveLabel.ZIndex = 12
+        theyHaveLabel.Parent = requestContent
     end
 
     -- Buttons row at bottom
@@ -1050,7 +1047,7 @@ end
 --[[
     Shows the proposal panel for initiating a trade with a target player.
 
-    @param baseData table - Target player data with .userId, .username
+    @param baseData table - Target player data with .userId, .username, .resources (target's resources)
     @param playerResources table - Current player's resources {gold, wood, food}
 ]]
 function TradeUI:ShowProposalPanel(baseData: any, playerResources: {gold: number, wood: number, food: number})
@@ -1058,6 +1055,7 @@ function TradeUI:ShowProposalPanel(baseData: any, playerResources: {gold: number
 
     _targetData = baseData
     _playerResources = playerResources or { gold = 0, wood = 0, food = 0 }
+    _targetResources = (baseData and baseData.resources) or { gold = 0, wood = 0, food = 0 }
 
     -- Reset values
     _offerValues = { gold = 0, wood = 0, food = 0 }
@@ -1105,6 +1103,17 @@ function TradeUI:ShowProposalPanel(baseData: any, playerResources: {gold: number
                         local val = row:FindFirstChild("Value") :: TextLabel?
                         if val then val.Text = "0" end
                     end
+                end
+
+                -- Update "They have" label
+                local theyHaveLabel = content:FindFirstChild("TheyHaveLabel") :: TextLabel?
+                if theyHaveLabel then
+                    theyHaveLabel.Text = string.format(
+                        "They have: %sg / %sw / %sf",
+                        formatNumber(_targetResources.gold),
+                        formatNumber(_targetResources.wood),
+                        formatNumber(_targetResources.food)
+                    )
                 end
             end
         end

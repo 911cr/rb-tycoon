@@ -1578,10 +1578,14 @@ do
                             if ok and res then resources = res end
                         end
 
-                        TradeUI:ShowProposalPanel(
-                            { userId = targetUserId, username = targetName },
-                            resources
-                        )
+                        -- Fetch target's base data (includes their resources)
+                        local targetBaseData = { userId = targetUserId, username = targetName }
+                        local ok2, bd = pcall(function() return GetBaseData:InvokeServer(targetUserId) end)
+                        if ok2 and bd then
+                            targetBaseData = bd
+                        end
+
+                        TradeUI:ShowProposalPanel(targetBaseData, resources)
                     end)
 
                     _tradeBillboards[otherPlayer.UserId] = billboard

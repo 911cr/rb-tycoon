@@ -62,7 +62,7 @@ local _rateLimits: {[number]: number} = {}
 -- Constants
 local TRADE_RATE_LIMIT = 5 -- seconds between proposals per player
 local TRADE_EXPIRY = 60 -- seconds before a trade auto-expires
-local MAX_RESOURCE_VALUE = 999999 -- sanity cap per resource type
+local MAX_RESOURCE_VALUE = 99999999999999 -- sanity cap per resource type
 
 --[[
     Cleans up a trade from all tracking tables.
