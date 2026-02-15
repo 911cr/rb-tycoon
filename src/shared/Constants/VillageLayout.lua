@@ -61,12 +61,13 @@ VillageLayout.Decorations = {
 -- ============================================================================
 
 VillageLayout.Gate = {
-    -- Trigger zone in front of the entrance gate (local coords, offset by CenterOffset)
-    -- Gate arch is at world (60, Y, 8), towers at X=45..75
-    -- Local: center X=10, Z=-42; trigger extends well outside village so players
-    -- can walk out and still see the popup, won't miss it by walking through
-    position = Vector3.new(10, 3, -56),
-    size = Vector3.new(30, 10, 30), -- Wide gate opening, deep trigger zone extending outside village
+    -- Trigger zone spanning the gate doorway and extending far outside the village.
+    -- Gate arch is at world (60, Y, 8), gate opening X=47..73, GROUND_Y=2.
+    -- This zone starts a few studs INSIDE the gate (world Z=12) and extends
+    -- far outside (world Z=-40) so you can't miss it.
+    -- Local coords: world - CenterOffset(50,0,50)
+    position = Vector3.new(10, 5, -64), -- world center: (60, 5, -14)
+    size = Vector3.new(30, 14, 52),     -- fills gate opening, 52 studs deep (inside to far outside)
 }
 
 -- ============================================================================
