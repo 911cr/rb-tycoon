@@ -14667,6 +14667,77 @@ Players.PlayerAdded:Connect(function(player)
     end
 end)
 
+-- Catch up: process players who joined before the PlayerAdded handler was connected
+-- (This is a standard Roblox pattern - PlayerAdded can fire before the handler is registered
+--  if the script yields during init, e.g. waiting for VillageStateService)
+for _, player in Players:GetPlayers() do
+    if not _playerRoles[player.UserId] then
+        local joinData = player:GetJoinData()
+        local teleportData = joinData and joinData.TeleportData
+
+        if teleportData and teleportData.isOwner then
+            _playerRoles[player.UserId] = "owner"
+            _villageOwnerUserId = player.UserId
+            print(string.format("[Village] %s retroactively set as OWNER (joined before handler)", player.Name))
+        elseif teleportData and teleportData.ownerUserId then
+            _playerRoles[player.UserId] = "visitor"
+            print(string.format("[Village] %s retroactively set as VISITOR (joined before handler)", player.Name))
+        else
+            -- No teleport data (Studio/direct join): first player is owner
+            if not _villageOwnerUserId then
+                _villageOwnerUserId = player.UserId
+                _playerRoles[player.UserId] = "owner"
+                print(string.format("[Village] %s retroactively set as OWNER (first player, joined before handler)", player.Name))
+
+                -- Initialize VillageStateService for Studio mode if needed
+                if VillageStateService and not VillageStateService:GetOwnerUserId() then
+                    pcall(function()
+                        VillageStateService:Init(player.UserId)
+                        local savedState2 = VillageStateService:GetLoadedState()
+                        if savedState2 then
+                            applyLoadedState(savedState2)
+                            reconstructWorkers(savedState2, player.UserId)
+                        end
+                        VillageStateService:SetStateTables({
+                            GoldMineState = GoldMineState,
+                            LumberMillState = LumberMillState,
+                            FarmStates = FarmStates,
+                            BarracksState = BarracksState,
+                            TownHallState = TownHallState,
+                            PlayerFarmData = PlayerFarmData,
+                        })
+                        VillageStateService:StartAutoSave()
+                    end)
+                end
+            else
+                _playerRoles[player.UserId] = "visitor"
+                print(string.format("[Village] %s retroactively set as VISITOR (joined before handler)", player.Name))
+            end
+        end
+
+        -- Sync HUD for the owner
+        if _playerRoles[player.UserId] == "owner" and DataService then
+            task.defer(function()
+                local waitStart2 = os.clock()
+                local playerData = DataService:GetPlayerData(player)
+                while not playerData and os.clock() - waitStart2 < 10 do
+                    task.wait(0.5)
+                    playerData = DataService:GetPlayerData(player)
+                end
+                if playerData and player.Parent then
+                    local Events = ReplicatedStorage:FindFirstChild("Events")
+                    if Events then
+                        local SyncPlayerData = Events:FindFirstChild("SyncPlayerData")
+                        if SyncPlayerData then
+                            SyncPlayerData:FireClient(player, playerData)
+                        end
+                    end
+                end
+            end)
+        end
+    end
+end
+
 -- Save village state when owner leaves
 Players.PlayerRemoving:Connect(function(player)
     if player.UserId == _villageOwnerUserId then
