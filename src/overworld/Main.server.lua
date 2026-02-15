@@ -485,6 +485,8 @@ connectEvent(RequestTeleportToVillage, function(player)
             _teleportingPlayers[player.UserId] = nil -- Clear on failure
             ServerResponse:FireClient(player, "TeleportToVillage", { success = false, error = teleportErr })
         end
+    else
+        ServerResponse:FireClient(player, "TeleportToVillage", { success = false, error = "Service unavailable" })
     end
 end)
 
@@ -1051,6 +1053,13 @@ Players.PlayerAdded:Connect(function(player)
                 break
             end
             task.wait(0.2)
+        end
+
+        -- If data still nil after timeout, kick with friendly message
+        if not DataService:GetPlayerData(player) then
+            warn(string.format("[OVERWORLD] Data nil after timeout for %s, kicking", player.Name))
+            player:Kick("Couldn't load your save data. Please rejoin!")
+            return
         end
     end
 

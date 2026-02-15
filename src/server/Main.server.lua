@@ -814,18 +814,32 @@ connectEvent(RequestTeleportToOverworld, function(player)
 
     -- Serialize village state into playerData before teleport (PrepareForTeleport will persist it)
     if player.UserId == _villageOwnerUserId and VillageStateService_main then
-        pcall(function()
+        local saveStateOk = pcall(function()
             VillageStateService_main:SaveState()
         end)
+        if not saveStateOk then
+            warn(string.format("[SERVER] VillageStateService:SaveState() failed for %s", player.Name))
+            ServerResponse:FireClient(player, "TeleportToOverworld", {
+                success = false, error = "Failed to save village state",
+            })
+            return
+        end
     end
 
-    -- Prepare for teleport BEFORE initiating: save data, release lock, clear cache.
+    -- Prepare for teleport BEFORE initiating: save data, release lock, mark as teleporting.
     -- This prevents the race condition where PlayerRemoving fires between Teleport()
     -- and PrepareForTeleport, causing double saves or nil data.
     if DataService and DataService.PrepareForTeleport then
-        local prepOk = pcall(function() DataService:PrepareForTeleport(player) end)
-        if not prepOk then
-            warn(string.format("[SERVER] PrepareForTeleport failed for %s", player.Name))
+        local prepOk, prepResult = pcall(function()
+            return DataService:PrepareForTeleport(player)
+        end)
+        if not prepOk or not prepResult then
+            -- prepResult is the boolean return on success, or error string on pcall failure
+            warn(string.format("[SERVER] PrepareForTeleport failed for %s: %s", player.Name, tostring(prepResult)))
+            ServerResponse:FireClient(player, "TeleportToOverworld", {
+                success = false, error = "Failed to save data for teleport",
+            })
+            return
         end
     end
 
@@ -837,20 +851,19 @@ connectEvent(RequestTeleportToOverworld, function(player)
     if success then
         print(string.format("[SERVER] Teleporting %s to overworld", player.Name))
         -- Data already saved and lock released by PrepareForTeleport.
-        -- PlayerRemoving will find nothing to do (data cache already cleared).
+        -- PlayerRemoving will skip save (teleport flag set) and just clean up cache.
     else
         warn(string.format("[SERVER] Teleport failed for %s: %s", player.Name, tostring(err)))
-        -- Teleport failed — reload data so player can keep playing
-        if DataService and DataService.LoadPlayerData then
-            local reloadResult = pcall(function()
-                return DataService:LoadPlayerData(player)
-            end)
-            if reloadResult then
-                local data = DataService:GetPlayerData(player)
-                if data then
-                    SyncPlayerData:FireClient(player, data)
-                    print(string.format("[SERVER] Data reloaded for %s after failed teleport", player.Name))
-                end
+        -- Teleport failed — cancel teleport state to re-acquire lock and restore normal operation
+        if DataService and DataService.CancelTeleportState then
+            DataService:CancelTeleportState(player)
+        end
+        -- Data is still in cache, sync to client
+        if DataService then
+            local data = DataService:GetPlayerData(player)
+            if data then
+                SyncPlayerData:FireClient(player, data)
+                print(string.format("[SERVER] Data restored for %s after failed teleport", player.Name))
             end
         end
         ServerResponse:FireClient(player, "TeleportToOverworld", {
@@ -860,22 +873,32 @@ connectEvent(RequestTeleportToOverworld, function(player)
 end)
 
 -- Handle failed teleports: if Roblox accepted the call but the teleport fails
--- later, the player stays in-game but PrepareForTeleport already cleared their
--- data cache. Reload it so they can keep playing.
+-- later, the player stays in-game but PrepareForTeleport already saved data
+-- and released the lock. Cancel teleport state to re-acquire lock.
 TeleportService.TeleportInitFailed:Connect(function(player, _result, errorMessage)
     warn(string.format("[SERVER] Teleport failed for %s after init: %s", player.Name, tostring(errorMessage)))
 
-    -- Reload player data if it was cleared by PrepareForTeleport
-    if DataService and DataService.GetPlayerData and DataService.LoadPlayerData then
+    -- Cancel teleport state: clears flag and re-acquires session lock
+    if DataService and DataService.CancelTeleportState then
+        DataService:CancelTeleportState(player)
+    end
+
+    -- Data should still be in cache (PrepareForTeleport no longer clears it)
+    if DataService then
         local data = DataService:GetPlayerData(player)
-        if not data then
-            print(string.format("[SERVER] Reloading data for %s after failed teleport", player.Name))
-            local result = DataService:LoadPlayerData(player)
-            if result.success and result.data then
-                SyncPlayerData:FireClient(player, result.data)
-                print(string.format("[SERVER] Data restored for %s", player.Name))
-            else
-                warn(string.format("[SERVER] Failed to restore data for %s: %s", player.Name, tostring(result.error)))
+        if data then
+            SyncPlayerData:FireClient(player, data)
+            print(string.format("[SERVER] Data restored for %s after TeleportInitFailed", player.Name))
+        else
+            -- Data somehow missing — attempt reload
+            warn(string.format("[SERVER] Data missing for %s after TeleportInitFailed, attempting reload", player.Name))
+            if DataService.LoadPlayerData then
+                local result = DataService:LoadPlayerData(player)
+                if result.success and result.data then
+                    SyncPlayerData:FireClient(player, result.data)
+                else
+                    player:Kick("Teleport failed and we couldn't restore your data. Please rejoin!")
+                end
             end
         end
     end

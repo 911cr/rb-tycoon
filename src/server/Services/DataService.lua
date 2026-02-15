@@ -31,6 +31,7 @@ DataService.PlayerDataError = Signal.new()
 -- Private state
 local _playerData: {[number]: Types.PlayerData} = {}
 local _sessionLocks: {[number]: number} = {}
+local _teleportingPlayers: {[number]: boolean} = {} -- Players prepared for teleport (data saved, lock released)
 local _dataStore = nil
 local _useLocalData = false -- True when DataStore is unavailable (Studio testing)
 local _initialized = false
@@ -307,8 +308,8 @@ end
     Prevents data corruption from multiple sessions.
     Lock value is { owner = SESSION_ID, timestamp = os.time() } for ownership-aware release.
 ]]
-local SESSION_LOCK_RETRIES = 3
-local SESSION_LOCK_RETRY_DELAY = 2 -- seconds between retries
+local SESSION_LOCK_RETRIES = 5
+local SESSION_LOCK_RETRY_DELAY = 2 -- base seconds (exponential backoff: 2, 4, 8, 8)
 
 local _lockStore = nil
 pcall(function()
@@ -364,11 +365,12 @@ local function acquireSessionLock(userId: number): boolean
             return true
         end
 
-        -- Wait before retrying (gives previous server time to release lock)
+        -- Wait before retrying with exponential backoff (gives previous server time to release lock)
         if attempt < SESSION_LOCK_RETRIES then
+            local delay = SESSION_LOCK_RETRY_DELAY * math.min(2 ^ (attempt - 1), 4)
             warn(string.format("[DataService] Session lock busy for %d, retrying in %ds (attempt %d/%d)",
-                userId, SESSION_LOCK_RETRY_DELAY, attempt, SESSION_LOCK_RETRIES))
-            task.wait(SESSION_LOCK_RETRY_DELAY)
+                userId, delay, attempt, SESSION_LOCK_RETRIES))
+            task.wait(delay)
         end
     end
 
@@ -609,11 +611,41 @@ function DataService:PrepareForTeleport(player: Player): boolean
     -- Release session lock so destination server can acquire it
     releaseSessionLock(userId)
 
-    -- Clear cached data (PlayerRemoving will fire later but find nothing to do)
-    _playerData[userId] = nil
+    -- Mark as teleporting but keep data in cache.
+    -- PlayerRemoving will skip save (already done) and just clean up.
+    -- If teleport fails, CancelTeleportState() restores normal state.
+    _teleportingPlayers[userId] = true
 
     print(string.format("[DataService] Player %s prepared for teleport (data saved, lock released)", player.Name))
     return true
+end
+
+--[[
+    Cancels teleport state for a player whose teleport failed.
+    Re-acquires the session lock so the player can keep playing on this server.
+    Data is still in cache (PrepareForTeleport no longer clears it).
+
+    MUST be called when:
+    - TeleportService:Teleport() pcall fails
+    - TeleportInitFailed fires (Roblox accepted call but teleport failed later)
+]]
+function DataService:CancelTeleportState(player: Player)
+    local userId = player.UserId
+
+    if not _teleportingPlayers[userId] then
+        return -- Not in teleport state, nothing to cancel
+    end
+
+    _teleportingPlayers[userId] = nil
+
+    -- Re-acquire session lock so we can keep saving data for this player
+    local lockAcquired = acquireSessionLock(userId)
+    if not lockAcquired then
+        warn(string.format("[DataService] Failed to re-acquire lock for %s after cancelled teleport", player.Name))
+    end
+
+    print(string.format("[DataService] Cancelled teleport state for %s (lock %s)",
+        player.Name, lockAcquired and "re-acquired" or "FAILED"))
 end
 
 --[[
@@ -881,12 +913,19 @@ function DataService:Init()
 
     -- Handle player leave (ALWAYS release lock, even if data wasn't loaded)
     Players.PlayerRemoving:Connect(function(player)
-        if _playerData[player.UserId] then
+        local userId = player.UserId
+
+        if _teleportingPlayers[userId] then
+            -- PrepareForTeleport already saved data and released lock.
+            -- Just clean up cache and clear the flag.
+            _playerData[userId] = nil
+            _teleportingPlayers[userId] = nil
+        elseif _playerData[userId] then
             self:SavePlayerData(player)
-            _playerData[player.UserId] = nil
+            _playerData[userId] = nil
         end
         -- Always release lock - prevents death loop where failed load → kick → lock never released
-        releaseSessionLock(player.UserId)
+        releaseSessionLock(userId)
     end)
 
     -- Auto-save interval
@@ -904,7 +943,10 @@ function DataService:Init()
         while true do
             task.wait(LOCK_HEARTBEAT_INTERVAL)
             for userId, _ in _sessionLocks do
-                refreshSessionLock(userId)
+                -- Skip players in teleport state (lock already released by PrepareForTeleport)
+                if not _teleportingPlayers[userId] then
+                    refreshSessionLock(userId)
+                end
             end
         end
     end)

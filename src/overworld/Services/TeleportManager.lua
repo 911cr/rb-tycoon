@@ -81,13 +81,20 @@ local function preparePlayerForTeleport(player: Player): boolean
     if dataService then
         -- Use PrepareForTeleport if available (saves + releases lock)
         if dataService.PrepareForTeleport then
-            local success, err = pcall(function()
-                dataService:PrepareForTeleport(player)
+            local success, prepResult = pcall(function()
+                return dataService:PrepareForTeleport(player)
             end)
 
             if not success then
                 warn(string.format("[TeleportManager] Failed to prepare teleport for %s: %s",
-                    player.Name, tostring(err)))
+                    player.Name, tostring(prepResult)))
+                return false
+            end
+
+            -- PrepareForTeleport returns false if save failed
+            if not prepResult then
+                warn(string.format("[TeleportManager] PrepareForTeleport returned false for %s (save failed)",
+                    player.Name))
                 return false
             end
 
@@ -338,8 +345,16 @@ function TeleportManager:TeleportToVillage(player: Player, currentPosition: Vect
             local playerData = dataService:GetPlayerData(player)
             if playerData then
                 playerData.villageAccessCode = accessCode
-                -- Re-save with new code
-                pcall(function() dataService:SavePlayerData(player) end)
+                -- Re-save with new code (best-effort — code works for this attempt regardless)
+                local saveOk, saveErr = pcall(function()
+                    return dataService:SavePlayerData(player)
+                end)
+                if not saveOk then
+                    warn(string.format("[TeleportManager] Failed to persist new access code for %s: %s",
+                        player.Name, tostring(saveErr)))
+                end
+            else
+                warn(string.format("[TeleportManager] No player data to save new access code for %s", player.Name))
             end
         end
 
