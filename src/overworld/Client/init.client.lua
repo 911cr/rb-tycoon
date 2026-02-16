@@ -109,6 +109,10 @@ local BaseInfoUI: any
 local OverworldHUD: any
 local MatchmakingUI: any
 local TradeUI: any
+local LootCarryUI: any
+local AutoClashUI: any
+local MerchantUI: any
+local EventBannerUI: any
 
 local function loadUI(name: string): any?
     if UIFolder then
@@ -132,6 +136,10 @@ BaseInfoUI = loadUI("BaseInfoUI")
 OverworldHUD = loadUI("OverworldHUD")
 MatchmakingUI = loadUI("MatchmakingUI")
 TradeUI = loadUI("TradeUI")
+LootCarryUI = loadUI("LootCarryUI")
+AutoClashUI = loadUI("AutoClashUI")
+MerchantUI = loadUI("MerchantUI")
+EventBannerUI = loadUI("EventBannerUI")
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- Initialize controllers
@@ -157,6 +165,10 @@ initController(BaseInfoUI, "BaseInfoUI")
 initController(OverworldHUD, "OverworldHUD")
 initController(MatchmakingUI, "MatchmakingUI")
 initController(TradeUI, "TradeUI")
+initController(LootCarryUI, "LootCarryUI")
+initController(AutoClashUI, "AutoClashUI")
+initController(MerchantUI, "MerchantUI")
+initController(EventBannerUI, "EventBannerUI")
 
 -- Connect Go to City button
 if OverworldHUD and OverworldHUD.GoToCityClicked then
@@ -1619,10 +1631,20 @@ end
 -- ═══════════════════════════════════════════════════════════════════════════════
 print("[CLIENT] Connecting events...")
 
+-- Track own base position for minimap
+local _ownBasePos: Vector3? = nil
+
 -- Handle base spawns from server
 SpawnBase.OnClientEvent:Connect(function(baseData)
     if OverworldController and OverworldController.OnBaseSpawned then
         OverworldController:OnBaseSpawned(baseData)
+    end
+    -- Track own base position for minimap home dot
+    if baseData and baseData.isOwnBase and baseData.position then
+        _ownBasePos = baseData.position
+        if OverworldHUD and OverworldHUD.SetOwnBasePosition then
+            OverworldHUD:SetOwnBasePosition(baseData.position)
+        end
     end
 end)
 
@@ -1637,6 +1659,15 @@ end)
 PositionSync.OnClientEvent:Connect(function(nearbyBases)
     if OverworldController and OverworldController.OnPositionSync then
         OverworldController:OnPositionSync(nearbyBases)
+    end
+    -- Update minimap with nearby bases and player count
+    if OverworldHUD then
+        if OverworldHUD.UpdateNearbyCount then
+            OverworldHUD:UpdateNearbyCount(#nearbyBases)
+        end
+        if OverworldHUD.UpdateMinimapBases then
+            OverworldHUD:UpdateMinimapBases(nearbyBases, _ownBasePos)
+        end
     end
 end)
 
@@ -1839,6 +1870,15 @@ Player.CharacterAdded:Connect(onCharacterAdded)
 -- If character already exists, run setup
 if Player.Character then
     onCharacterAdded(Player.Character)
+end
+
+-- Connect OverworldController position updates to minimap
+if OverworldController and OverworldController.PositionChanged then
+    OverworldController.PositionChanged:Connect(function(position)
+        if OverworldHUD and OverworldHUD.UpdatePlayerPosition then
+            OverworldHUD:UpdatePlayerPosition(position)
+        end
+    end)
 end
 
 -- ═══════════════════════════════════════════════════════════════════════════════

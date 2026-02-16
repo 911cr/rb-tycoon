@@ -3,7 +3,7 @@
     OverworldHUD.lua
 
     Heads-up display for the overworld showing:
-    - Mini-map
+    - Mini-map (bird's eye view centered on player with base dots)
     - Player resources
     - Nearby player count
     - Teleport loading screen
@@ -49,11 +49,21 @@ local _shieldTimerLabel: TextLabel? = nil
 local _shieldWarningLabel: TextLabel? = nil
 local _shieldPulseActive = false
 
+-- Minimap state
+local _baseDots: {[number]: Frame} = {} -- userId -> dot Frame
+local _homeDot: Frame? = nil
+local _basesData: {any} = {} -- latest nearby bases from server
+local _playerWorldPos: Vector3? = nil -- player's current world position
+local _ownBasePosition: Vector3? = nil -- player's own base position
+local _zoneLabel: TextLabel? = nil
+
 -- ============================================================================
 -- CONSTANTS
 -- ============================================================================
 
 local LOOT_AVAILABLE_PERCENT = 0.85 -- 85% of stored resources exposed to raids
+local MINIMAP_VIEW_RADIUS = 300 -- studs visible from center to edge
+local MINIMAP_SIZE = 200 -- pixels
 
 -- ============================================================================
 -- HELPER FUNCTIONS
@@ -71,6 +81,156 @@ local function formatNumber(num: number): string
         if k == 0 then break end
     end
     return formatted
+end
+
+--[[
+    Creates or reuses a base dot on the minimap.
+]]
+local function getOrCreateBaseDot(userId: number, parent: Frame): Frame
+    if _baseDots[userId] then
+        return _baseDots[userId]
+    end
+
+    local dot = Instance.new("Frame")
+    dot.Name = "BaseDot_" .. userId
+    dot.BackgroundColor3 = Color3.fromRGB(200, 80, 80)
+    dot.BorderSizePixel = 0
+    dot.ZIndex = 3
+    dot.Parent = parent
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(1, 0)
+    corner.Parent = dot
+
+    _baseDots[userId] = dot
+    return dot
+end
+
+--[[
+    Refreshes all base dot positions relative to player position on the minimap.
+]]
+local function refreshBaseDotPositions()
+    if not _miniMapFrame or not _playerWorldPos then return end
+
+    local playerX = _playerWorldPos.X
+    local playerZ = _playerWorldPos.Z
+
+    -- Track which dots are still active
+    local activeIds: {[number]: boolean} = {}
+
+    -- Render nearby base dots
+    for _, baseData in _basesData do
+        local bx = baseData.position.X
+        local bz = baseData.position.Z
+        local dx = bx - playerX
+        local dz = bz - playerZ
+
+        -- Normalize to minimap coordinates (0..1)
+        local mapX = 0.5 + (dx / MINIMAP_VIEW_RADIUS) * 0.5
+        local mapZ = 0.5 + (dz / MINIMAP_VIEW_RADIUS) * 0.5
+
+        -- Skip if outside visible area (with small margin)
+        if mapX < -0.02 or mapX > 1.02 or mapZ < -0.02 or mapZ > 1.02 then
+            -- Hide dot if exists
+            if _baseDots[baseData.userId] then
+                _baseDots[baseData.userId].Visible = false
+            end
+            continue
+        end
+
+        mapX = math.clamp(mapX, 0, 1)
+        mapZ = math.clamp(mapZ, 0, 1)
+
+        local dot = getOrCreateBaseDot(baseData.userId, _miniMapFrame)
+        activeIds[baseData.userId] = true
+
+        -- Color and size based on relationship
+        local dotSize = 6
+        local dotColor: Color3
+
+        if baseData.isFriend then
+            dotColor = OverworldConfig.Visuals.FriendColor
+            dotSize = 7
+        elseif baseData.hasShield then
+            dotColor = OverworldConfig.Visuals.ShieldColor
+        else
+            -- Difficulty color
+            dotColor = OverworldConfig.GetDifficultyColor(
+                baseData.townHallLevel - (baseData.viewerTownHallLevel or 1)
+            )
+        end
+
+        dot.Size = UDim2.new(0, dotSize, 0, dotSize)
+        dot.Position = UDim2.new(mapX, -dotSize / 2, mapZ, -dotSize / 2)
+        dot.BackgroundColor3 = dotColor
+        dot.Visible = true
+    end
+
+    -- Render own base "home" dot
+    if _ownBasePosition then
+        local dx = _ownBasePosition.X - playerX
+        local dz = _ownBasePosition.Z - playerZ
+        local mapX = 0.5 + (dx / MINIMAP_VIEW_RADIUS) * 0.5
+        local mapZ = 0.5 + (dz / MINIMAP_VIEW_RADIUS) * 0.5
+
+        if not _homeDot then
+            _homeDot = Instance.new("Frame")
+            _homeDot.Name = "HomeDot"
+            _homeDot.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+            _homeDot.BorderSizePixel = 0
+            _homeDot.ZIndex = 4
+            _homeDot.Parent = _miniMapFrame
+
+            local hCorner = Instance.new("UICorner")
+            hCorner.CornerRadius = UDim.new(1, 0)
+            hCorner.Parent = _homeDot
+
+            -- "H" label on home dot
+            local hLabel = Instance.new("TextLabel")
+            hLabel.Name = "HomeLabel"
+            hLabel.Size = UDim2.new(1, 0, 1, 0)
+            hLabel.BackgroundTransparency = 1
+            hLabel.Text = "H"
+            hLabel.TextColor3 = Color3.fromRGB(40, 30, 50)
+            hLabel.TextSize = 7
+            hLabel.Font = Enum.Font.GothamBold
+            hLabel.ZIndex = 5
+            hLabel.Parent = _homeDot
+        end
+
+        if mapX >= -0.02 and mapX <= 1.02 and mapZ >= -0.02 and mapZ <= 1.02 then
+            mapX = math.clamp(mapX, 0, 1)
+            mapZ = math.clamp(mapZ, 0, 1)
+            _homeDot.Size = UDim2.new(0, 10, 0, 10)
+            _homeDot.Position = UDim2.new(mapX, -5, mapZ, -5)
+            _homeDot.Visible = true
+        else
+            _homeDot.Visible = false
+        end
+    end
+
+    -- Remove dots for bases no longer in data
+    for userId, dot in _baseDots do
+        if not activeIds[userId] then
+            dot:Destroy()
+            _baseDots[userId] = nil
+        end
+    end
+
+    -- Update zone label
+    if _zoneLabel and _playerWorldPos then
+        local zone = OverworldConfig.GetZone(playerX, playerZ)
+        if zone == "safe" then
+            _zoneLabel.Text = "Safe Zone"
+            _zoneLabel.TextColor3 = Color3.fromRGB(100, 200, 100)
+        elseif zone == "forbidden" then
+            _zoneLabel.Text = "Forbidden Zone"
+            _zoneLabel.TextColor3 = Color3.fromRGB(200, 80, 80)
+        else
+            _zoneLabel.Text = "Wilderness"
+            _zoneLabel.TextColor3 = Color3.fromRGB(220, 180, 80)
+        end
+    end
 end
 
 -- ============================================================================
@@ -178,13 +338,16 @@ local function createHUD(): ScreenGui
     _riskLabel = riskLabel
     _resourcesFrame = resourcesFrame
 
-    -- Mini-map container (top-right)
+    -- ================================================================
+    -- Mini-map container (top-right) — 200x200 bird's eye view
+    -- ================================================================
     local miniMapFrame = Instance.new("Frame")
     miniMapFrame.Name = "MiniMap"
-    miniMapFrame.Size = UDim2.new(0, 150, 0, 150)
-    miniMapFrame.Position = UDim2.new(1, -165, 0, 15)
+    miniMapFrame.Size = UDim2.new(0, MINIMAP_SIZE, 0, MINIMAP_SIZE)
+    miniMapFrame.Position = UDim2.new(1, -(MINIMAP_SIZE + 15), 0, 15)
     miniMapFrame.BackgroundColor3 = Color3.fromRGB(30, 45, 25)
     miniMapFrame.BorderSizePixel = 0
+    miniMapFrame.ClipsDescendants = true
     miniMapFrame.Parent = screenGui
 
     local miniMapCorner = Instance.new("UICorner")
@@ -196,39 +359,72 @@ local function createHUD(): ScreenGui
     miniMapStroke.Thickness = 2
     miniMapStroke.Parent = miniMapFrame
 
-    -- Mini-map title
-    local miniMapTitle = Instance.new("TextLabel")
-    miniMapTitle.Name = "Title"
-    miniMapTitle.Size = UDim2.new(1, 0, 0, 20)
-    miniMapTitle.BackgroundTransparency = 1
-    miniMapTitle.Text = "WORLD MAP"
-    miniMapTitle.TextColor3 = Color3.fromRGB(150, 180, 130)
-    miniMapTitle.TextSize = 10
-    miniMapTitle.Font = Enum.Font.GothamBold
-    miniMapTitle.Parent = miniMapFrame
+    -- Compass "N" indicator at top center
+    local compassLabel = Instance.new("TextLabel")
+    compassLabel.Name = "Compass"
+    compassLabel.Size = UDim2.new(0, 16, 0, 14)
+    compassLabel.Position = UDim2.new(0.5, -8, 0, 2)
+    compassLabel.BackgroundTransparency = 1
+    compassLabel.Text = "N"
+    compassLabel.TextColor3 = Color3.fromRGB(200, 200, 180)
+    compassLabel.TextSize = 10
+    compassLabel.Font = Enum.Font.GothamBold
+    compassLabel.ZIndex = 5
+    compassLabel.Parent = miniMapFrame
 
-    -- Player position indicator
+    -- Player position indicator (always centered)
     local playerDot = Instance.new("Frame")
     playerDot.Name = "PlayerDot"
     playerDot.Size = UDim2.new(0, 8, 0, 8)
     playerDot.Position = UDim2.new(0.5, -4, 0.5, -4)
     playerDot.BackgroundColor3 = Color3.fromRGB(100, 200, 255)
+    playerDot.ZIndex = 6
     playerDot.Parent = miniMapFrame
 
     local dotCorner = Instance.new("UICorner")
     dotCorner.CornerRadius = UDim.new(1, 0)
     dotCorner.Parent = playerDot
 
+    -- Player dot glow ring
+    local dotGlow = Instance.new("Frame")
+    dotGlow.Name = "DotGlow"
+    dotGlow.Size = UDim2.new(0, 14, 0, 14)
+    dotGlow.Position = UDim2.new(0.5, -7, 0.5, -7)
+    dotGlow.BackgroundColor3 = Color3.fromRGB(100, 200, 255)
+    dotGlow.BackgroundTransparency = 0.7
+    dotGlow.ZIndex = 5
+    dotGlow.Parent = miniMapFrame
+
+    local glowCorner = Instance.new("UICorner")
+    glowCorner.CornerRadius = UDim.new(1, 0)
+    glowCorner.Parent = dotGlow
+
+    -- Zone label at bottom
+    local zoneLabel = Instance.new("TextLabel")
+    zoneLabel.Name = "ZoneLabel"
+    zoneLabel.Size = UDim2.new(1, 0, 0, 16)
+    zoneLabel.Position = UDim2.new(0, 0, 1, -34)
+    zoneLabel.BackgroundTransparency = 1
+    zoneLabel.Text = "Safe Zone"
+    zoneLabel.TextColor3 = Color3.fromRGB(100, 200, 100)
+    zoneLabel.TextSize = 9
+    zoneLabel.Font = Enum.Font.GothamBold
+    zoneLabel.ZIndex = 5
+    zoneLabel.Parent = miniMapFrame
+
+    _zoneLabel = zoneLabel
+
     -- Nearby count label
     local nearbyLabel = Instance.new("TextLabel")
     nearbyLabel.Name = "NearbyCount"
-    nearbyLabel.Size = UDim2.new(1, 0, 0, 20)
-    nearbyLabel.Position = UDim2.new(0, 0, 1, -20)
+    nearbyLabel.Size = UDim2.new(1, 0, 0, 16)
+    nearbyLabel.Position = UDim2.new(0, 0, 1, -18)
     nearbyLabel.BackgroundTransparency = 1
     nearbyLabel.Text = "0 players nearby"
     nearbyLabel.TextColor3 = Color3.fromRGB(120, 150, 100)
-    nearbyLabel.TextSize = 10
+    nearbyLabel.TextSize = 9
     nearbyLabel.Font = Enum.Font.Gotham
+    nearbyLabel.ZIndex = 5
     nearbyLabel.Parent = miniMapFrame
 
     _miniMapFrame = miniMapFrame
@@ -236,8 +432,8 @@ local function createHUD(): ScreenGui
     -- Shield timer display (below mini-map, top-right area)
     local shieldFrame = Instance.new("Frame")
     shieldFrame.Name = "ShieldDisplay"
-    shieldFrame.Size = UDim2.new(0, 150, 0, 60)
-    shieldFrame.Position = UDim2.new(1, -165, 0, 175)
+    shieldFrame.Size = UDim2.new(0, MINIMAP_SIZE, 0, 60)
+    shieldFrame.Position = UDim2.new(1, -(MINIMAP_SIZE + 15), 0, MINIMAP_SIZE + 25)
     shieldFrame.BackgroundColor3 = Color3.fromRGB(20, 40, 60)
     shieldFrame.BorderSizePixel = 0
     shieldFrame.Visible = false
@@ -566,32 +762,43 @@ function OverworldHUD:UpdateResources(resources: {gold: number, wood: number, fo
 end
 
 --[[
-    Updates the mini-map player position.
+    Updates the mini-map player position (center-on-player view).
+    Player dot stays at center; base dots shift relative to player.
 
     @param position Vector3 - World position
 ]]
 function OverworldHUD:UpdatePlayerPosition(position: Vector3)
     if not _miniMapFrame then return end
 
-    local playerDot = _miniMapFrame:FindFirstChild("PlayerDot") :: Frame?
-    if not playerDot then return end
+    _playerWorldPos = position
 
-    local mapConfig = OverworldConfig.Map
+    -- Player dot always stays at center (set in createHUD)
+    -- Refresh base dot positions since player moved
+    refreshBaseDotPositions()
+end
 
-    -- Convert world position to mini-map position
-    local normalizedX = position.X / mapConfig.Width
-    local normalizedZ = position.Z / mapConfig.Height
+--[[
+    Updates the minimap with nearby base data.
 
-    -- Clamp to map bounds
-    normalizedX = math.clamp(normalizedX, 0, 1)
-    normalizedZ = math.clamp(normalizedZ, 0, 1)
+    @param nearbyBases table - Array of base data from server
+    @param ownBasePosition Vector3? - Player's own base position
+]]
+function OverworldHUD:UpdateMinimapBases(nearbyBases: {any}, ownBasePosition: Vector3?)
+    _basesData = nearbyBases or {}
+    if ownBasePosition then
+        _ownBasePosition = ownBasePosition
+    end
+    refreshBaseDotPositions()
+end
 
-    -- Position on mini-map (with padding)
-    local padding = 0.1
-    local mapX = padding + normalizedX * (1 - 2 * padding)
-    local mapZ = padding + normalizedZ * (1 - 2 * padding)
+--[[
+    Sets the player's own base position for the "home" dot.
 
-    playerDot.Position = UDim2.new(mapX, -4, mapZ, -4)
+    @param position Vector3 - Base world position
+]]
+function OverworldHUD:SetOwnBasePosition(position: Vector3)
+    _ownBasePosition = position
+    refreshBaseDotPositions()
 end
 
 --[[

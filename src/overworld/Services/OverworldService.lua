@@ -126,24 +126,111 @@ local function isPositionOccupied(pos: {x: number, z: number}): boolean
 end
 
 --[[
-    Generates a starting position that doesn't overlap with existing bases.
-    Tries up to 20 times before accepting whatever it gets.
-
-    @return {x: number, z: number} - A non-overlapping map position
+    Pre-computed spiral order from grid center outward.
+    Generated once on first call and cached.
 ]]
-local function generateNonOverlappingPosition(): {x: number, z: number}
-    for _ = 1, 20 do
-        local candidate = WorldMapData.GenerateStartingPosition()
+local _spiralOrder: {{row: number, col: number}}? = nil
+
+local function getSpiralOrder(): {{row: number, col: number}}
+    if _spiralOrder then return _spiralOrder end
+
+    local grid = OverworldConfig.Grid
+    local centerRow = grid.CenterRow
+    local centerCol = grid.CenterCol
+    local rows = grid.Rows
+    local cols = grid.Cols
+
+    -- Build all cells with distance from center, then sort by distance
+    local cells = {}
+    for r = 0, rows - 1 do
+        for c = 0, cols - 1 do
+            local dr = r - centerRow
+            local dc = c - centerCol
+            table.insert(cells, {
+                row = r,
+                col = c,
+                dist = dr * dr + dc * dc, -- squared distance for sorting
+            })
+        end
+    end
+
+    table.sort(cells, function(a, b)
+        return a.dist < b.dist
+    end)
+
+    -- Strip dist field
+    local order = {}
+    for _, cell in cells do
+        table.insert(order, { row = cell.row, col = cell.col })
+    end
+
+    _spiralOrder = order
+    return order
+end
+
+--[[
+    Generates a grid-based position using spiral fill from center.
+    Returns the first unoccupied grid cell's world position.
+
+    @return {x: number, z: number} - A grid-aligned map position
+]]
+local function generateGridPosition(): {x: number, z: number}
+    local spiral = getSpiralOrder()
+
+    for _, cell in spiral do
+        local x, z = OverworldConfig.GridCellToWorld(cell.row, cell.col)
+        local candidate = { x = x, z = z }
         if not isPositionOccupied(candidate) then
             return candidate
         end
     end
-    -- After 20 attempts, accept the last random position (map is large enough this is rare)
+
+    -- All 49 grid cells occupied (50th player edge case) — fallback to random in safe zone
     return WorldMapData.GenerateStartingPosition()
 end
 
 --[[
+    Snaps a world position to the nearest grid cell center.
+
+    @param pos {x: number, z: number} - The position to snap
+    @return {x: number, z: number} - Grid-aligned position
+]]
+local function snapToGrid(pos: {x: number, z: number}): {x: number, z: number}
+    local row, col = OverworldConfig.WorldToGridCell(pos.x, pos.z)
+    local x, z = OverworldConfig.GridCellToWorld(row, col)
+    return { x = x, z = z }
+end
+
+--[[
+    Migrates a saved map position from the old 0-1000 range to the new 0-2000 range.
+    Old positions get remapped into the safe zone [600, 1400].
+]]
+local function migratePosition(pos: {x: number, z: number}): {x: number, z: number}
+    -- Only migrate if both coordinates are in old 0-1000 range
+    if pos.x <= 1000 and pos.z <= 1000 then
+        pos.x = 600 + (pos.x / 1000) * 800
+        pos.z = 600 + (pos.z / 1000) * 800
+    end
+    return pos
+end
+
+--[[
+    Flattens terrain at a base position using WorldBuilder if available.
+]]
+local function flattenTerrainAtBase(x: number, z: number)
+    local ServerScriptService = game:GetService("ServerScriptService")
+    local wbModule = ServerScriptService:FindFirstChild("WorldBuilder")
+    if wbModule then
+        local ok, wb = pcall(require, wbModule)
+        if ok and wb and wb.FlattenForBase then
+            wb.FlattenForBase(x, z, OverworldConfig.Terrain.BaseFlattenSize)
+        end
+    end
+end
+
+--[[
     Gets the spawn position for a player based on their map position.
+    Migrates old positions, snaps to grid, and flattens terrain for base placement.
 ]]
 local function getSpawnPosition(player: Player): Vector3
     local dataService = getDataService()
@@ -151,20 +238,35 @@ local function getSpawnPosition(player: Player): Vector3
     if dataService and dataService.GetPlayerData then
         local data = dataService:GetPlayerData(player)
         if data and data.mapPosition then
-            return OverworldConfig.MapToWorld(data.mapPosition.x, data.mapPosition.z)
+            -- Migrate old positions from 1000x1000 map
+            data.mapPosition = migratePosition(data.mapPosition)
+
+            -- Snap existing position to nearest grid cell
+            local snapped = snapToGrid(data.mapPosition)
+
+            -- If snapped position is occupied by another player, find a new grid cell
+            if isPositionOccupied(snapped) then
+                snapped = generateGridPosition()
+            end
+
+            data.mapPosition = snapped
+            flattenTerrainAtBase(snapped.x, snapped.z)
+            return OverworldConfig.MapToWorld(snapped.x, snapped.z)
         end
 
-        -- No saved position — generate a non-overlapping random position and save it
-        local startPos = generateNonOverlappingPosition()
+        -- No saved position — assign a grid cell using spiral fill
+        local startPos = generateGridPosition()
         if data then
             data.mapPosition = startPos
         end
 
+        flattenTerrainAtBase(startPos.x, startPos.z)
         return OverworldConfig.MapToWorld(startPos.x, startPos.z)
     end
 
-    -- Fallback if DataService unavailable — non-overlapping random position
-    local startPos = generateNonOverlappingPosition()
+    -- Fallback if DataService unavailable — grid position
+    local startPos = generateGridPosition()
+    flattenTerrainAtBase(startPos.x, startPos.z)
     return OverworldConfig.MapToWorld(startPos.x, startPos.z)
 end
 

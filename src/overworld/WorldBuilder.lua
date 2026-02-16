@@ -2,8 +2,18 @@
 --[[
     WorldBuilder.lua
 
-    Builds the 3D terrain environment for the overworld.
-    Creates terrain, roads, rivers, trees, and environmental decorations.
+    Builds the 3D voxel terrain environment for the overworld.
+    Uses workspace.Terrain:FillRegion() for natural Perlin-noise heightmap,
+    then places roads, rivers, trees, rocks, and decorations — all raycast-
+    grounded on the terrain surface.
+
+    6 sequential passes:
+    1. Heightmap (Perlin noise with zone-aware shaping)
+    2. Roads (carved flat cobblestone paths)
+    3. River & Lake (carved depression, filled with water)
+    4. Trees (raycast-placed on terrain surface)
+    5. Rocks & Decorations (raycast-placed, partially embedded)
+    6. Boundary (invisible walls at map edges)
 ]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -16,32 +26,29 @@ local OverworldConfig = require(ReplicatedStorage.Shared.Constants.OverworldConf
 local WorldBuilder = {}
 
 -- ============================================================================
--- MATERIALS & COLORS
+-- CONSTANTS
 -- ============================================================================
 
-local Materials = {
-    Grass = Enum.Material.Grass,
-    Cobblestone = Enum.Material.Cobblestone,
-    Dirt = Enum.Material.Ground,
-    Water = Enum.Material.Water,
-    Rock = Enum.Material.Rock,
-    Wood = Enum.Material.WoodPlanks,
-    WoodLog = Enum.Material.Wood,
-    Sand = Enum.Material.Sand,
-}
+local MAP_SIZE = OverworldConfig.Map.Width -- 2000
+local MAP_CENTER = MAP_SIZE / 2
+local VOXEL = OverworldConfig.Terrain.VoxelSize -- 4
+local SEED = OverworldConfig.Terrain.SeedOffset
 
+-- Colors for Part-based decorations
 local Colors = {
-    Grass = Color3.fromRGB(80, 140, 50),
-    GrassDark = Color3.fromRGB(60, 110, 40),
-    Road = Color3.fromRGB(140, 130, 120),
-    RoadDark = Color3.fromRGB(110, 105, 95),
-    Dirt = Color3.fromRGB(115, 85, 55),
-    Water = Color3.fromRGB(80, 120, 180),
-    Rock = Color3.fromRGB(100, 100, 105),
     TreeTrunk = Color3.fromRGB(85, 60, 40),
+    TreeTrunkDark = Color3.fromRGB(55, 35, 25),
     TreeLeaves = Color3.fromRGB(60, 120, 45),
     TreeLeavesDark = Color3.fromRGB(45, 90, 35),
-    Sand = Color3.fromRGB(200, 180, 140),
+    TreeLeavesLight = Color3.fromRGB(75, 140, 55),
+    DeadWood = Color3.fromRGB(70, 55, 40),
+    Rock = Color3.fromRGB(100, 100, 105),
+    RockDark = Color3.fromRGB(80, 80, 85),
+    RockLight = Color3.fromRGB(120, 118, 115),
+    SignPost = Color3.fromRGB(120, 90, 60),
+    SignBoard = Color3.fromRGB(160, 130, 90),
+    TorchBase = Color3.fromRGB(90, 65, 45),
+    BridgeStone = Color3.fromRGB(140, 130, 120),
 }
 
 -- ============================================================================
@@ -49,503 +56,687 @@ local Colors = {
 -- ============================================================================
 
 local _worldFolder: Folder
-local _terrainFolder: Folder
-local _roadsFolder: Folder
+local _propsFolder: Folder
 local _treesFolder: Folder
-local _decorationsFolder: Folder
-local _waterFolder: Folder
 
 -- ============================================================================
--- GROUND TERRAIN
+-- TERRAIN HELPERS
 -- ============================================================================
+
+local _terrain: Terrain
 
 --[[
-    Creates the base ground terrain for the entire map.
+    Multi-octave Perlin noise for natural heightmap.
 ]]
-local function createGroundTerrain()
-    local mapConfig = OverworldConfig.Map
+local function sampleHeight(x: number, z: number): number
+    local h = 0
+    for _, octave in OverworldConfig.Terrain.Octaves do
+        h += math.noise(x * octave.scale + SEED, z * octave.scale + SEED) * octave.amplitude
+    end
+    return h
+end
 
-    -- Main grass ground
-    local ground = Instance.new("Part")
-    ground.Name = "MainGround"
-    ground.Size = Vector3.new(mapConfig.Width, 4, mapConfig.Height)
-    ground.Position = Vector3.new(mapConfig.CenterX, -2, mapConfig.CenterZ)
-    ground.Anchored = true
-    ground.Material = Materials.Grass
-    ground.Color = Colors.Grass
-    ground.Parent = _terrainFolder
+--[[
+    Get zone-modified height at a world position.
+    Safe zone is flattened, forbidden zone is raised.
+]]
+local function getWorldHeight(x: number, z: number): number
+    local raw = sampleHeight(x, z)
 
-    -- Add subtle terrain variation with grass patches
-    local numPatches = 80
-    for i = 1, numPatches do
-        local patch = Instance.new("Part")
-        patch.Name = "GrassPatch"
-        patch.Size = Vector3.new(
-            30 + math.random() * 50,
-            0.1,
-            30 + math.random() * 50
-        )
-        patch.Position = Vector3.new(
-            math.random(50, mapConfig.Width - 50),
-            0.05,
-            math.random(50, mapConfig.Height - 50)
-        )
-        patch.Anchored = true
-        patch.Material = Materials.Grass
-        patch.Color = math.random() > 0.5 and Colors.GrassDark or Colors.Grass
-        patch.Parent = _terrainFolder
+    -- Safe zone flattening
+    local sz = OverworldConfig.SafeZone
+    local safeCenterX = (sz.MinX + sz.MaxX) / 2
+    local safeCenterZ = (sz.MinZ + sz.MaxZ) / 2
+    local safeDist = math.sqrt((x - safeCenterX)^2 + (z - safeCenterZ)^2)
+    local flattenRadius = sz.FlattenRadius
+
+    if safeDist < flattenRadius then
+        local t = safeDist / flattenRadius
+        local flattenAmount = 1 - t * t -- quadratic falloff
+        raw = raw * (1 - flattenAmount * sz.FlattenStrength)
     end
 
-    -- Add some hills for terrain variation
-    local hillPositions = {
-        {x = 150, z = 150, height = 12, radius = 60},
-        {x = 850, z = 200, height = 15, radius = 70},
-        {x = 200, z = 800, height = 10, radius = 50},
-        {x = 750, z = 750, height = 18, radius = 80},
-        {x = 500, z = 100, height = 8, radius = 45},
-        {x = 100, z = 500, height = 10, radius = 55},
-        {x = 900, z = 500, height = 12, radius = 60},
-    }
-
-    for _, hillData in hillPositions do
-        local hill = Instance.new("Part")
-        hill.Name = "Hill"
-        hill.Size = Vector3.new(hillData.radius * 2, hillData.height, hillData.radius * 2)
-        hill.Position = Vector3.new(hillData.x, hillData.height / 2 - 2, hillData.z)
-        hill.Anchored = true
-        hill.Material = Materials.Grass
-        hill.Color = Colors.Grass
-        hill.Shape = Enum.PartType.Ball
-        hill.Parent = _terrainFolder
-
-        -- Flatten bottom of hill
-        local flatTop = Instance.new("Part")
-        flatTop.Name = "HillTop"
-        flatTop.Size = Vector3.new(hillData.radius * 1.8, 0.5, hillData.radius * 1.8)
-        flatTop.Position = Vector3.new(hillData.x, hillData.height - 2, hillData.z)
-        flatTop.Anchored = true
-        flatTop.Material = Materials.Grass
-        flatTop.Color = Colors.GrassDark
-        flatTop.Parent = _terrainFolder
+    -- Forbidden zone elevation boost
+    local fz = OverworldConfig.ForbiddenZone
+    if x >= fz.MinX and x <= fz.MaxX and z >= fz.MinZ and z <= fz.MaxZ then
+        -- Smooth ramp into forbidden zone
+        local edgeDist = math.min(
+            x - fz.MinX, fz.MaxX - x,
+            z - fz.MinZ, fz.MaxZ - z
+        )
+        local ramp = math.clamp(edgeDist / 80, 0, 1) -- 80 studs transition
+        raw += fz.HeightBoost * ramp
     end
+
+    return raw
+end
+
+--[[
+    Get terrain material based on zone and height.
+]]
+local function getMaterial(x: number, z: number, height: number): Enum.Material
+    local mats = OverworldConfig.Terrain.Materials
+    local zone = OverworldConfig.GetZone(x, z)
+
+    if zone == "forbidden" then
+        if height > 20 then
+            return mats.ForbiddenRock
+        end
+        return mats.Forbidden
+    end
+
+    if zone == "safe" then
+        return mats.Safe
+    end
+
+    -- Wilderness: vary by height and noise
+    if height > 18 then
+        return mats.WildernessRock
+    end
+    local detail = math.noise(x * 0.05 + SEED + 100, z * 0.05 + SEED + 100)
+    if detail > 0.3 then
+        return mats.WildernessMud
+    end
+    return mats.Wilderness
+end
+
+--[[
+    Raycast terrain surface to find exact Y at (x, z).
+    Returns nil if no terrain hit (e.g. over water void).
+]]
+local function raycastTerrain(x: number, z: number): RaycastResult?
+    local origin = Vector3.new(x, 200, z)
+    local direction = Vector3.new(0, -400, 0)
+    local params = RaycastParams.new()
+    params.FilterType = Enum.RaycastFilterType.Include
+    params.FilterDescendantsInstances = {_terrain}
+    return workspace:Raycast(origin, direction, params)
+end
+
+--[[
+    Place a model on terrain surface with partial embedding.
+]]
+local function placeOnTerrain(x: number, z: number, model: Model, embedDepth: number)
+    local hit = raycastTerrain(x, z)
+    if not hit then return false end
+
+    local surfaceY = hit.Position.Y
+    model:PivotTo(CFrame.new(x, surfaceY - embedDepth, z))
+    model.Parent = _propsFolder
+    return true
+end
+
+--[[
+    Place a single Part on terrain surface with partial embedding.
+]]
+local function placePartOnTerrain(x: number, z: number, part: BasePart, embedDepth: number): boolean
+    local hit = raycastTerrain(x, z)
+    if not hit then return false end
+
+    local surfaceY = hit.Position.Y
+    part.Position = Vector3.new(x, surfaceY - embedDepth + part.Size.Y / 2, z)
+    part.Parent = _propsFolder
+    return true
 end
 
 -- ============================================================================
--- ROAD NETWORK
+-- PASS 1: HEIGHTMAP
 -- ============================================================================
 
 --[[
-    Creates a road segment between two points.
+    Fills voxel terrain column by column using FillRegion.
+    Processes in chunks for performance.
 ]]
-local function createRoadSegment(startPos: Vector3, endPos: Vector3, width: number): Model
-    local road = Instance.new("Model")
-    road.Name = "RoadSegment"
+local function buildHeightmap()
+    print("[WorldBuilder] Pass 1: Building heightmap...")
 
-    local direction = (endPos - startPos).Unit
-    local length = (endPos - startPos).Magnitude
-    local midPoint = startPos + direction * (length / 2)
+    local chunkSize = 64 -- process 64x64 stud chunks
+    local totalChunks = 0
+    local baseY = -20 -- fill from below ground up to surface
 
-    -- Road base
-    local roadBase = Instance.new("Part")
-    roadBase.Name = "RoadBase"
-    roadBase.Size = Vector3.new(width, 0.3, length)
-    roadBase.CFrame = CFrame.new(midPoint + Vector3.new(0, 0.15, 0), endPos)
-    roadBase.Anchored = true
-    roadBase.Material = Materials.Cobblestone
-    roadBase.Color = Colors.Road
-    roadBase.Parent = road
+    for cx = 0, MAP_SIZE - 1, chunkSize do
+        for cz = 0, MAP_SIZE - 1, chunkSize do
+            -- For each chunk, determine the max height to know fill range
+            local maxH = 0
+            for lx = cx, math.min(cx + chunkSize - 1, MAP_SIZE - 1), VOXEL do
+                for lz = cz, math.min(cz + chunkSize - 1, MAP_SIZE - 1), VOXEL do
+                    local h = getWorldHeight(lx, lz)
+                    if h > maxH then maxH = h end
+                end
+            end
 
-    -- Add road markings/stones for detail
-    local numStones = math.floor(length / 8)
-    for i = 0, numStones do
-        local stonePos = startPos + direction * (i * (length / numStones))
-        local stone = Instance.new("Part")
-        stone.Name = "RoadStone"
-        stone.Size = Vector3.new(
-            width * 0.8,
-            0.05,
-            2
-        )
-        stone.Position = Vector3.new(stonePos.X, 0.32, stonePos.Z)
-        stone.Anchored = true
-        stone.Material = Materials.Cobblestone
-        stone.Color = Colors.RoadDark
-        stone.Parent = road
-    end
+            -- Fill from baseY up to slightly above max height
+            local fillTop = maxH + VOXEL
+            local region = Region3.new(
+                Vector3.new(cx, baseY, cz),
+                Vector3.new(math.min(cx + chunkSize, MAP_SIZE), fillTop, math.min(cz + chunkSize, MAP_SIZE))
+            ):ExpandToGrid(VOXEL)
 
-    -- Edge stones
-    for side = -1, 1, 2 do
-        local edgeOffset = (width / 2 - 0.3) * side
+            local regionSize = region.Size / VOXEL
+            local sizeX = math.max(1, math.round(regionSize.X))
+            local sizeY = math.max(1, math.round(regionSize.Y))
+            local sizeZ = math.max(1, math.round(regionSize.Z))
 
-        for i = 0, math.floor(length / 3) do
-            local stonePos = startPos + direction * (i * 3)
-            local edgeStone = Instance.new("Part")
-            edgeStone.Name = "EdgeStone"
-            edgeStone.Size = Vector3.new(0.5, 0.3, 1)
+            -- Create material and occupancy arrays
+            local materials = {}
+            local occupancy = {}
 
-            local perpendicular = Vector3.new(-direction.Z, 0, direction.X)
-            edgeStone.Position = stonePos + perpendicular * edgeOffset + Vector3.new(0, 0.2, 0)
-            edgeStone.Anchored = true
-            edgeStone.Material = Materials.Rock
-            edgeStone.Color = Colors.Rock
-            edgeStone.Parent = road
+            for ix = 1, sizeX do
+                materials[ix] = {}
+                occupancy[ix] = {}
+                for iy = 1, sizeY do
+                    materials[ix][iy] = {}
+                    occupancy[ix][iy] = {}
+                    for iz = 1, sizeZ do
+                        local worldX = region.CFrame.Position.X - region.Size.X/2 + (ix - 0.5) * VOXEL
+                        local worldY = region.CFrame.Position.Y - region.Size.Y/2 + (iy - 0.5) * VOXEL
+                        local worldZ = region.CFrame.Position.Z - region.Size.Z/2 + (iz - 0.5) * VOXEL
+
+                        local surfaceH = getWorldHeight(worldX, worldZ)
+
+                        if worldY <= surfaceH then
+                            local mat = getMaterial(worldX, worldZ, surfaceH)
+                            materials[ix][iy][iz] = mat
+                            -- Smooth occupancy at the surface for natural slopes
+                            if worldY > surfaceH - VOXEL then
+                                local frac = (surfaceH - worldY) / VOXEL
+                                occupancy[ix][iy][iz] = math.clamp(frac + 0.5, 0, 1)
+                            else
+                                occupancy[ix][iy][iz] = 1
+                            end
+                        else
+                            materials[ix][iy][iz] = Enum.Material.Air
+                            occupancy[ix][iy][iz] = 0
+                        end
+                    end
+                end
+            end
+
+            _terrain:WriteVoxels(region, VOXEL, materials, occupancy)
+
+            totalChunks += 1
+            -- Yield periodically to avoid timeout
+            if totalChunks % 8 == 0 then
+                task.wait()
+            end
         end
     end
 
-    road.Parent = _roadsFolder
-    return road
-end
-
---[[
-    Creates the main road network across the map.
-]]
-local function createRoadNetwork()
-    local roadConfig = OverworldConfig.Zones.Roads
-    local mapConfig = OverworldConfig.Map
-
-    -- Main crossroads in center
-    local centerX = mapConfig.CenterX
-    local centerZ = mapConfig.CenterZ
-
-    -- Main horizontal road (east-west)
-    createRoadSegment(
-        Vector3.new(50, 0, centerZ),
-        Vector3.new(mapConfig.Width - 50, 0, centerZ),
-        roadConfig.MainRoadWidth
-    )
-
-    -- Main vertical road (north-south)
-    createRoadSegment(
-        Vector3.new(centerX, 0, 50),
-        Vector3.new(centerX, 0, mapConfig.Height - 50),
-        roadConfig.MainRoadWidth
-    )
-
-    -- Secondary roads (grid pattern)
-    local sideRoadSpacing = 250
-
-    -- Horizontal side roads
-    for z = sideRoadSpacing, mapConfig.Height - sideRoadSpacing, sideRoadSpacing do
-        if math.abs(z - centerZ) > 50 then -- Skip if too close to main road
-            createRoadSegment(
-                Vector3.new(100, 0, z),
-                Vector3.new(mapConfig.Width - 100, 0, z),
-                roadConfig.SideRoadWidth
-            )
-        end
-    end
-
-    -- Vertical side roads
-    for x = sideRoadSpacing, mapConfig.Width - sideRoadSpacing, sideRoadSpacing do
-        if math.abs(x - centerX) > 50 then
-            createRoadSegment(
-                Vector3.new(x, 0, 100),
-                Vector3.new(x, 0, mapConfig.Height - 100),
-                roadConfig.SideRoadWidth
-            )
-        end
-    end
-
-    -- Diagonal roads for variety
-    createRoadSegment(
-        Vector3.new(100, 0, 100),
-        Vector3.new(400, 0, 400),
-        roadConfig.SideRoadWidth
-    )
-
-    createRoadSegment(
-        Vector3.new(mapConfig.Width - 100, 0, 100),
-        Vector3.new(mapConfig.Width - 400, 0, 400),
-        roadConfig.SideRoadWidth
-    )
+    print(string.format("[WorldBuilder] Heightmap complete (%d chunks)", totalChunks))
 end
 
 -- ============================================================================
--- RIVER SYSTEM
+-- PASS 2: ROADS
 -- ============================================================================
 
 --[[
-    Creates a river segment.
+    Carve a flat road along a path by setting terrain to Cobblestone at surface level.
 ]]
-local function createRiverSegment(startPos: Vector3, endPos: Vector3, width: number): Model
-    local river = Instance.new("Model")
-    river.Name = "RiverSegment"
+local function carveRoad(points: {Vector3}, width: number)
+    local mats = OverworldConfig.Terrain.Materials
 
-    local direction = (endPos - startPos).Unit
-    local length = (endPos - startPos).Magnitude
-    local midPoint = startPos + direction * (length / 2)
+    for i = 1, #points - 1 do
+        local p1 = points[i]
+        local p2 = points[i + 1]
+        local dir = (p2 - p1).Unit
+        local length = (p2 - p1).Magnitude
+        local perp = Vector3.new(-dir.Z, 0, dir.X)
 
-    -- River bed (darker ground)
-    local riverBed = Instance.new("Part")
-    riverBed.Name = "RiverBed"
-    riverBed.Size = Vector3.new(width + 4, 0.5, length + 4)
-    riverBed.CFrame = CFrame.new(midPoint + Vector3.new(0, -2.5, 0), endPos)
-    riverBed.Anchored = true
-    riverBed.Material = Materials.Sand
-    riverBed.Color = Colors.Sand
-    riverBed.Parent = river
+        -- Walk along the road segment
+        local step = VOXEL
+        for d = 0, length, step do
+            local center = p1 + dir * d
+            -- Sample height at road center
+            local roadY = getWorldHeight(center.X, center.Z)
 
-    -- Water surface
-    local water = Instance.new("Part")
-    water.Name = "Water"
-    water.Size = Vector3.new(width, 3, length)
-    water.CFrame = CFrame.new(midPoint + Vector3.new(0, -1, 0), endPos)
-    water.Anchored = true
-    water.Material = Materials.Water
-    water.Color = Colors.Water
-    water.Transparency = OverworldConfig.Zones.River.Transparency
-    water.Parent = river
+            -- Fill road cross-section
+            for w = -width/2, width/2, VOXEL do
+                local wx = center.X + perp.X * w
+                local wz = center.Z + perp.Z * w
 
-    -- Bank edges
-    for side = -1, 1, 2 do
-        local bankOffset = (width / 2 + 1) * side
-        local perpendicular = Vector3.new(-direction.Z, 0, direction.X)
+                if wx >= 0 and wx <= MAP_SIZE and wz >= 0 and wz <= MAP_SIZE then
+                    -- Clear above road
+                    local clearRegion = Region3.new(
+                        Vector3.new(wx - VOXEL/2, roadY - 0.5, wz - VOXEL/2),
+                        Vector3.new(wx + VOXEL/2, roadY + 4, wz + VOXEL/2)
+                    ):ExpandToGrid(VOXEL)
+                    _terrain:FillRegion(clearRegion, VOXEL, Enum.Material.Air)
 
-        local bank = Instance.new("Part")
-        bank.Name = "RiverBank"
-        bank.Size = Vector3.new(2, 1, length)
-        bank.CFrame = CFrame.new(midPoint + perpendicular * bankOffset + Vector3.new(0, 0, 0), endPos)
-        bank.Anchored = true
-        bank.Material = Materials.Dirt
-        bank.Color = Colors.Dirt
-        bank.Parent = river
+                    -- Fill road surface
+                    local roadRegion = Region3.new(
+                        Vector3.new(wx - VOXEL/2, roadY - 1, wz - VOXEL/2),
+                        Vector3.new(wx + VOXEL/2, roadY + 0.2, wz + VOXEL/2)
+                    ):ExpandToGrid(VOXEL)
+                    _terrain:FillRegion(roadRegion, VOXEL, mats.Road)
+                end
+            end
+        end
     end
-
-    river.Parent = _waterFolder
-    return river
 end
 
---[[
-    Creates the river flowing through the map.
-]]
-local function createRiver()
-    local riverConfig = OverworldConfig.Zones.River
-    local mapConfig = OverworldConfig.Map
+local function buildRoads()
+    print("[WorldBuilder] Pass 2: Building roads...")
 
-    -- Winding river from west to east
+    local mainWidth = OverworldConfig.Terrain.Roads.MainWidth
+    local secWidth = OverworldConfig.Terrain.Roads.SecondaryWidth
+
+    -- Main crossroads through center
+    -- East-West
+    carveRoad({
+        Vector3.new(100, 0, MAP_CENTER),
+        Vector3.new(MAP_SIZE - 100, 0, MAP_CENTER),
+    }, mainWidth)
+
+    -- North-South
+    carveRoad({
+        Vector3.new(MAP_CENTER, 0, 100),
+        Vector3.new(MAP_CENTER, 0, MAP_SIZE - 100),
+    }, mainWidth)
+
+    -- Secondary grid within safe zone
+    local sz = OverworldConfig.SafeZone
+    local spacing = 200
+
+    for x = sz.MinX, sz.MaxX, spacing do
+        if math.abs(x - MAP_CENTER) > 50 then
+            carveRoad({
+                Vector3.new(x, 0, sz.MinZ),
+                Vector3.new(x, 0, sz.MaxZ),
+            }, secWidth)
+        end
+    end
+
+    for z = sz.MinZ, sz.MaxZ, spacing do
+        if math.abs(z - MAP_CENTER) > 50 then
+            carveRoad({
+                Vector3.new(sz.MinX, 0, z),
+                Vector3.new(sz.MaxX, 0, z),
+            }, secWidth)
+        end
+    end
+
+    task.wait()
+    print("[WorldBuilder] Roads complete")
+end
+
+-- ============================================================================
+-- PASS 3: RIVER & LAKE
+-- ============================================================================
+
+local function buildRiver()
+    print("[WorldBuilder] Pass 3: Building river & lake...")
+
+    local riverWidth = OverworldConfig.Terrain.River.Width
+    local riverDepth = OverworldConfig.Terrain.River.Depth
+    local waterLevel = OverworldConfig.Terrain.River.WaterLevel
+
+    -- River path: winding from SW through center to E
     local riverPoints = {
-        Vector3.new(0, 0, 300),
-        Vector3.new(200, 0, 350),
-        Vector3.new(400, 0, 280),
-        Vector3.new(600, 0, 320),
-        Vector3.new(800, 0, 250),
-        Vector3.new(1000, 0, 300),
+        Vector3.new(100, 0, 1600),     -- SW start
+        Vector3.new(300, 0, 1400),
+        Vector3.new(500, 0, 1200),
+        Vector3.new(700, 0, 1050),
+        Vector3.new(900, 0, 1000),     -- Approaches center
+        Vector3.new(1100, 0, 950),
+        Vector3.new(1300, 0, 900),
+        Vector3.new(1500, 0, 850),
+        Vector3.new(1700, 0, 800),
+        Vector3.new(1900, 0, 750),     -- Exits east
     }
 
+    -- Carve river channel
     for i = 1, #riverPoints - 1 do
-        createRiverSegment(riverPoints[i], riverPoints[i + 1], riverConfig.Width)
-    end
+        local p1 = riverPoints[i]
+        local p2 = riverPoints[i + 1]
+        local dir = (p2 - p1).Unit
+        local length = (p2 - p1).Magnitude
+        local perp = Vector3.new(-dir.Z, 0, dir.X)
 
-    -- Secondary stream
-    local streamPoints = {
-        Vector3.new(500, 0, 0),
-        Vector3.new(480, 0, 150),
-        Vector3.new(520, 0, 280), -- Joins main river
-    }
+        for d = 0, length, VOXEL do
+            local center = p1 + dir * d
 
-    for i = 1, #streamPoints - 1 do
-        createRiverSegment(streamPoints[i], streamPoints[i + 1], riverConfig.Width * 0.5)
-    end
+            for w = -riverWidth/2, riverWidth/2, VOXEL do
+                local wx = center.X + perp.X * w
+                local wz = center.Z + perp.Z * w
 
-    -- Add bridges over main road intersections
-    local bridgePositions = {
-        Vector3.new(500, 0, 305), -- Main crossroads
-    }
+                if wx >= 0 and wx <= MAP_SIZE and wz >= 0 and wz <= MAP_SIZE then
+                    -- Parabolic depth profile (deeper at center)
+                    local normalizedW = math.abs(w) / (riverWidth / 2)
+                    local depthHere = riverDepth * (1 - normalizedW * normalizedW)
 
-    for _, pos in bridgePositions do
-        local bridge = Instance.new("Model")
-        bridge.Name = "Bridge"
+                    -- Carve depression (air)
+                    local clearRegion = Region3.new(
+                        Vector3.new(wx - VOXEL/2, waterLevel - depthHere, wz - VOXEL/2),
+                        Vector3.new(wx + VOXEL/2, waterLevel + 3, wz + VOXEL/2)
+                    ):ExpandToGrid(VOXEL)
+                    _terrain:FillRegion(clearRegion, VOXEL, Enum.Material.Air)
 
-        -- Bridge deck
-        local deck = Instance.new("Part")
-        deck.Name = "Deck"
-        deck.Size = Vector3.new(18, 1, riverConfig.Width + 6)
-        deck.Position = pos + Vector3.new(0, 1, 0)
-        deck.Anchored = true
-        deck.Material = Materials.Cobblestone
-        deck.Color = Colors.Road
-        deck.Parent = bridge
+                    -- Fill riverbed with sand
+                    local bedRegion = Region3.new(
+                        Vector3.new(wx - VOXEL/2, waterLevel - depthHere - VOXEL, wz - VOXEL/2),
+                        Vector3.new(wx + VOXEL/2, waterLevel - depthHere, wz + VOXEL/2)
+                    ):ExpandToGrid(VOXEL)
+                    _terrain:FillRegion(bedRegion, VOXEL, Enum.Material.Sand)
 
-        -- Bridge railings
-        for side = -1, 1, 2 do
-            local railing = Instance.new("Part")
-            railing.Name = "Railing"
-            railing.Size = Vector3.new(0.5, 1.5, riverConfig.Width + 4)
-            railing.Position = pos + Vector3.new(side * 8.5, 2.25, 0)
-            railing.Anchored = true
-            railing.Material = Materials.Rock
-            railing.Color = Colors.Rock
-            railing.Parent = bridge
+                    -- Fill with water
+                    local waterRegion = Region3.new(
+                        Vector3.new(wx - VOXEL/2, waterLevel - depthHere, wz - VOXEL/2),
+                        Vector3.new(wx + VOXEL/2, waterLevel, wz + VOXEL/2)
+                    ):ExpandToGrid(VOXEL)
+                    _terrain:FillRegion(waterRegion, VOXEL, Enum.Material.Water)
+                end
+            end
         end
 
-        -- Bridge supports
-        for z = -1, 1, 2 do
-            local support = Instance.new("Part")
-            support.Name = "Support"
-            support.Size = Vector3.new(3, 5, 2)
-            support.Position = pos + Vector3.new(0, -1.5, z * (riverConfig.Width / 2 + 1))
-            support.Anchored = true
-            support.Material = Materials.Rock
-            support.Color = Colors.Rock
-            support.Parent = bridge
-        end
-
-        bridge.Parent = _waterFolder
+        task.wait()
     end
+
+    -- Lake in SW area (near river start)
+    local lakeCenter = Vector3.new(250, 0, 1500)
+    local lakeRadius = 80
+
+    for lx = lakeCenter.X - lakeRadius, lakeCenter.X + lakeRadius, VOXEL do
+        for lz = lakeCenter.Z - lakeRadius, lakeCenter.Z + lakeRadius, VOXEL do
+            local dist = math.sqrt((lx - lakeCenter.X)^2 + (lz - lakeCenter.Z)^2)
+            if dist <= lakeRadius then
+                local normalizedDist = dist / lakeRadius
+                local depthHere = riverDepth * 1.5 * (1 - normalizedDist * normalizedDist)
+
+                -- Carve
+                local clearRegion = Region3.new(
+                    Vector3.new(lx - VOXEL/2, waterLevel - depthHere, lz - VOXEL/2),
+                    Vector3.new(lx + VOXEL/2, waterLevel + 2, lz + VOXEL/2)
+                ):ExpandToGrid(VOXEL)
+                _terrain:FillRegion(clearRegion, VOXEL, Enum.Material.Air)
+
+                -- Sand bed
+                local bedRegion = Region3.new(
+                    Vector3.new(lx - VOXEL/2, waterLevel - depthHere - VOXEL, lz - VOXEL/2),
+                    Vector3.new(lx + VOXEL/2, waterLevel - depthHere, lz + VOXEL/2)
+                ):ExpandToGrid(VOXEL)
+                _terrain:FillRegion(bedRegion, VOXEL, Enum.Material.Sand)
+
+                -- Water fill
+                local waterRegion = Region3.new(
+                    Vector3.new(lx - VOXEL/2, waterLevel - depthHere, lz - VOXEL/2),
+                    Vector3.new(lx + VOXEL/2, waterLevel, lz + VOXEL/2)
+                ):ExpandToGrid(VOXEL)
+                _terrain:FillRegion(waterRegion, VOXEL, Enum.Material.Water)
+            end
+        end
+    end
+
+    task.wait()
+    print("[WorldBuilder] River & lake complete")
 end
 
 -- ============================================================================
--- TREES AND VEGETATION
+-- PASS 4: TREES
 -- ============================================================================
 
 --[[
-    Creates a tree at the specified position.
+    Creates an oak tree model (tapered trunk + foliage balls).
 ]]
-local function createTree(position: Vector3, variation: number): Model
+local function createOakTree(scale: number): Model
     local tree = Instance.new("Model")
-    tree.Name = "Tree"
+    tree.Name = "OakTree"
 
-    local trunkHeight = 6 + variation * 2 + math.random() * 2
-    local foliageRadius = 3 + variation * 0.5
+    local trunkH = (6 + math.random() * 3) * scale
+    local trunkW = (0.8 + math.random() * 0.4) * scale
 
-    -- Trunk
+    -- Trunk (block instead of cylinder to avoid rotation issues)
     local trunk = Instance.new("Part")
     trunk.Name = "Trunk"
-    trunk.Size = Vector3.new(1 + variation * 0.2, trunkHeight, 1 + variation * 0.2)
-    trunk.Position = position + Vector3.new(0, trunkHeight / 2, 0)
+    trunk.Shape = Enum.PartType.Block
+    trunk.Size = Vector3.new(trunkW, trunkH, trunkW)
+    trunk.CFrame = CFrame.new(0, trunkH / 2, 0)
     trunk.Anchored = true
-    trunk.Material = Materials.WoodLog
+    trunk.Material = Enum.Material.Wood
     trunk.Color = Colors.TreeTrunk
-    trunk.Shape = Enum.PartType.Cylinder
-    trunk.Orientation = Vector3.new(0, 0, 90)
     trunk.Parent = tree
+    tree.PrimaryPart = trunk
 
-    -- Foliage layers
-    local trunkTop = position.Y + trunkHeight
-    local numLayers = 2 + variation
-
-    for layer = 1, numLayers do
-        local layerRadius = foliageRadius * (1 - (layer - 1) / (numLayers + 1))
-        local layerHeight = trunkTop + (layer - 0.5) * 1.5
-
+    -- Foliage (3 overlapping balls)
+    local foliageColors = {Colors.TreeLeaves, Colors.TreeLeavesDark, Colors.TreeLeavesLight}
+    for i = 1, 3 do
+        local radius = (2.5 + math.random() * 1.5) * scale
+        local offsetX = (math.random() - 0.5) * radius * 0.5
+        local offsetZ = (math.random() - 0.5) * radius * 0.5
         local foliage = Instance.new("Part")
         foliage.Name = "Foliage"
-        foliage.Size = Vector3.new(layerRadius * 2, 2.5, layerRadius * 2)
-        foliage.Position = Vector3.new(position.X, layerHeight, position.Z)
-        foliage.Anchored = true
-        foliage.Material = Materials.Grass
-        foliage.Color = layer % 2 == 0 and Colors.TreeLeavesDark or Colors.TreeLeaves
         foliage.Shape = Enum.PartType.Ball
+        foliage.Size = Vector3.new(radius * 2, radius * 2, radius * 2)
+        foliage.Position = Vector3.new(offsetX, trunkH + radius * 0.5 + (i - 1) * radius * 0.4, offsetZ)
+        foliage.Anchored = true
+        foliage.Material = Enum.Material.LeafyGrass
+        foliage.Color = foliageColors[i]
         foliage.Parent = tree
     end
 
-    tree.Parent = _treesFolder
     return tree
 end
 
 --[[
-    Creates forests across the map.
+    Creates a pine tree model (narrow trunk + stacked cones).
 ]]
-local function createForests()
-    local mapConfig = OverworldConfig.Map
-    local forestConfig = OverworldConfig.Zones.Forest
+local function createPineTree(scale: number): Model
+    local tree = Instance.new("Model")
+    tree.Name = "PineTree"
 
-    -- Forest regions (avoid roads and river areas)
-    local forestRegions = {
-        {minX = 50, maxX = 200, minZ = 50, maxZ = 200},
-        {minX = 800, maxX = 950, minZ = 50, maxZ = 200},
-        {minX = 50, maxX = 200, minZ = 400, maxZ = 600},
-        {minX = 800, maxX = 950, minZ = 400, maxZ = 600},
-        {minX = 50, maxX = 200, minZ = 700, maxZ = 950},
-        {minX = 800, maxX = 950, minZ = 700, maxZ = 950},
-        {minX = 300, maxX = 450, minZ = 600, maxZ = 750},
-        {minX = 550, maxX = 700, minZ = 600, maxZ = 750},
+    local trunkH = (8 + math.random() * 4) * scale
+    local trunkW = (0.5 + math.random() * 0.3) * scale
+
+    -- Trunk (block to avoid cylinder rotation issues with PivotTo)
+    local trunk = Instance.new("Part")
+    trunk.Name = "Trunk"
+    trunk.Shape = Enum.PartType.Block
+    trunk.Size = Vector3.new(trunkW, trunkH, trunkW)
+    trunk.CFrame = CFrame.new(0, trunkH / 2, 0)
+    trunk.Anchored = true
+    trunk.Material = Enum.Material.Wood
+    trunk.Color = Colors.TreeTrunk
+    trunk.Parent = tree
+    tree.PrimaryPart = trunk
+
+    -- Cone layers (balls to approximate foliage tiers — avoids cylinder sideways issue)
+    local layers = 3 + math.random(0, 1)
+    for i = 1, layers do
+        local layerRadius = (2.5 - (i - 1) * 0.5) * scale
+        local layerH = 2.0 * scale
+        local yPos = trunkH * 0.5 + (i - 1) * layerH * 0.7
+
+        local cone = Instance.new("Part")
+        cone.Name = "Cone"
+        cone.Shape = Enum.PartType.Ball
+        cone.Size = Vector3.new(layerRadius * 2, layerH, layerRadius * 2)
+        cone.CFrame = CFrame.new(0, yPos, 0)
+        cone.Anchored = true
+        cone.Material = Enum.Material.LeafyGrass
+        cone.Color = i % 2 == 0 and Colors.TreeLeavesDark or Colors.TreeLeaves
+        cone.Parent = tree
+    end
+
+    return tree
+end
+
+--[[
+    Creates a dead tree (bare trunk with angled branches).
+]]
+local function createDeadTree(scale: number): Model
+    local tree = Instance.new("Model")
+    tree.Name = "DeadTree"
+
+    local trunkH = (5 + math.random() * 3) * scale
+    local trunkW = (0.6 + math.random() * 0.3) * scale
+
+    -- Trunk (block to avoid cylinder rotation issues with PivotTo)
+    local trunk = Instance.new("Part")
+    trunk.Name = "Trunk"
+    trunk.Shape = Enum.PartType.Block
+    trunk.Size = Vector3.new(trunkW, trunkH, trunkW)
+    trunk.CFrame = CFrame.new(0, trunkH / 2, 0)
+    trunk.Anchored = true
+    trunk.Material = Enum.Material.Wood
+    trunk.Color = Colors.DeadWood
+    trunk.Parent = tree
+    tree.PrimaryPart = trunk
+
+    -- Bare branches
+    for i = 1, 3 do
+        local branchLen = (2 + math.random() * 2) * scale
+        local branchW = 0.2 * scale
+        local angle = math.rad(30 + math.random() * 40)
+        local rotation = math.rad(i * 120 + math.random(-20, 20))
+
+        local branch = Instance.new("Part")
+        branch.Name = "Branch"
+        branch.Size = Vector3.new(branchLen, branchW, branchW)
+        branch.CFrame = CFrame.new(0, trunkH * (0.5 + i * 0.15), 0)
+            * CFrame.Angles(0, rotation, angle)
+            * CFrame.new(branchLen / 2, 0, 0)
+        branch.Anchored = true
+        branch.Material = Enum.Material.Wood
+        branch.Color = Colors.DeadWood
+        branch.Parent = tree
+    end
+
+    return tree
+end
+
+--[[
+    Check if position is near a road or river (avoid placing trees there).
+]]
+local function isNearRoadOrRiver(x: number, z: number): boolean
+    -- Near main roads (center crossroads)
+    if math.abs(x - MAP_CENTER) < 20 or math.abs(z - MAP_CENTER) < 20 then
+        return true
+    end
+
+    -- Near river path (rough approximation)
+    -- River runs from (100,1600) through center to (1900,750)
+    local riverZ = 1600 - (x / MAP_SIZE) * 850
+    if math.abs(z - riverZ) < 40 then
+        return true
+    end
+
+    -- Near lake
+    local lakeDist = math.sqrt((x - 250)^2 + (z - 1500)^2)
+    if lakeDist < 100 then
+        return true
+    end
+
+    return false
+end
+
+local function buildTrees()
+    print("[WorldBuilder] Pass 4: Placing trees...")
+
+    local treeConfig = OverworldConfig.Terrain.Trees
+    local treeCount = 0
+    local embedDepth = treeConfig.EmbedDepth
+
+    -- Define forest regions by zone
+    local regions = {
+        -- Wilderness forests (dense)
+        {minX = 50, maxX = 550, minZ = 50, maxZ = 550, density = treeConfig.WildernessDensity, zone = "wilderness"},
+        {minX = 1450, maxX = 1950, minZ = 50, maxZ = 550, density = treeConfig.WildernessDensity, zone = "wilderness"},
+        {minX = 50, maxX = 550, minZ = 1450, maxZ = 1950, density = treeConfig.WildernessDensity, zone = "wilderness"},
+        {minX = 50, maxX = 550, minZ = 600, maxZ = 1400, density = treeConfig.WildernessDensity * 0.6, zone = "wilderness"},
+        {minX = 1450, maxX = 1950, minZ = 600, maxZ = 1400, density = treeConfig.WildernessDensity * 0.6, zone = "wilderness"},
+        {minX = 600, maxX = 1400, minZ = 50, maxZ = 550, density = treeConfig.WildernessDensity * 0.5, zone = "wilderness"},
+        {minX = 600, maxX = 1400, minZ = 1450, maxZ = 1500, density = treeConfig.WildernessDensity * 0.5, zone = "wilderness"},
+        -- Safe zone (sparse)
+        {minX = 620, maxX = 1380, minZ = 620, maxZ = 1380, density = treeConfig.SafeDensity, zone = "safe"},
+        -- Forbidden zone (dead trees)
+        {minX = 1510, maxX = 1890, minZ = 1510, maxZ = 1890, density = treeConfig.ForbiddenDensity, zone = "forbidden"},
     }
 
-    for _, region in forestRegions do
-        local areaWidth = region.maxX - region.minX
-        local areaDepth = region.maxZ - region.minZ
-        local numTrees = math.floor((areaWidth * areaDepth / 100) * forestConfig.TreeDensity)
+    for _, region in regions do
+        local areaW = region.maxX - region.minX
+        local areaD = region.maxZ - region.minZ
+        local numTrees = math.floor((areaW * areaD / 100) * region.density)
 
-        for i = 1, numTrees do
-            local x = region.minX + math.random() * areaWidth
-            local z = region.minZ + math.random() * areaDepth
-            local variation = math.random(0, forestConfig.TreeVariation)
+        for _ = 1, numTrees do
+            local x = region.minX + math.random() * areaW
+            local z = region.minZ + math.random() * areaD
 
-            createTree(Vector3.new(x, 0, z), variation)
+            -- Skip if near road or river
+            if not isNearRoadOrRiver(x, z) then
+                local tree: Model
+                local scale = 0.8 + math.random() * 0.4
+
+                if region.zone == "forbidden" then
+                    tree = createDeadTree(scale)
+                elseif math.random() > 0.4 then
+                    tree = createOakTree(scale)
+                else
+                    tree = createPineTree(scale)
+                end
+
+                if placeOnTerrain(x, z, tree, embedDepth) then
+                    tree.Parent = _treesFolder
+                    treeCount += 1
+                else
+                    tree:Destroy()
+                end
+            end
         end
+
+        task.wait()
     end
 
-    -- Scattered trees near roads
-    local scatteredCount = 50
-    for i = 1, scatteredCount do
-        local x = math.random(50, mapConfig.Width - 50)
-        local z = math.random(50, mapConfig.Height - 50)
-
-        -- Avoid center crossroads area
-        local centerX = mapConfig.CenterX
-        local centerZ = mapConfig.CenterZ
-        local distFromCenter = math.sqrt((x - centerX)^2 + (z - centerZ)^2)
-
-        if distFromCenter > 100 then
-            local variation = math.random(0, 2)
-            createTree(Vector3.new(x, 0, z), variation)
-        end
-    end
+    print(string.format("[WorldBuilder] Trees complete (%d placed)", treeCount))
 end
 
 -- ============================================================================
--- DECORATIONS
+-- PASS 5: ROCKS & DECORATIONS
 -- ============================================================================
 
---[[
-    Creates a rock formation.
-]]
-local function createRock(position: Vector3, size: number): Part
+local function createRock(size: number): Part
     local rock = Instance.new("Part")
     rock.Name = "Rock"
-    rock.Size = Vector3.new(size, size * 0.6, size * 0.8)
-    rock.Position = position + Vector3.new(0, size * 0.3, 0)
-    rock.Orientation = Vector3.new(math.random(-10, 10), math.random(0, 360), math.random(-10, 10))
-    rock.Anchored = true
-    rock.Material = Materials.Rock
-    rock.Color = Color3.fromRGB(
-        Colors.Rock.R * 255 + math.random(-15, 15),
-        Colors.Rock.G * 255 + math.random(-15, 15),
-        Colors.Rock.B * 255 + math.random(-15, 15)
+    rock.Shape = math.random() > 0.5 and Enum.PartType.Ball or Enum.PartType.Block
+    rock.Size = Vector3.new(
+        size * (0.8 + math.random() * 0.4),
+        size * (0.5 + math.random() * 0.3),
+        size * (0.7 + math.random() * 0.5)
     )
-    rock.Parent = _decorationsFolder
+    rock.Orientation = Vector3.new(
+        math.random(-15, 15),
+        math.random(0, 360),
+        math.random(-15, 15)
+    )
+    rock.Anchored = true
+    rock.Material = Enum.Material.Rock
+
+    local colorChoices = {Colors.Rock, Colors.RockDark, Colors.RockLight}
+    rock.Color = colorChoices[math.random(1, 3)]
+
     return rock
 end
 
---[[
-    Creates a signpost.
-]]
-local function createSignpost(position: Vector3, text: string): Model
+local function createSignpost(text: string): Model
     local sign = Instance.new("Model")
     sign.Name = "Signpost"
 
-    -- Post
     local post = Instance.new("Part")
     post.Name = "Post"
     post.Size = Vector3.new(0.4, 5, 0.4)
-    post.Position = position + Vector3.new(0, 2.5, 0)
+    post.Position = Vector3.new(0, 2.5, 0)
     post.Anchored = true
-    post.Material = Materials.Wood
-    post.Color = Colors.TreeTrunk
+    post.Material = Enum.Material.WoodPlanks
+    post.Color = Colors.SignPost
     post.Parent = sign
 
-    -- Sign board
     local board = Instance.new("Part")
     board.Name = "Board"
     board.Size = Vector3.new(3, 1.2, 0.2)
-    board.Position = position + Vector3.new(0, 4.5, 0)
+    board.Position = Vector3.new(0, 4.5, 0)
     board.Anchored = true
-    board.Material = Materials.Wood
-    board.Color = Color3.fromRGB(120, 90, 60)
+    board.Material = Enum.Material.WoodPlanks
+    board.Color = Colors.SignBoard
     board.Parent = sign
 
-    -- Sign text
     local surfaceGui = Instance.new("SurfaceGui")
     surfaceGui.Face = Enum.NormalId.Front
     surfaceGui.Parent = board
@@ -559,84 +750,252 @@ local function createSignpost(position: Vector3, text: string): Model
     label.Font = Enum.Font.GothamBold
     label.Parent = surfaceGui
 
-    sign.Parent = _decorationsFolder
     return sign
 end
 
---[[
-    Creates all decorations across the map.
-]]
-local function createDecorations()
-    local mapConfig = OverworldConfig.Map
+local function createTorch(): Model
+    local torch = Instance.new("Model")
+    torch.Name = "Torch"
 
-    -- Scatter rocks
-    local numRocks = 60
-    for i = 1, numRocks do
-        local x = math.random(50, mapConfig.Width - 50)
-        local z = math.random(50, mapConfig.Height - 50)
-        local size = 1 + math.random() * 2
-        createRock(Vector3.new(x, 0, z), size)
+    local post = Instance.new("Part")
+    post.Name = "Post"
+    post.Size = Vector3.new(0.3, 4, 0.3)
+    post.Position = Vector3.new(0, 2, 0)
+    post.Anchored = true
+    post.Material = Enum.Material.WoodPlanks
+    post.Color = Colors.TorchBase
+    post.Parent = torch
+
+    local head = Instance.new("Part")
+    head.Name = "Head"
+    head.Shape = Enum.PartType.Ball
+    head.Size = Vector3.new(0.6, 0.6, 0.6)
+    head.Position = Vector3.new(0, 4.2, 0)
+    head.Anchored = true
+    head.Material = Enum.Material.Neon
+    head.Color = Color3.fromRGB(255, 180, 50)
+    head.Parent = torch
+
+    local light = Instance.new("PointLight")
+    light.Brightness = 1.5
+    light.Range = 20
+    light.Color = Color3.fromRGB(255, 200, 100)
+    light.Parent = head
+
+    return torch
+end
+
+local function createBridge(length: number, width: number): Model
+    local bridge = Instance.new("Model")
+    bridge.Name = "Bridge"
+
+    -- Deck
+    local deck = Instance.new("Part")
+    deck.Name = "Deck"
+    deck.Size = Vector3.new(width, 1, length)
+    deck.Position = Vector3.new(0, 1, 0)
+    deck.Anchored = true
+    deck.Material = Enum.Material.Cobblestone
+    deck.Color = Colors.BridgeStone
+    deck.Parent = bridge
+
+    -- Railings
+    for side = -1, 1, 2 do
+        local railing = Instance.new("Part")
+        railing.Name = "Railing"
+        railing.Size = Vector3.new(0.5, 1.5, length)
+        railing.Position = Vector3.new(side * (width / 2 - 0.25), 2.25, 0)
+        railing.Anchored = true
+        railing.Material = Enum.Material.Rock
+        railing.Color = Colors.Rock
+        railing.Parent = bridge
     end
+
+    -- Support pillars
+    for z = -1, 1, 2 do
+        local support = Instance.new("Part")
+        support.Name = "Support"
+        support.Size = Vector3.new(3, 8, 2)
+        support.Position = Vector3.new(0, -2, z * (length / 2 - 2))
+        support.Anchored = true
+        support.Material = Enum.Material.Rock
+        support.Color = Colors.Rock
+        support.Parent = bridge
+    end
+
+    return bridge
+end
+
+local function buildDecorations()
+    print("[WorldBuilder] Pass 5: Placing rocks & decorations...")
+
+    local rockConfig = OverworldConfig.Terrain.Rocks
+    local rockCount = 0
+
+    -- Rocks in safe zone
+    for _ = 1, rockConfig.SafeCount do
+        local sz = OverworldConfig.SafeZone
+        local x = math.random(sz.MinX, sz.MaxX)
+        local z = math.random(sz.MinZ, sz.MaxZ)
+        if not isNearRoadOrRiver(x, z) then
+            local size = 1 + math.random() * 2
+            local rock = createRock(size)
+            local embedDepth = size * rockConfig.EmbedPercent
+            if placePartOnTerrain(x, z, rock, embedDepth) then
+                rockCount += 1
+            else
+                rock:Destroy()
+            end
+        end
+    end
+
+    -- Rocks in wilderness
+    for _ = 1, rockConfig.WildernessCount do
+        local x = math.random(50, MAP_SIZE - 50)
+        local z = math.random(50, MAP_SIZE - 50)
+        if OverworldConfig.GetZone(x, z) == "wilderness" and not isNearRoadOrRiver(x, z) then
+            local size = 1.5 + math.random() * 3
+            local rock = createRock(size)
+            local embedDepth = size * rockConfig.EmbedPercent
+            if placePartOnTerrain(x, z, rock, embedDepth) then
+                rockCount += 1
+            else
+                rock:Destroy()
+            end
+        end
+    end
+
+    -- Boulders in forbidden zone
+    for _ = 1, rockConfig.ForbiddenCount do
+        local fz = OverworldConfig.ForbiddenZone
+        local x = math.random(fz.MinX, fz.MaxX)
+        local z = math.random(fz.MinZ, fz.MaxZ)
+        local size = 3 + math.random() * 8
+        local rock = createRock(size)
+        rock.Material = Enum.Material.Slate
+        local embedDepth = size * rockConfig.EmbedPercent
+        if placePartOnTerrain(x, z, rock, embedDepth) then
+            rockCount += 1
+        else
+            rock:Destroy()
+        end
+    end
+
+    task.wait()
 
     -- Signposts at road intersections
     local signposts = {
-        {pos = Vector3.new(520, 0, 520), text = "Town Center"},
-        {pos = Vector3.new(270, 0, 520), text = "Western Realm"},
-        {pos = Vector3.new(770, 0, 520), text = "Eastern Realm"},
-        {pos = Vector3.new(520, 0, 270), text = "Southern Fields"},
-        {pos = Vector3.new(520, 0, 770), text = "Northern Woods"},
+        {x = MAP_CENTER + 20, z = MAP_CENTER + 20, text = "Town Center"},
+        {x = MAP_CENTER - 300, z = MAP_CENTER, text = "Western Wilds"},
+        {x = MAP_CENTER + 300, z = MAP_CENTER, text = "Eastern Frontier"},
+        {x = MAP_CENTER, z = MAP_CENTER - 300, text = "Southern Meadows"},
+        {x = MAP_CENTER, z = MAP_CENTER + 300, text = "Northern Forest"},
+        {x = 1500, z = 1500, text = "Forbidden Zone"},
+        {x = 250, z = 1520, text = "Lake Shore"},
     }
 
-    for _, signData in signposts do
-        createSignpost(signData.pos, signData.text)
+    for _, data in signposts do
+        local sign = createSignpost(data.text)
+        placeOnTerrain(data.x, data.z, sign, 0.8)
     end
+
+    -- Torches along safe zone roads
+    local torchCount = 0
+    local sz = OverworldConfig.SafeZone
+    local torchSpacing = 40
+    -- Along main E-W road in safe zone
+    for x = sz.MinX, sz.MaxX, torchSpacing do
+        for side = -1, 1, 2 do
+            local torch = createTorch()
+            local tz = MAP_CENTER + side * 10
+            if placeOnTerrain(x, tz, torch, 0.3) then
+                torchCount += 1
+            else
+                torch:Destroy()
+            end
+        end
+    end
+    -- Along main N-S road in safe zone
+    for z = sz.MinZ, sz.MaxZ, torchSpacing do
+        for side = -1, 1, 2 do
+            local torch = createTorch()
+            local tx = MAP_CENTER + side * 10
+            if placeOnTerrain(tx, z, torch, 0.3) then
+                torchCount += 1
+            else
+                torch:Destroy()
+            end
+        end
+    end
+
+    task.wait()
+
+    -- Bridges over river at road crossings
+    -- Main E-W road crosses river near center area
+    -- River at center is roughly at z=1000 (where x=900, riverZ~1000)
+    local bridge1 = createBridge(40, 16)
+    -- Position bridge where main E-W road crosses river
+    local bridgeHit = raycastTerrain(900, 1000)
+    if bridgeHit then
+        bridge1:PivotTo(CFrame.new(900, bridgeHit.Position.Y + 1.5, 1000))
+    else
+        bridge1:PivotTo(CFrame.new(900, 1.5, 1000))
+    end
+    bridge1.Parent = _propsFolder
+
+    -- Second bridge where N-S road crosses river (MAP_CENTER, ~1000)
+    local bridge2 = createBridge(40, 16)
+    bridge2:PivotTo(CFrame.new(MAP_CENTER, 1.5, 1000) * CFrame.Angles(0, math.rad(90), 0))
+    bridge2.Parent = _propsFolder
+
+    print(string.format("[WorldBuilder] Decorations complete (%d rocks, %d torches)", rockCount, torchCount))
 end
 
 -- ============================================================================
--- MAP BOUNDARY
+-- PASS 6: BOUNDARY
 -- ============================================================================
 
---[[
-    Creates invisible boundary walls to keep players on the map.
-]]
-local function createBoundary()
-    local mapConfig = OverworldConfig.Map
-    local height = 50
+local function buildBoundary()
+    print("[WorldBuilder] Pass 6: Building boundary walls...")
+
+    local height = 80
     local thickness = 5
 
     local boundaries = {
         -- North
         {
-            size = Vector3.new(mapConfig.Width, height, thickness),
-            position = Vector3.new(mapConfig.CenterX, height / 2, mapConfig.Height + thickness / 2),
+            size = Vector3.new(MAP_SIZE + thickness * 2, height, thickness),
+            position = Vector3.new(MAP_CENTER, height / 2, MAP_SIZE + thickness / 2),
         },
         -- South
         {
-            size = Vector3.new(mapConfig.Width, height, thickness),
-            position = Vector3.new(mapConfig.CenterX, height / 2, -thickness / 2),
+            size = Vector3.new(MAP_SIZE + thickness * 2, height, thickness),
+            position = Vector3.new(MAP_CENTER, height / 2, -thickness / 2),
         },
         -- East
         {
-            size = Vector3.new(thickness, height, mapConfig.Height),
-            position = Vector3.new(mapConfig.Width + thickness / 2, height / 2, mapConfig.CenterZ),
+            size = Vector3.new(thickness, height, MAP_SIZE + thickness * 2),
+            position = Vector3.new(MAP_SIZE + thickness / 2, height / 2, MAP_CENTER),
         },
         -- West
         {
-            size = Vector3.new(thickness, height, mapConfig.Height),
-            position = Vector3.new(-thickness / 2, height / 2, mapConfig.CenterZ),
+            size = Vector3.new(thickness, height, MAP_SIZE + thickness * 2),
+            position = Vector3.new(-thickness / 2, height / 2, MAP_CENTER),
         },
     }
 
-    for i, boundaryData in boundaries do
+    for i, data in boundaries do
         local wall = Instance.new("Part")
         wall.Name = "Boundary" .. i
-        wall.Size = boundaryData.size
-        wall.Position = boundaryData.position
+        wall.Size = data.size
+        wall.Position = data.position
         wall.Anchored = true
         wall.Transparency = 1
         wall.CanCollide = true
-        wall.Parent = _terrainFolder
+        wall.Parent = _worldFolder
     end
+
+    print("[WorldBuilder] Boundary walls complete")
 end
 
 -- ============================================================================
@@ -647,51 +1006,38 @@ end
     Builds the entire overworld environment.
 ]]
 function WorldBuilder.Build()
-    print("[WorldBuilder] Building overworld environment...")
+    print("[WorldBuilder] Building overworld environment (2000x2000 voxel terrain)...")
+
+    -- Get terrain reference
+    _terrain = workspace:FindFirstChildOfClass("Terrain") :: Terrain
+    if not _terrain then
+        warn("[WorldBuilder] No Terrain object in workspace!")
+        return
+    end
+
+    -- Clear any existing terrain
+    _terrain:Clear()
 
     -- Create folder structure
     _worldFolder = Instance.new("Folder")
     _worldFolder.Name = "Overworld"
     _worldFolder.Parent = workspace
 
-    _terrainFolder = Instance.new("Folder")
-    _terrainFolder.Name = "Terrain"
-    _terrainFolder.Parent = _worldFolder
-
-    _roadsFolder = Instance.new("Folder")
-    _roadsFolder.Name = "Roads"
-    _roadsFolder.Parent = _worldFolder
+    _propsFolder = Instance.new("Folder")
+    _propsFolder.Name = "Props"
+    _propsFolder.Parent = _worldFolder
 
     _treesFolder = Instance.new("Folder")
     _treesFolder.Name = "Trees"
     _treesFolder.Parent = _worldFolder
 
-    _decorationsFolder = Instance.new("Folder")
-    _decorationsFolder.Name = "Decorations"
-    _decorationsFolder.Parent = _worldFolder
-
-    _waterFolder = Instance.new("Folder")
-    _waterFolder.Name = "Water"
-    _waterFolder.Parent = _worldFolder
-
-    -- Build components
-    createGroundTerrain()
-    print("[WorldBuilder] Ground terrain created")
-
-    createRoadNetwork()
-    print("[WorldBuilder] Road network created")
-
-    createRiver()
-    print("[WorldBuilder] River system created")
-
-    createForests()
-    print("[WorldBuilder] Forests created")
-
-    createDecorations()
-    print("[WorldBuilder] Decorations created")
-
-    createBoundary()
-    print("[WorldBuilder] Boundary walls created")
+    -- Build in 6 sequential passes
+    buildHeightmap()
+    buildRoads()
+    buildRiver()
+    buildTrees()
+    buildDecorations()
+    buildBoundary()
 
     print("[WorldBuilder] Overworld environment complete!")
 end
@@ -704,6 +1050,9 @@ function WorldBuilder.Destroy()
         _worldFolder:Destroy()
         _worldFolder = nil
     end
+    if _terrain then
+        _terrain:Clear()
+    end
 end
 
 --[[
@@ -711,6 +1060,44 @@ end
 ]]
 function WorldBuilder.GetWorldFolder(): Folder?
     return _worldFolder
+end
+
+--[[
+    Gets the props folder reference (for placing game objects on terrain).
+]]
+function WorldBuilder.GetPropsFolder(): Folder?
+    return _propsFolder
+end
+
+--[[
+    Flattens terrain in a square area for base placement.
+    Fills with LeafyGrass at a consistent height.
+
+    @param x number - Center X position
+    @param z number - Center Z position
+    @param size number - Square area size in studs
+]]
+function WorldBuilder.FlattenForBase(x: number, z: number, size: number)
+    if not _terrain then return end
+
+    -- Find average height at this position
+    local targetHeight = getWorldHeight(x, z)
+
+    local halfSize = size / 2
+    local region = Region3.new(
+        Vector3.new(x - halfSize, targetHeight - 2, z - halfSize),
+        Vector3.new(x + halfSize, targetHeight + 10, z + halfSize)
+    ):ExpandToGrid(VOXEL)
+
+    -- Clear above
+    _terrain:FillRegion(region, VOXEL, Enum.Material.Air)
+
+    -- Fill flat surface
+    local surfaceRegion = Region3.new(
+        Vector3.new(x - halfSize, targetHeight - 4, z - halfSize),
+        Vector3.new(x + halfSize, targetHeight, z + halfSize)
+    ):ExpandToGrid(VOXEL)
+    _terrain:FillRegion(surfaceRegion, VOXEL, Enum.Material.LeafyGrass)
 end
 
 return WorldBuilder
