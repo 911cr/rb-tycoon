@@ -5525,17 +5525,23 @@ local function createGoldMine()
         -- Main frame
         local mainFrame = Instance.new("Frame")
         mainFrame.Name = "MainFrame"
-        mainFrame.Size = UDim2.new(0, 450, 0, 550)
-        mainFrame.Position = UDim2.new(0.5, -225, 0.5, -275)
+        mainFrame.Size = UDim2.new(0.92, 0, 0.85, 0)
+        mainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+        mainFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
         mainFrame.BackgroundColor3 = Color3.fromRGB(30, 25, 20)
         mainFrame.BorderSizePixel = 3
         mainFrame.BorderColor3 = Color3.fromRGB(255, 200, 50)
+        mainFrame.ClipsDescendants = true
         mainFrame.Parent = screenGui
+
+        local sizeConstraint = Instance.new("UISizeConstraint")
+        sizeConstraint.MaxSize = Vector2.new(450, 600)
+        sizeConstraint.Parent = mainFrame
 
         -- Title
         local title = Instance.new("TextLabel")
         title.Name = "Title"
-        title.Size = UDim2.new(1, 0, 0, 50)
+        title.Size = UDim2.new(1, -50, 0, 50)
         title.Position = UDim2.new(0, 0, 0, 0)
         title.BackgroundColor3 = Color3.fromRGB(50, 40, 30)
         title.BorderSizePixel = 0
@@ -5544,6 +5550,39 @@ local function createGoldMine()
         title.TextScaled = true
         title.Font = Enum.Font.GothamBold
         title.Parent = mainFrame
+
+        -- Title bar background (behind X button)
+        local titleBg = Instance.new("Frame")
+        titleBg.Size = UDim2.new(0, 50, 0, 50)
+        titleBg.Position = UDim2.new(1, -50, 0, 0)
+        titleBg.BackgroundColor3 = Color3.fromRGB(50, 40, 30)
+        titleBg.BorderSizePixel = 0
+        titleBg.Parent = mainFrame
+
+        -- X close button in title bar (always accessible on small screens)
+        local xButton = Instance.new("TextButton")
+        xButton.Name = "XClose"
+        xButton.Size = UDim2.new(0, 36, 0, 36)
+        xButton.Position = UDim2.new(1, -41, 0, 7)
+        xButton.BackgroundColor3 = Color3.fromRGB(150, 50, 50)
+        xButton.BorderSizePixel = 0
+        xButton.Text = "X"
+        xButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+        xButton.TextScaled = true
+        xButton.Font = Enum.Font.GothamBold
+        xButton.Parent = mainFrame
+
+        -- Scrolling frame for upgrade cards (scrollable on small screens)
+        local scrollFrame = Instance.new("ScrollingFrame")
+        scrollFrame.Name = "CardScroll"
+        scrollFrame.Size = UDim2.new(1, -6, 1, -100)
+        scrollFrame.Position = UDim2.new(0, 3, 0, 50)
+        scrollFrame.BackgroundTransparency = 1
+        scrollFrame.BorderSizePixel = 0
+        scrollFrame.ScrollBarThickness = 6
+        scrollFrame.ScrollBarImageColor3 = Color3.fromRGB(255, 200, 50)
+        scrollFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+        scrollFrame.Parent = mainFrame
 
         -- Function to create an upgrade card
         local function createUpgradeCard(yOffset, upgradeType, getStats, currentLevel, color)
@@ -5557,7 +5596,7 @@ local function createGoldMine()
             card.BackgroundColor3 = Color3.fromRGB(45, 40, 35)
             card.BorderSizePixel = 2
             card.BorderColor3 = color
-            card.Parent = mainFrame
+            card.Parent = scrollFrame
 
             local cardTitle = Instance.new("TextLabel")
             cardTitle.Size = UDim2.new(0.6, 0, 0, 30)
@@ -5608,16 +5647,18 @@ local function createGoldMine()
         end
 
         -- Create cards for each upgrade type
-        local pickaxeBtn = createUpgradeCard(60, "Pickaxe", getPickaxeStats, GoldMineState.equipment.pickaxeLevel, Color3.fromRGB(139, 90, 43))
-        local smelterBtn = createUpgradeCard(170, "Smelter", getSmelterStats, GoldMineState.equipment.smelterLevel, Color3.fromRGB(255, 100, 50))
-        local minersBtn = createUpgradeCard(280, "Miners", getMinerStats, GoldMineState.equipment.minerLevel, Color3.fromRGB(100, 80, 60))
-        local collectorsBtn = createUpgradeCard(390, "Collectors", getCollectorStats, GoldMineState.equipment.collectorLevel, Color3.fromRGB(60, 100, 60))
+        local pickaxeBtn = createUpgradeCard(5, "Pickaxe", getPickaxeStats, GoldMineState.equipment.pickaxeLevel, Color3.fromRGB(139, 90, 43))
+        local smelterBtn = createUpgradeCard(115, "Smelter", getSmelterStats, GoldMineState.equipment.smelterLevel, Color3.fromRGB(255, 100, 50))
+        local minersBtn = createUpgradeCard(225, "Miners", getMinerStats, GoldMineState.equipment.minerLevel, Color3.fromRGB(100, 80, 60))
+        local collectorsBtn = createUpgradeCard(335, "Collectors", getCollectorStats, GoldMineState.equipment.collectorLevel, Color3.fromRGB(60, 100, 60))
 
-        -- Close button
+        scrollFrame.CanvasSize = UDim2.new(0, 0, 0, 445)
+
+        -- Close button (pinned to bottom of mainFrame, always visible)
         local closeButton = Instance.new("TextButton")
         closeButton.Name = "CloseButton"
         closeButton.Size = UDim2.new(0.5, 0, 0, 40)
-        closeButton.Position = UDim2.new(0.25, 0, 0, 500)
+        closeButton.Position = UDim2.new(0.25, 0, 1, -45)
         closeButton.BackgroundColor3 = Color3.fromRGB(150, 50, 50)
         closeButton.BorderSizePixel = 0
         closeButton.Text = "CLOSE"
@@ -5684,10 +5725,12 @@ local function createGoldMine()
             end
         end)
 
-        closeButton.MouseButton1Click:Connect(function()
+        local function closeGui()
             screenGui:Destroy()
             activeUpgradeGuis[player.UserId] = nil
-        end)
+        end
+        closeButton.MouseButton1Click:Connect(closeGui)
+        xButton.MouseButton1Click:Connect(closeGui)
     end
 
     -- Cleanup GUI when player leaves
@@ -8315,17 +8358,23 @@ local function createLumberMill()
         -- Main frame
         local mainFrame = Instance.new("Frame")
         mainFrame.Name = "MainFrame"
-        mainFrame.Size = UDim2.new(0, 450, 0, 550)
-        mainFrame.Position = UDim2.new(0.5, -225, 0.5, -275)
+        mainFrame.Size = UDim2.new(0.92, 0, 0.85, 0)
+        mainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+        mainFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
         mainFrame.BackgroundColor3 = Color3.fromRGB(30, 35, 25)  -- Dark green tint
         mainFrame.BorderSizePixel = 3
         mainFrame.BorderColor3 = Color3.fromRGB(100, 200, 100)
+        mainFrame.ClipsDescendants = true
         mainFrame.Parent = screenGui
+
+        local sizeConstraint = Instance.new("UISizeConstraint")
+        sizeConstraint.MaxSize = Vector2.new(450, 600)
+        sizeConstraint.Parent = mainFrame
 
         -- Title
         local title = Instance.new("TextLabel")
         title.Name = "Title"
-        title.Size = UDim2.new(1, 0, 0, 50)
+        title.Size = UDim2.new(1, -50, 0, 50)
         title.Position = UDim2.new(0, 0, 0, 0)
         title.BackgroundColor3 = Color3.fromRGB(40, 50, 30)
         title.BorderSizePixel = 0
@@ -8335,22 +8384,58 @@ local function createLumberMill()
         title.Font = Enum.Font.GothamBold
         title.Parent = mainFrame
 
-        -- Close button
+        -- Title bar background (behind X button)
+        local titleBg = Instance.new("Frame")
+        titleBg.Size = UDim2.new(0, 50, 0, 50)
+        titleBg.Position = UDim2.new(1, -50, 0, 0)
+        titleBg.BackgroundColor3 = Color3.fromRGB(40, 50, 30)
+        titleBg.BorderSizePixel = 0
+        titleBg.Parent = mainFrame
+
+        -- X close button in title bar
+        local xButton = Instance.new("TextButton")
+        xButton.Name = "XClose"
+        xButton.Size = UDim2.new(0, 36, 0, 36)
+        xButton.Position = UDim2.new(1, -41, 0, 7)
+        xButton.BackgroundColor3 = Color3.fromRGB(150, 50, 50)
+        xButton.BorderSizePixel = 0
+        xButton.Text = "X"
+        xButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+        xButton.TextScaled = true
+        xButton.Font = Enum.Font.GothamBold
+        xButton.Parent = mainFrame
+
+        -- Bottom close button (always visible)
         local closeButton = Instance.new("TextButton")
         closeButton.Name = "CloseButton"
-        closeButton.Size = UDim2.new(0, 40, 0, 40)
-        closeButton.Position = UDim2.new(1, -45, 0, 5)
+        closeButton.Size = UDim2.new(0.5, 0, 0, 40)
+        closeButton.Position = UDim2.new(0.25, 0, 1, -45)
         closeButton.BackgroundColor3 = Color3.fromRGB(150, 50, 50)
         closeButton.BorderSizePixel = 0
-        closeButton.Text = "X"
+        closeButton.Text = "CLOSE"
         closeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
         closeButton.TextScaled = true
         closeButton.Font = Enum.Font.GothamBold
         closeButton.Parent = mainFrame
-        closeButton.MouseButton1Click:Connect(function()
+
+        local function closeLumberGui()
             screenGui:Destroy()
             activeLumberUpgradeGuis[player.UserId] = nil
-        end)
+        end
+        closeButton.MouseButton1Click:Connect(closeLumberGui)
+        xButton.MouseButton1Click:Connect(closeLumberGui)
+
+        -- Scrolling frame for upgrade cards
+        local scrollFrame = Instance.new("ScrollingFrame")
+        scrollFrame.Name = "CardScroll"
+        scrollFrame.Size = UDim2.new(1, -6, 1, -100)
+        scrollFrame.Position = UDim2.new(0, 3, 0, 50)
+        scrollFrame.BackgroundTransparency = 1
+        scrollFrame.BorderSizePixel = 0
+        scrollFrame.ScrollBarThickness = 6
+        scrollFrame.ScrollBarImageColor3 = Color3.fromRGB(100, 200, 100)
+        scrollFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+        scrollFrame.Parent = mainFrame
 
         -- Function to create an upgrade card
         local function createUpgradeCard(yOffset, upgradeType, getStats, currentLevel, color, onUpgrade)
@@ -8364,7 +8449,7 @@ local function createLumberMill()
             card.BackgroundColor3 = Color3.fromRGB(45, 50, 40)
             card.BorderSizePixel = 2
             card.BorderColor3 = color
-            card.Parent = mainFrame
+            card.Parent = scrollFrame
 
             local cardTitle = Instance.new("TextLabel")
             cardTitle.Size = UDim2.new(0.6, 0, 0, 30)
@@ -8421,7 +8506,7 @@ local function createLumberMill()
         end
 
         -- Create upgrade cards
-        local yOffset = 60
+        local yOffset = 5
 
         -- 1. Axe Upgrade
         createUpgradeCard(yOffset, "Axe", getAxeStats, LumberMillState.equipment.axeLevel,
@@ -8469,6 +8554,8 @@ local function createLumberMill()
                 addLumberXP(50)
                 print(string.format("[Upgrade] %s upgraded Haulers to Lv%d!", player.Name, nextLevel))
             end)
+
+        scrollFrame.CanvasSize = UDim2.new(0, 0, 0, yOffset + 110)
     end
 
     -- Cleanup GUI when player leaves
@@ -10852,20 +10939,26 @@ local function createFarm(farmNumber)
         screenGui.Parent = playerGui
         activeFarmUpgradeGuis[player.UserId] = screenGui
 
-        -- Main frame (slightly taller for 5 upgrades)
+        -- Main frame (responsive for small screens)
         local mainFrame = Instance.new("Frame")
         mainFrame.Name = "MainFrame"
-        mainFrame.Size = UDim2.new(0, 450, 0, 650)
-        mainFrame.Position = UDim2.new(0.5, -225, 0.5, -325)
+        mainFrame.Size = UDim2.new(0.92, 0, 0.85, 0)
+        mainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+        mainFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
         mainFrame.BackgroundColor3 = Color3.fromRGB(30, 40, 25)
         mainFrame.BorderSizePixel = 3
         mainFrame.BorderColor3 = Color3.fromRGB(150, 200, 100)
+        mainFrame.ClipsDescendants = true
         mainFrame.Parent = screenGui
+
+        local sizeConstraint = Instance.new("UISizeConstraint")
+        sizeConstraint.MaxSize = Vector2.new(450, 650)
+        sizeConstraint.Parent = mainFrame
 
         -- Title
         local title = Instance.new("TextLabel")
         title.Name = "Title"
-        title.Size = UDim2.new(1, 0, 0, 50)
+        title.Size = UDim2.new(1, -50, 0, 50)
         title.Position = UDim2.new(0, 0, 0, 0)
         title.BackgroundColor3 = Color3.fromRGB(50, 60, 40)
         title.BorderSizePixel = 0
@@ -10874,6 +10967,39 @@ local function createFarm(farmNumber)
         title.TextScaled = true
         title.Font = Enum.Font.GothamBold
         title.Parent = mainFrame
+
+        -- Title bar background (behind X button)
+        local titleBg = Instance.new("Frame")
+        titleBg.Size = UDim2.new(0, 50, 0, 50)
+        titleBg.Position = UDim2.new(1, -50, 0, 0)
+        titleBg.BackgroundColor3 = Color3.fromRGB(50, 60, 40)
+        titleBg.BorderSizePixel = 0
+        titleBg.Parent = mainFrame
+
+        -- X close button in title bar (always accessible on small screens)
+        local xButton = Instance.new("TextButton")
+        xButton.Name = "XClose"
+        xButton.Size = UDim2.new(0, 36, 0, 36)
+        xButton.Position = UDim2.new(1, -41, 0, 7)
+        xButton.BackgroundColor3 = Color3.fromRGB(150, 50, 50)
+        xButton.BorderSizePixel = 0
+        xButton.Text = "X"
+        xButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+        xButton.TextScaled = true
+        xButton.Font = Enum.Font.GothamBold
+        xButton.Parent = mainFrame
+
+        -- Scrolling frame for upgrade cards
+        local scrollFrame = Instance.new("ScrollingFrame")
+        scrollFrame.Name = "CardScroll"
+        scrollFrame.Size = UDim2.new(1, -6, 1, -100)
+        scrollFrame.Position = UDim2.new(0, 3, 0, 50)
+        scrollFrame.BackgroundTransparency = 1
+        scrollFrame.BorderSizePixel = 0
+        scrollFrame.ScrollBarThickness = 6
+        scrollFrame.ScrollBarImageColor3 = Color3.fromRGB(150, 200, 100)
+        scrollFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+        scrollFrame.Parent = mainFrame
 
         -- Function to create an upgrade card
         local function createFarmUpgradeCard(yOffset, upgradeType, getStats, currentLevel, color)
@@ -10887,7 +11013,7 @@ local function createFarm(farmNumber)
             card.BackgroundColor3 = Color3.fromRGB(45, 55, 40)
             card.BorderSizePixel = 2
             card.BorderColor3 = color
-            card.Parent = mainFrame
+            card.Parent = scrollFrame
 
             local cardTitle = Instance.new("TextLabel")
             cardTitle.Size = UDim2.new(0.6, 0, 0, 30)
@@ -10940,17 +11066,19 @@ local function createFarm(farmNumber)
         end
 
         -- Create cards for each upgrade type (5 cards for Farm)
-        local hoeBtn = createFarmUpgradeCard(60, "Hoe", getHoeStats, FarmState.equipment.hoeLevel, Color3.fromRGB(139, 90, 43))
-        local waterCanBtn = createFarmUpgradeCard(170, "Watering Can", getWateringCanStats, FarmState.equipment.wateringCanLevel, Color3.fromRGB(80, 150, 200))
-        local windmillBtn = createFarmUpgradeCard(280, "Windmill", getWindmillStatsFunc, FarmState.equipment.windmillLevel, Color3.fromRGB(220, 200, 100))
-        local farmersBtn = createFarmUpgradeCard(390, "Farmers", getFarmerStats, FarmState.equipment.farmerLevel, Color3.fromRGB(100, 140, 100))
-        local carriersBtn = createFarmUpgradeCard(500, "Carriers", getCarrierStats, FarmState.equipment.carrierLevel, Color3.fromRGB(60, 100, 60))
+        local hoeBtn = createFarmUpgradeCard(5, "Hoe", getHoeStats, FarmState.equipment.hoeLevel, Color3.fromRGB(139, 90, 43))
+        local waterCanBtn = createFarmUpgradeCard(115, "Watering Can", getWateringCanStats, FarmState.equipment.wateringCanLevel, Color3.fromRGB(80, 150, 200))
+        local windmillBtn = createFarmUpgradeCard(225, "Windmill", getWindmillStatsFunc, FarmState.equipment.windmillLevel, Color3.fromRGB(220, 200, 100))
+        local farmersBtn = createFarmUpgradeCard(335, "Farmers", getFarmerStats, FarmState.equipment.farmerLevel, Color3.fromRGB(100, 140, 100))
+        local carriersBtn = createFarmUpgradeCard(445, "Carriers", getCarrierStats, FarmState.equipment.carrierLevel, Color3.fromRGB(60, 100, 60))
 
-        -- Close button
+        scrollFrame.CanvasSize = UDim2.new(0, 0, 0, 555)
+
+        -- Close button (pinned to bottom of mainFrame, always visible)
         local closeButton = Instance.new("TextButton")
         closeButton.Name = "CloseButton"
         closeButton.Size = UDim2.new(0.5, 0, 0, 40)
-        closeButton.Position = UDim2.new(0.25, 0, 0, 605)
+        closeButton.Position = UDim2.new(0.25, 0, 1, -45)
         closeButton.BackgroundColor3 = Color3.fromRGB(150, 50, 50)
         closeButton.BorderSizePixel = 0
         closeButton.Text = "CLOSE"
@@ -11016,10 +11144,12 @@ local function createFarm(farmNumber)
             createFarmUpgradeGui(player)
         end)
 
-        closeButton.MouseButton1Click:Connect(function()
+        local function closeFarmGui()
             screenGui:Destroy()
             activeFarmUpgradeGuis[player.UserId] = nil
-        end)
+        end
+        closeButton.MouseButton1Click:Connect(closeFarmGui)
+        xButton.MouseButton1Click:Connect(closeFarmGui)
     end
 
     -- Cleanup GUI when player leaves
@@ -13766,12 +13896,18 @@ local function createTownHall()
         -- Main frame
         local mainFrame = Instance.new("Frame")
         mainFrame.Name = "MainFrame"
-        mainFrame.Size = UDim2.new(0, 480, 0, 600)
-        mainFrame.Position = UDim2.new(0.5, -240, 0.5, -300)
+        mainFrame.Size = UDim2.new(0.92, 0, 0.85, 0)
+        mainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+        mainFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
         mainFrame.BackgroundColor3 = Color3.fromRGB(30, 25, 20)
         mainFrame.BorderSizePixel = 3
         mainFrame.BorderColor3 = Color3.fromRGB(255, 200, 50)
+        mainFrame.ClipsDescendants = true
         mainFrame.Parent = screenGui
+
+        local sizeConstraint = Instance.new("UISizeConstraint")
+        sizeConstraint.MaxSize = Vector2.new(480, 600)
+        sizeConstraint.Parent = mainFrame
 
         -- Title bar
         local titleBar = Instance.new("Frame")
