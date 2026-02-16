@@ -917,6 +917,57 @@ local function createBarnExterior(name, position, size, buildingName, facingDire
         hay.Parent = exterior
     end
 
+    -- Window shutters (on side walls)
+    for _, side in {-1, 1} do
+        for _, wz in {-size.Z/4, size.Z/4} do
+            -- Window opening (dark inset)
+            local windowFrame = Instance.new("Part")
+            windowFrame.Name = "Window"
+            windowFrame.Size = Vector3.new(0.3, 2, 1.5)
+            windowFrame.Position = position + rotateOffset(Vector3.new(side * (size.X/2 + 0.1), wallHeight * 0.6, wz))
+            windowFrame.Orientation = Vector3.new(0, rotation, 0)
+            windowFrame.Anchored = true
+            windowFrame.Material = Enum.Material.Slate
+            windowFrame.Color = Color3.fromRGB(20, 15, 10)
+            windowFrame.CanCollide = false
+            windowFrame.Parent = exterior
+
+            -- Shutter (angled open)
+            local shutter = Instance.new("Part")
+            shutter.Name = "Shutter"
+            shutter.Size = Vector3.new(0.15, 2, 0.8)
+            shutter.Position = position + rotateOffset(Vector3.new(side * (size.X/2 + 0.3), wallHeight * 0.6, wz + 1))
+            shutter.Orientation = Vector3.new(0, rotation + side * 30, 0)
+            shutter.Anchored = true
+            shutter.Material = Enum.Material.Wood
+            shutter.Color = barnRedDark
+            shutter.CanCollide = false
+            shutter.Parent = exterior
+        end
+    end
+
+    -- Weathervane on roof ridge
+    local vanePost = Instance.new("Part")
+    vanePost.Name = "WeathervanePost"
+    vanePost.Size = Vector3.new(0.15, 2, 0.15)
+    vanePost.Position = position + Vector3.new(0, wallHeight + roofPeakHeight + 1.5, 0)
+    vanePost.Anchored = true
+    vanePost.Material = Enum.Material.Metal
+    vanePost.Color = Color3.fromRGB(50, 50, 55)
+    vanePost.CanCollide = false
+    vanePost.Parent = exterior
+
+    local vaneArrow = Instance.new("Part")
+    vaneArrow.Name = "WeathervaneArrow"
+    vaneArrow.Size = Vector3.new(0.1, 0.1, 2)
+    vaneArrow.Position = position + Vector3.new(0, wallHeight + roofPeakHeight + 2.5, 0)
+    vaneArrow.Orientation = Vector3.new(0, 30, 0)
+    vaneArrow.Anchored = true
+    vaneArrow.Material = Enum.Material.Metal
+    vaneArrow.Color = Color3.fromRGB(50, 50, 55)
+    vaneArrow.CanCollide = false
+    vaneArrow.Parent = exterior
+
     -- Entrance trigger (invisible, walk-through teleport)
     local entrance = Instance.new("Part")
     entrance.Name = "Entrance"
@@ -1068,16 +1119,43 @@ local function createBuildingExterior(name, position, size, roofColor, wallColor
     doorTop.Color = wallColor
     doorTop.Parent = exterior
 
-    -- Roof
-    local roof = Instance.new("Part")
-    roof.Name = "Roof"
-    roof.Size = Vector3.new(size.X + 2, 1, size.Z + 2)
-    roof.Position = position + Vector3.new(0, wallHeight + 0.5, 0)
-    roof.Orientation = Vector3.new(0, rotation, 0)
-    roof.Anchored = true
-    roof.Material = Enum.Material.Slate
-    roof.Color = roofColor
-    roof.Parent = exterior
+    -- Peaked roof (two sloped panels instead of flat)
+    local roofOverhang = 1
+    local roofPeakH = 4
+    local roofHalfWidth = (size.X + 2) / 2
+    local roofSlopeLen = math.sqrt(roofHalfWidth^2 + roofPeakH^2)
+    local roofAngle = math.deg(math.atan2(roofPeakH, roofHalfWidth))
+
+    local roofLeft = Instance.new("Part")
+    roofLeft.Name = "RoofLeft"
+    roofLeft.Size = Vector3.new(roofSlopeLen, 0.5, size.Z + 2)
+    roofLeft.Position = position + rotateOffset(Vector3.new(-roofHalfWidth/2, wallHeight + roofPeakH/2, 0))
+    roofLeft.Orientation = Vector3.new(0, rotation, -roofAngle)
+    roofLeft.Anchored = true
+    roofLeft.Material = Enum.Material.Slate
+    roofLeft.Color = roofColor
+    roofLeft.Parent = exterior
+
+    local roofRight = Instance.new("Part")
+    roofRight.Name = "RoofRight"
+    roofRight.Size = Vector3.new(roofSlopeLen, 0.5, size.Z + 2)
+    roofRight.Position = position + rotateOffset(Vector3.new(roofHalfWidth/2, wallHeight + roofPeakH/2, 0))
+    roofRight.Orientation = Vector3.new(0, rotation, roofAngle)
+    roofRight.Anchored = true
+    roofRight.Material = Enum.Material.Slate
+    roofRight.Color = roofColor
+    roofRight.Parent = exterior
+
+    -- Ridge cap
+    local ridge = Instance.new("Part")
+    ridge.Name = "RoofRidge"
+    ridge.Size = Vector3.new(1, 0.4, size.Z + 2)
+    ridge.Position = position + Vector3.new(0, wallHeight + roofPeakH + 0.2, 0)
+    ridge.Orientation = Vector3.new(0, rotation, 0)
+    ridge.Anchored = true
+    ridge.Material = Enum.Material.Slate
+    ridge.Color = Color3.fromRGB(roofColor.R * 200, roofColor.G * 200, roofColor.B * 200)
+    ridge.Parent = exterior
 
     -- Entrance trigger (invisible, walk-through teleport)
     local entrance = Instance.new("Part")
@@ -1111,6 +1189,69 @@ local function createBuildingExterior(name, position, size, roofColor, wallColor
             debounce[player.UserId] = nil
         end)
     end)
+
+    -- Window openings with glass
+    for _, side in {-1, 1} do
+        local windowGlass = Instance.new("Part")
+        windowGlass.Name = "Window"
+        windowGlass.Size = Vector3.new(0.3, 2.5, 2)
+        windowGlass.Position = position + rotateOffset(Vector3.new(side * (size.X/2 + 0.1), wallHeight * 0.5, 0))
+        windowGlass.Orientation = Vector3.new(0, rotation, 0)
+        windowGlass.Anchored = true
+        windowGlass.Material = Enum.Material.Glass
+        windowGlass.Color = Color3.fromRGB(180, 210, 230)
+        windowGlass.Transparency = 0.4
+        windowGlass.CanCollide = false
+        windowGlass.Parent = exterior
+    end
+
+    -- Door frame trim (wooden beams around entrance)
+    local doorFrameColor = Color3.fromRGB(70, 48, 30)
+    for _, dx in {-3.2, 3.2} do
+        local dFrame = Instance.new("Part")
+        dFrame.Name = "DoorFrame"
+        dFrame.Size = Vector3.new(0.4, wallHeight - 2, 0.4)
+        dFrame.Position = position + rotateOffset(Vector3.new(dx, (wallHeight - 2)/2, size.Z/2))
+        dFrame.Orientation = Vector3.new(0, rotation, 0)
+        dFrame.Anchored = true
+        dFrame.Material = Enum.Material.Wood
+        dFrame.Color = doorFrameColor
+        dFrame.CanCollide = false
+        dFrame.Parent = exterior
+    end
+    local dFrameTop = Instance.new("Part")
+    dFrameTop.Name = "DoorFrameTop"
+    dFrameTop.Size = Vector3.new(6.8, 0.4, 0.4)
+    dFrameTop.Position = position + rotateOffset(Vector3.new(0, wallHeight - 2.2, size.Z/2))
+    dFrameTop.Orientation = Vector3.new(0, rotation, 0)
+    dFrameTop.Anchored = true
+    dFrameTop.Material = Enum.Material.Wood
+    dFrameTop.Color = doorFrameColor
+    dFrameTop.CanCollide = false
+    dFrameTop.Parent = exterior
+
+    -- Banner/flag on wall
+    local flagPole = Instance.new("Part")
+    flagPole.Name = "FlagPole"
+    flagPole.Size = Vector3.new(0.2, 4, 0.2)
+    flagPole.Position = position + rotateOffset(Vector3.new(size.X/2 - 1, wallHeight + 2, size.Z/2 - 0.5))
+    flagPole.Orientation = Vector3.new(0, rotation, -15)
+    flagPole.Anchored = true
+    flagPole.Material = Enum.Material.Metal
+    flagPole.Color = Color3.fromRGB(60, 55, 50)
+    flagPole.CanCollide = false
+    flagPole.Parent = exterior
+
+    local flag = Instance.new("Part")
+    flag.Name = "Flag"
+    flag.Size = Vector3.new(0.1, 2, 1.5)
+    flag.Position = position + rotateOffset(Vector3.new(size.X/2 - 0.5, wallHeight + 3, size.Z/2 + 0.3))
+    flag.Orientation = Vector3.new(0, rotation, 0)
+    flag.Anchored = true
+    flag.Material = Enum.Material.Fabric
+    flag.Color = Color3.fromRGB(180, 30, 30)
+    flag.CanCollide = false
+    flag.Parent = exterior
 
     -- Building sign
     createSign(exterior, name, position + Vector3.new(0, wallHeight + 2, size.Z/2), Vector3.new(6, 2, 0.3))
@@ -1376,6 +1517,27 @@ local function createGround()
     ground.Color = Color3.fromRGB(90, 85, 80)
     ground.Parent = villageFolder
 
+    -- Grass patches around village edges
+    local grassPositions = {
+        {pos = Vector3.new(10, GROUND_Y + 0.05, 25), size = Vector3.new(18, 0.1, 20)},
+        {pos = Vector3.new(110, GROUND_Y + 0.05, 25), size = Vector3.new(18, 0.1, 20)},
+        {pos = Vector3.new(10, GROUND_Y + 0.05, 155), size = Vector3.new(18, 0.1, 20)},
+        {pos = Vector3.new(110, GROUND_Y + 0.05, 155), size = Vector3.new(18, 0.1, 20)},
+        {pos = Vector3.new(5, GROUND_Y + 0.05, 90), size = Vector3.new(12, 0.1, 60)},
+        {pos = Vector3.new(115, GROUND_Y + 0.05, 90), size = Vector3.new(12, 0.1, 60)},
+    }
+    for i, gp in grassPositions do
+        local grass = Instance.new("Part")
+        grass.Name = "GrassPatch" .. i
+        grass.Size = gp.size
+        grass.Position = gp.pos
+        grass.Anchored = true
+        grass.Material = Enum.Material.Grass
+        grass.Color = Color3.fromRGB(60 + math.random(20), 110 + math.random(30), 45 + math.random(15))
+        grass.CanCollide = false
+        grass.Parent = villageFolder
+    end
+
     -- Main cobblestone path (runs from entrance to Town Hall at the end)
     local mainPath = Instance.new("Part")
     mainPath.Name = "MainPath"
@@ -1498,6 +1660,95 @@ local function createGround()
         battlement.Parent = villageFolder
     end
 
+    -- Invisible barriers above walls to prevent jump exploits
+    local barrierHeight = 50
+    for _, wall in {leftWall, rightWall, backWall, frontWallLeft, frontWallRight} do
+        local barrier = Instance.new("Part")
+        barrier.Name = wall.Name .. "_Barrier"
+        barrier.Size = Vector3.new(wall.Size.X, barrierHeight, wall.Size.Z)
+        barrier.Position = wall.Position + Vector3.new(0, wallHeight/2 + barrierHeight/2, 0)
+        barrier.Anchored = true
+        barrier.Transparency = 1
+        barrier.CanCollide = true
+        barrier.Parent = villageFolder
+    end
+    -- Gate ceiling barrier (above the opening between towers)
+    local gateCeiling = Instance.new("Part")
+    gateCeiling.Name = "GateCeilingBarrier"
+    gateCeiling.Size = Vector3.new(26, barrierHeight, wallThickness)
+    gateCeiling.Position = Vector3.new(60, GROUND_Y + wallHeight + barrierHeight/2, 8)
+    gateCeiling.Anchored = true
+    gateCeiling.Transparency = 1
+    gateCeiling.CanCollide = true
+    gateCeiling.Parent = villageFolder
+
+    -- Corner barrier pillars (fill any seam gaps at wall intersections)
+    local corners = {
+        Vector3.new(-5, GROUND_Y + 25, 8),
+        Vector3.new(125, GROUND_Y + 25, 8),
+        Vector3.new(-5, GROUND_Y + 25, 172),
+        Vector3.new(125, GROUND_Y + 25, 172),
+    }
+    for _, pos in corners do
+        local corner = Instance.new("Part")
+        corner.Name = "CornerBarrier"
+        corner.Size = Vector3.new(5, 50, 5)
+        corner.Position = pos
+        corner.Anchored = true
+        corner.Transparency = 1
+        corner.CanCollide = true
+        corner.Parent = villageFolder
+    end
+
+    -- Wall torch brackets (along walls every ~25 studs)
+    local wallTorchPositions = {
+        -- Left wall torches (facing inward, +X direction)
+        {pos = Vector3.new(-3.5, GROUND_Y + 5, 30), face = "right"},
+        {pos = Vector3.new(-3.5, GROUND_Y + 5, 60), face = "right"},
+        {pos = Vector3.new(-3.5, GROUND_Y + 5, 90), face = "right"},
+        {pos = Vector3.new(-3.5, GROUND_Y + 5, 120), face = "right"},
+        {pos = Vector3.new(-3.5, GROUND_Y + 5, 150), face = "right"},
+        -- Right wall torches (facing inward, -X direction)
+        {pos = Vector3.new(123.5, GROUND_Y + 5, 30), face = "left"},
+        {pos = Vector3.new(123.5, GROUND_Y + 5, 60), face = "left"},
+        {pos = Vector3.new(123.5, GROUND_Y + 5, 90), face = "left"},
+        {pos = Vector3.new(123.5, GROUND_Y + 5, 120), face = "left"},
+        {pos = Vector3.new(123.5, GROUND_Y + 5, 150), face = "left"},
+        -- Back wall torches
+        {pos = Vector3.new(30, GROUND_Y + 5, 170.5), face = "front"},
+        {pos = Vector3.new(60, GROUND_Y + 5, 170.5), face = "front"},
+        {pos = Vector3.new(90, GROUND_Y + 5, 170.5), face = "front"},
+    }
+    for i, wt in wallTorchPositions do
+        -- Metal bracket (L-shaped mount)
+        local bracket = Instance.new("Part")
+        bracket.Name = "WallBracket" .. i
+        bracket.Size = Vector3.new(0.3, 0.3, 0.8)
+        bracket.Position = wt.pos
+        bracket.Anchored = true
+        bracket.Material = Enum.Material.Metal
+        bracket.Color = Color3.fromRGB(50, 45, 40)
+        bracket.CanCollide = false
+        bracket.Parent = villageFolder
+
+        createTorch(villageFolder, wt.pos + Vector3.new(0, 0.3, 0))
+    end
+
+    -- Path edge stones (small stone borders along main path)
+    for z = 15, 165, 5 do
+        for _, xOff in {-6.5, 6.5} do
+            local edgeStone = Instance.new("Part")
+            edgeStone.Name = "PathEdge"
+            edgeStone.Size = Vector3.new(0.6, 0.3, 1.5)
+            edgeStone.Position = Vector3.new(60 + xOff, GROUND_Y + 0.15, z)
+            edgeStone.Anchored = true
+            edgeStone.Material = Enum.Material.Cobblestone
+            edgeStone.Color = Color3.fromRGB(80, 75, 70)
+            edgeStone.CanCollide = false
+            edgeStone.Parent = villageFolder
+        end
+    end
+
     print("  ✓ Ground, paths, and village walls created")
 end
 
@@ -1529,15 +1780,43 @@ local function createEntranceGate()
     rightTower.Color = Color3.fromRGB(80, 75, 70)
     rightTower.Parent = gateModel
 
-    -- Tower tops (conical/pyramid)
+    -- Tower tops (conical shapes using SpecialMesh)
     for _, tower in {leftTower, rightTower} do
         local top = Instance.new("Part")
-        top.Size = Vector3.new(10, 4, 10)
-        top.Position = tower.Position + Vector3.new(0, 12, 0)
+        top.Name = "TowerTop"
+        top.Size = Vector3.new(10, 8, 10)
+        top.Position = tower.Position + Vector3.new(0, 14, 0)
         top.Anchored = true
         top.Material = Enum.Material.Slate
         top.Color = Color3.fromRGB(60, 55, 50)
         top.Parent = gateModel
+
+        local mesh = Instance.new("SpecialMesh")
+        mesh.MeshType = Enum.MeshType.Sphere
+        mesh.Scale = Vector3.new(1, 1.5, 1)
+        mesh.Parent = top
+
+        -- Flag pole on tower top
+        local flagPole = Instance.new("Part")
+        flagPole.Name = "FlagPole"
+        flagPole.Size = Vector3.new(0.3, 6, 0.3)
+        flagPole.Position = tower.Position + Vector3.new(0, 22, 0)
+        flagPole.Anchored = true
+        flagPole.Material = Enum.Material.Metal
+        flagPole.Color = Color3.fromRGB(60, 55, 50)
+        flagPole.CanCollide = false
+        flagPole.Parent = gateModel
+
+        -- Banner/flag
+        local banner = Instance.new("Part")
+        banner.Name = "Banner"
+        banner.Size = Vector3.new(0.1, 3, 2)
+        banner.Position = tower.Position + Vector3.new(0, 23, 1.5)
+        banner.Anchored = true
+        banner.Material = Enum.Material.Fabric
+        banner.Color = Color3.fromRGB(180, 30, 30)
+        banner.CanCollide = false
+        banner.Parent = gateModel
     end
 
     -- Arch connecting towers
@@ -1560,6 +1839,107 @@ local function createEntranceGate()
     createTorch(gateModel, Vector3.new(75, GROUND_Y + 21, 12))
     createTorch(gateModel, Vector3.new(52, GROUND_Y + 8, 12))
     createTorch(gateModel, Vector3.new(68, GROUND_Y + 8, 12))
+
+    -- Portcullis (iron gate bars in gate opening)
+    for i = 0, 5 do
+        local bar = Instance.new("Part")
+        bar.Name = "PortcullisBar" .. i
+        bar.Size = Vector3.new(0.4, 14, 0.4)
+        bar.Position = Vector3.new(49 + i * 4.4, GROUND_Y + 7, 8)
+        bar.Anchored = true
+        bar.Material = Enum.Material.Metal
+        bar.Color = Color3.fromRGB(45, 42, 38)
+        bar.CanCollide = false
+        bar.Transparency = 0.3
+        bar.Parent = gateModel
+    end
+    -- Horizontal portcullis bars
+    for i = 0, 2 do
+        local hbar = Instance.new("Part")
+        hbar.Name = "PortcullisHBar" .. i
+        hbar.Size = Vector3.new(26, 0.4, 0.4)
+        hbar.Position = Vector3.new(60, GROUND_Y + 4 + i * 5, 8)
+        hbar.Anchored = true
+        hbar.Material = Enum.Material.Metal
+        hbar.Color = Color3.fromRGB(45, 42, 38)
+        hbar.CanCollide = false
+        hbar.Transparency = 0.3
+        hbar.Parent = gateModel
+    end
+
+    -- Arrow slits on tower faces (narrow dark openings)
+    for _, tower in {leftTower, rightTower} do
+        for _, yOff in {5, 10, 15} do
+            local slit = Instance.new("Part")
+            slit.Name = "ArrowSlit"
+            slit.Size = Vector3.new(0.3, 2.5, 0.6)
+            slit.Position = tower.Position + Vector3.new(0, yOff - 10, -4.1)
+            slit.Anchored = true
+            slit.Material = Enum.Material.Slate
+            slit.Color = Color3.fromRGB(15, 12, 10)
+            slit.CanCollide = false
+            slit.Parent = gateModel
+        end
+    end
+
+    -- Guard armor stands flanking entrance
+    for _, xPos in {52, 68} do
+        -- Armor stand base
+        local armorBase = Instance.new("Part")
+        armorBase.Name = "ArmorStand"
+        armorBase.Size = Vector3.new(1.5, 0.5, 1.5)
+        armorBase.Position = Vector3.new(xPos, GROUND_Y + 0.25, 12)
+        armorBase.Anchored = true
+        armorBase.Material = Enum.Material.Wood
+        armorBase.Color = Color3.fromRGB(60, 40, 25)
+        armorBase.CanCollide = false
+        armorBase.Parent = gateModel
+
+        -- Armor body (chest piece)
+        local armorBody = Instance.new("Part")
+        armorBody.Name = "ArmorBody"
+        armorBody.Size = Vector3.new(1.2, 2, 0.8)
+        armorBody.Position = Vector3.new(xPos, GROUND_Y + 2, 12)
+        armorBody.Anchored = true
+        armorBody.Material = Enum.Material.Metal
+        armorBody.Color = Color3.fromRGB(120, 115, 110)
+        armorBody.CanCollide = false
+        armorBody.Parent = gateModel
+
+        -- Helmet
+        local helmet = Instance.new("Part")
+        helmet.Name = "Helmet"
+        helmet.Shape = Enum.PartType.Ball
+        helmet.Size = Vector3.new(1, 1, 1)
+        helmet.Position = Vector3.new(xPos, GROUND_Y + 3.5, 12)
+        helmet.Anchored = true
+        helmet.Material = Enum.Material.Metal
+        helmet.Color = Color3.fromRGB(120, 115, 110)
+        helmet.CanCollide = false
+        helmet.Parent = gateModel
+
+        -- Shield
+        local shield = Instance.new("Part")
+        shield.Name = "Shield"
+        shield.Size = Vector3.new(0.15, 1.8, 1.2)
+        shield.Position = Vector3.new(xPos - 0.8, GROUND_Y + 2, 12)
+        shield.Anchored = true
+        shield.Material = Enum.Material.Metal
+        shield.Color = Color3.fromRGB(80, 30, 30)
+        shield.CanCollide = false
+        shield.Parent = gateModel
+
+        -- Sword (on other side)
+        local sword = Instance.new("Part")
+        sword.Name = "Sword"
+        sword.Size = Vector3.new(0.15, 3, 0.3)
+        sword.Position = Vector3.new(xPos + 0.8, GROUND_Y + 2.5, 12)
+        sword.Anchored = true
+        sword.Material = Enum.Material.Metal
+        sword.Color = Color3.fromRGB(170, 170, 175)
+        sword.CanCollide = false
+        sword.Parent = gateModel
+    end
 
     gateModel.Parent = villageFolder
     print("  ✓ Entrance gate created")
@@ -2525,24 +2905,36 @@ local function setNPCCarrying(npc, itemType, amount)
             color = Color3.fromRGB(120, 90, 60)
         }, CFrame.new(0, 0.5, 0.8)) -- Behind torso, slightly up
 
-        -- Ore chunks on top of sack (brown/gray rock chunks)
+        -- Ore chunks on top of sack (jagged rock shapes with random orientation)
         for i = 1, math.min(amount, 3) do
-            createWeldedPart({
+            local ore = createWeldedPart({
                 name = "Ore" .. i,
                 size = Vector3.new(0.3, 0.3, 0.3),
                 material = Enum.Material.Slate,
-                color = Color3.fromRGB(100, 85, 70) -- Brown/gray ore color
-            }, CFrame.new((i-2) * 0.25, 0.5 + sackHeight/2 + 0.15, 0.8))
+                color = Color3.fromRGB(90 + i * 10, 75 + i * 8, 60 + i * 5)
+            }, CFrame.new((i-2) * 0.25, 0.5 + sackHeight/2 + 0.15, 0.8) * CFrame.Angles(math.rad(i * 20), math.rad(i * 45), math.rad(i * 15)))
+            if ore then
+                local mesh = Instance.new("SpecialMesh")
+                mesh.MeshType = Enum.MeshType.Sphere
+                mesh.Scale = Vector3.new(0.8 + i * 0.1, 0.7 + i * 0.15, 0.9)
+                mesh.Parent = ore
+            end
         end
     elseif itemType == "gold" then
-        -- Gold bars/ingots stacked on back
+        -- Gold bars/ingots stacked on back (with trapezoidal mesh)
         for i = 1, math.min(amount, 3) do
-            createWeldedPart({
+            local bar = createWeldedPart({
                 name = "GoldBar" .. i,
                 size = Vector3.new(0.6, 0.3, 0.3),
                 material = Enum.Material.Metal,
-                color = Color3.fromRGB(255, 200, 50) -- Gold color
+                color = Color3.fromRGB(255, 200, 50)
             }, CFrame.new((i-2) * 0.3, 0.5 + (i-1) * 0.35, 0.7))
+            if bar then
+                local mesh = Instance.new("SpecialMesh")
+                mesh.MeshType = Enum.MeshType.Brick
+                mesh.Scale = Vector3.new(1.2, 0.8, 1)
+                mesh.Parent = bar
+            end
         end
     elseif itemType == "logs" then
         -- Log bundle on back
@@ -2554,15 +2946,24 @@ local function setNPCCarrying(npc, itemType, amount)
             color = Color3.fromRGB(100, 70, 45)
         }, CFrame.new(0, 0.3, 0.8))
 
-        -- Individual log visuals
+        -- Individual log visuals with end-cap discs
         for i = 1, math.min(amount, 4) do
+            local logColor = Color3.fromRGB(85 + i * 8, 55 + i * 5, 35 + i * 3)
             createWeldedPart({
                 name = "Log" .. i,
                 size = Vector3.new(1.6, 0.35, 0.35),
                 shape = Enum.PartType.Cylinder,
                 material = Enum.Material.Wood,
-                color = Color3.fromRGB(90 + math.random(20), 60 + math.random(10), 40)
+                color = logColor
             }, CFrame.new(0, 0.3 + bundleHeight/2 + (i-1) * 0.2, 0.8) * CFrame.Angles(0, math.rad(90), 0))
+            -- End-cap disc (lighter cross-section)
+            createWeldedPart({
+                name = "LogCap" .. i,
+                size = Vector3.new(0.05, 0.32, 0.32),
+                shape = Enum.PartType.Cylinder,
+                material = Enum.Material.Wood,
+                color = Color3.fromRGB(170, 145, 100)
+            }, CFrame.new(0.8, 0.3 + bundleHeight/2 + (i-1) * 0.2, 0.8) * CFrame.Angles(0, math.rad(90), 0))
         end
     elseif itemType == "planks" then
         -- Plank stack on back
@@ -2584,24 +2985,50 @@ local function setNPCCarrying(npc, itemType, amount)
             color = Color3.fromRGB(180, 150, 100)
         }, CFrame.new(0, 0.5, 0.8))
 
-        -- Crop visuals on top
+        -- Crop visuals on top (wheat-colored with leaf accents)
         for i = 1, math.min(amount, 3) do
-            createWeldedPart({
+            local crop = createWeldedPart({
                 name = "Crop" .. i,
                 size = Vector3.new(0.4, 0.4, 0.4),
                 material = Enum.Material.Grass,
-                color = Color3.fromRGB(230, 200, 80) -- Wheat/grain color
+                color = Color3.fromRGB(220, 195, 70)
             }, CFrame.new((i-2) * 0.3, 0.5 + basketHeight/2 + 0.2, 0.8))
+            if crop then
+                local mesh = Instance.new("SpecialMesh")
+                mesh.MeshType = Enum.MeshType.Sphere
+                mesh.Scale = Vector3.new(1, 1.2, 1)
+                mesh.Parent = crop
+            end
+            -- Small green leaf poking out
+            createWeldedPart({
+                name = "CropLeaf" .. i,
+                size = Vector3.new(0.15, 0.25, 0.08),
+                material = Enum.Material.Grass,
+                color = Color3.fromRGB(60, 140, 50)
+            }, CFrame.new((i-2) * 0.3 + 0.15, 0.5 + basketHeight/2 + 0.4, 0.8))
         end
     elseif itemType == "grain" then
-        -- Grain sacks
+        -- Grain sacks (round sack shape with rope tie)
         for i = 1, math.min(amount, 3) do
-            createWeldedPart({
+            local sack = createWeldedPart({
                 name = "GrainSack" .. i,
                 size = Vector3.new(0.6, 0.8, 0.5),
                 material = Enum.Material.Fabric,
                 color = Color3.fromRGB(210, 190, 150)
             }, CFrame.new((i-2) * 0.35, 0.4 + (i-1) * 0.2, 0.7))
+            if sack then
+                local mesh = Instance.new("SpecialMesh")
+                mesh.MeshType = Enum.MeshType.Sphere
+                mesh.Scale = Vector3.new(1, 1.3, 0.9)
+                mesh.Parent = sack
+            end
+            -- Rope tie at top
+            createWeldedPart({
+                name = "SackRope" .. i,
+                size = Vector3.new(0.35, 0.1, 0.35),
+                material = Enum.Material.Fabric,
+                color = Color3.fromRGB(150, 130, 90)
+            }, CFrame.new((i-2) * 0.35, 0.4 + (i-1) * 0.2 + 0.45, 0.7))
         end
     elseif itemType == "food" then
         -- Food crates/baskets
@@ -2613,13 +3040,25 @@ local function setNPCCarrying(npc, itemType, amount)
             color = Color3.fromRGB(160, 130, 90)
         }, CFrame.new(0, 0.5, 0.8))
 
-        -- Food items on top
+        -- Crate lid (slightly offset, looks open)
+        createWeldedPart({
+            name = "CrateLid",
+            size = Vector3.new(1.3, 0.1, 1.1),
+            material = Enum.Material.WoodPlanks,
+            color = Color3.fromRGB(150, 120, 80)
+        }, CFrame.new(0.3, 0.5 + crateHeight/2 + 0.1, 0.8) * CFrame.Angles(0, 0, math.rad(15)))
+        -- Food items with varied colors (bread, apple, cheese)
+        local foodColors = {
+            Color3.fromRGB(210, 180, 120), -- Bread
+            Color3.fromRGB(200, 50, 40),   -- Apple
+            Color3.fromRGB(240, 210, 80),  -- Cheese
+        }
         for i = 1, math.min(amount, 3) do
             createWeldedPart({
                 name = "Food" .. i,
                 size = Vector3.new(0.35, 0.35, 0.35),
                 material = Enum.Material.SmoothPlastic,
-                color = Color3.fromRGB(255, 220, 150) -- Bread/food color
+                color = foodColors[(i % #foodColors) + 1]
             }, CFrame.new((i-2) * 0.3, 0.5 + crateHeight/2 + 0.2, 0.8))
         end
     end
@@ -3441,6 +3880,105 @@ local function createGoldMine()
     -- Torches on either side of entrance
     createTorch(mineEntrance, Vector3.new(exteriorX + 6, extGround + 5, exteriorZ - 4.5))
     createTorch(mineEntrance, Vector3.new(exteriorX + 6, extGround + 5, exteriorZ + 4.5))
+
+    -- Warm cave glow (visible from outside)
+    local caveGlow = Instance.new("PointLight")
+    caveGlow.Name = "CaveGlow"
+    caveGlow.Color = Color3.fromRGB(255, 160, 60)
+    caveGlow.Brightness = 2
+    caveGlow.Range = 20
+    caveGlow.Parent = caveOpening
+
+    -- Ore vein streaks on cliff face (gold-colored thin Parts embedded in rock)
+    local veinPositions = {
+        {pos = Vector3.new(exteriorX - 1, extGround + 8, exteriorZ - 3), rot = Vector3.new(5, 20, 45)},
+        {pos = Vector3.new(exteriorX - 2, extGround + 6, exteriorZ + 2), rot = Vector3.new(-8, -15, 30)},
+        {pos = Vector3.new(exteriorX, extGround + 10, exteriorZ + 1), rot = Vector3.new(12, 5, -35)},
+        {pos = Vector3.new(exteriorX - 1, extGround + 4, exteriorZ - 5), rot = Vector3.new(3, 35, 50)},
+    }
+    for vi, vein in veinPositions do
+        local veinPart = Instance.new("Part")
+        veinPart.Name = "OreVein" .. vi
+        veinPart.Size = Vector3.new(2.5, 0.15, 0.3)
+        veinPart.Position = vein.pos
+        veinPart.Orientation = vein.rot
+        veinPart.Anchored = true
+        veinPart.Material = Enum.Material.Neon
+        veinPart.Color = Color3.fromRGB(220, 180, 40)
+        veinPart.CanCollide = false
+        veinPart.Parent = mineEntrance
+    end
+
+    -- Wooden scaffolding above entrance
+    local scaffColor = Color3.fromRGB(70, 48, 30)
+    -- Horizontal beams
+    local scaffH1 = Instance.new("Part")
+    scaffH1.Name = "ScaffoldH1"
+    scaffH1.Size = Vector3.new(0.4, 0.4, 10)
+    scaffH1.Position = Vector3.new(exteriorX + 5.5, extGround + 9, exteriorZ)
+    scaffH1.Anchored = true
+    scaffH1.Material = Enum.Material.Wood
+    scaffH1.Color = scaffColor
+    scaffH1.CanCollide = false
+    scaffH1.Parent = mineEntrance
+
+    local scaffH2 = Instance.new("Part")
+    scaffH2.Name = "ScaffoldH2"
+    scaffH2.Size = Vector3.new(0.4, 0.4, 10)
+    scaffH2.Position = Vector3.new(exteriorX + 4, extGround + 9, exteriorZ)
+    scaffH2.Anchored = true
+    scaffH2.Material = Enum.Material.Wood
+    scaffH2.Color = scaffColor
+    scaffH2.CanCollide = false
+    scaffH2.Parent = mineEntrance
+
+    -- Vertical scaffold supports
+    for _, szOff in {-4.5, 4.5} do
+        local scaffV = Instance.new("Part")
+        scaffV.Name = "ScaffoldV"
+        scaffV.Size = Vector3.new(0.4, 3, 0.4)
+        scaffV.Position = Vector3.new(exteriorX + 5.5, extGround + 7.5, exteriorZ + szOff)
+        scaffV.Anchored = true
+        scaffV.Material = Enum.Material.Wood
+        scaffV.Color = scaffColor
+        scaffV.CanCollide = false
+        scaffV.Parent = mineEntrance
+    end
+
+    -- Lanterns on support beams (hung from horizontal scaffolding)
+    for _, lzOff in {-3, 3} do
+        local beamLantern = Instance.new("Part")
+        beamLantern.Name = "BeamLantern"
+        beamLantern.Size = Vector3.new(0.6, 0.8, 0.6)
+        beamLantern.Position = Vector3.new(exteriorX + 5.5, extGround + 8.3, exteriorZ + lzOff)
+        beamLantern.Anchored = true
+        beamLantern.Material = Enum.Material.Glass
+        beamLantern.Color = Color3.fromRGB(255, 210, 130)
+        beamLantern.Transparency = 0.3
+        beamLantern.CanCollide = false
+        beamLantern.Parent = mineEntrance
+
+        local bLight = Instance.new("PointLight")
+        bLight.Color = Color3.fromRGB(255, 180, 80)
+        bLight.Brightness = 1
+        bLight.Range = 10
+        bLight.Parent = beamLantern
+    end
+
+    -- Mine cart wheels (4 small cylinders)
+    for _, wOff in {{-0.8, -1.2}, {-0.8, 1.2}, {0.8, -1.2}, {0.8, 1.2}} do
+        local cartWheel = Instance.new("Part")
+        cartWheel.Name = "CartWheel"
+        cartWheel.Shape = Enum.PartType.Cylinder
+        cartWheel.Size = Vector3.new(0.2, 0.8, 0.8)
+        cartWheel.Position = Vector3.new(exteriorX + 9 + wOff[1], extGround + 0.4, exteriorZ + trackZOffset + wOff[2])
+        cartWheel.Orientation = Vector3.new(0, 90, 0)
+        cartWheel.Anchored = true
+        cartWheel.Material = Enum.Material.Metal
+        cartWheel.Color = Color3.fromRGB(70, 65, 60)
+        cartWheel.CanCollide = false
+        cartWheel.Parent = mineEntrance
+    end
 
     -- Mine cart tracks off to the RIGHT side of entrance (not blocking path)
     local trackColor = Color3.fromRGB(80, 70, 60)
@@ -5832,6 +6370,118 @@ local function createGoldMine()
     -- ========== EXIT PORTAL ==========
     createExitPortal(mineModel, Vector3.new(baseX, GROUND_Y + 4, baseZ + 28))
 
+    -- ===== DECORATIVE ENHANCEMENTS =====
+    -- Glowing crystal clusters on walls
+    local crystalColors = {
+        {color = Color3.fromRGB(80, 120, 255), light = Color3.fromRGB(100, 150, 255)},
+        {color = Color3.fromRGB(150, 60, 200), light = Color3.fromRGB(180, 100, 255)},
+        {color = Color3.fromRGB(60, 200, 120), light = Color3.fromRGB(80, 255, 150)},
+    }
+    local crystalPositions = {
+        Vector3.new(baseX - 38, GROUND_Y + 3, baseZ - 15),
+        Vector3.new(baseX - 38, GROUND_Y + 5, baseZ + 5),
+        Vector3.new(baseX + 38, GROUND_Y + 4, baseZ - 10),
+        Vector3.new(baseX + 38, GROUND_Y + 3, baseZ + 10),
+        Vector3.new(baseX - 20, GROUND_Y + 13, baseZ - 5),
+        Vector3.new(baseX + 10, GROUND_Y + 13, baseZ + 8),
+    }
+    for ci, cpos in crystalPositions do
+        local cData = crystalColors[(ci % #crystalColors) + 1]
+        for cs = 1, 3 do
+            local crystal = Instance.new("Part")
+            crystal.Name = "Crystal" .. ci .. "_" .. cs
+            crystal.Size = Vector3.new(0.3 + cs * 0.15, 0.8 + cs * 0.4, 0.3 + cs * 0.1)
+            crystal.Position = cpos + Vector3.new((cs - 2) * 0.4, cs * 0.3, 0)
+            crystal.Orientation = Vector3.new(math.random(-15, 15), math.random(0, 360), math.random(-20, 20))
+            crystal.Anchored = true
+            crystal.Material = Enum.Material.Neon
+            crystal.Color = cData.color
+            crystal.CanCollide = false
+            crystal.Parent = mineModel
+        end
+        local crystalLight = Instance.new("PointLight")
+        crystalLight.Color = cData.light
+        crystalLight.Brightness = 0.8
+        crystalLight.Range = 10
+        local lightHost = Instance.new("Part")
+        lightHost.Name = "CrystalGlow" .. ci
+        lightHost.Size = Vector3.new(0.2, 0.2, 0.2)
+        lightHost.Position = cpos
+        lightHost.Anchored = true
+        lightHost.Transparency = 1
+        lightHost.CanCollide = false
+        lightHost.Parent = mineModel
+        crystalLight.Parent = lightHost
+    end
+
+    -- Rock debris scattered on floor
+    for rd = 1, 12 do
+        local rockDebris = Instance.new("Part")
+        rockDebris.Name = "FloorDebris" .. rd
+        rockDebris.Size = Vector3.new(0.4 + math.random() * 0.6, 0.3 + math.random() * 0.3, 0.4 + math.random() * 0.6)
+        rockDebris.Position = Vector3.new(
+            baseX - 30 + math.random() * 60,
+            GROUND_Y + 0.2,
+            baseZ - 20 + math.random() * 40
+        )
+        rockDebris.Orientation = Vector3.new(math.random() * 20, math.random() * 360, math.random() * 20)
+        rockDebris.Anchored = true
+        rockDebris.Material = Enum.Material.Rock
+        rockDebris.Color = Color3.fromRGB(50 + math.random(20), 45 + math.random(15), 40 + math.random(10))
+        rockDebris.CanCollide = false
+        rockDebris.Parent = mineModel
+    end
+
+    -- Cart rail tracks on cave floor
+    for _, trackZ in {baseZ - 15, baseZ + 5} do
+        for _, rOff in {-0.8, 0.8} do
+            local rail = Instance.new("Part")
+            rail.Name = "CaveRail"
+            rail.Size = Vector3.new(40, 0.1, 0.2)
+            rail.Position = Vector3.new(baseX, GROUND_Y + 0.05, trackZ + rOff)
+            rail.Anchored = true
+            rail.Material = Enum.Material.Metal
+            rail.Color = Color3.fromRGB(70, 65, 55)
+            rail.CanCollide = false
+            rail.Parent = mineModel
+        end
+        -- Rail ties
+        for ti = 0, 9 do
+            local tie = Instance.new("Part")
+            tie.Name = "CaveRailTie"
+            tie.Size = Vector3.new(0.5, 0.08, 2)
+            tie.Position = Vector3.new(baseX - 18 + ti * 4, GROUND_Y + 0.03, trackZ)
+            tie.Anchored = true
+            tie.Material = Enum.Material.Wood
+            tie.Color = Color3.fromRGB(50, 35, 22)
+            tie.CanCollide = false
+            tie.Parent = mineModel
+        end
+    end
+
+    -- Lanterns on support beams
+    for bi = 1, 4 do
+        local bx = baseX - 30 + bi * 15
+        for _, bz in {baseZ - 12, baseZ + 12} do
+            local beamLantern = Instance.new("Part")
+            beamLantern.Name = "BeamLantern"
+            beamLantern.Size = Vector3.new(0.5, 0.7, 0.5)
+            beamLantern.Position = Vector3.new(bx, GROUND_Y + 12, bz)
+            beamLantern.Anchored = true
+            beamLantern.Material = Enum.Material.Glass
+            beamLantern.Color = Color3.fromRGB(255, 210, 130)
+            beamLantern.Transparency = 0.3
+            beamLantern.CanCollide = false
+            beamLantern.Parent = mineModel
+
+            local bLanternLight = Instance.new("PointLight")
+            bLanternLight.Color = Color3.fromRGB(255, 180, 80)
+            bLanternLight.Brightness = 0.6
+            bLanternLight.Range = 8
+            bLanternLight.Parent = beamLantern
+        end
+    end
+
     -- Parent the mine interior
     mineModel.Parent = interiorsFolder
     GoldMineState.model = mineModel
@@ -6414,6 +7064,85 @@ local function createLumberMill()
         teleportToInterior(player, "LumberMill")
         task.delay(1, function() debounce[player.UserId] = nil end)
     end)
+
+    -- Lumber Mill visual details
+    -- Sawdust pile near shed
+    local sawdustPile = Instance.new("Part")
+    sawdustPile.Name = "SawdustPile"
+    sawdustPile.Shape = Enum.PartType.Ball
+    sawdustPile.Size = Vector3.new(3, 1.5, 3)
+    sawdustPile.Position = Vector3.new(exteriorX + 8, extGround + 0.5, exteriorZ + 5)
+    sawdustPile.Anchored = true
+    sawdustPile.Material = Enum.Material.Sand
+    sawdustPile.Color = Color3.fromRGB(200, 175, 130)
+    sawdustPile.CanCollide = false
+    sawdustPile.Parent = lumberYard
+
+    -- Wood shavings scattered on ground
+    for ws = 1, 6 do
+        local shaving = Instance.new("Part")
+        shaving.Name = "WoodShaving" .. ws
+        shaving.Size = Vector3.new(0.8 + math.random() * 0.5, 0.08, 0.3 + math.random() * 0.3)
+        shaving.Position = Vector3.new(
+            exteriorX + 3 + math.random() * 10,
+            extGround + 0.05,
+            exteriorZ - 3 + math.random() * 10
+        )
+        shaving.Orientation = Vector3.new(0, math.random() * 360, 0)
+        shaving.Anchored = true
+        shaving.Material = Enum.Material.Wood
+        shaving.Color = Color3.fromRGB(190, 165, 120)
+        shaving.CanCollide = false
+        shaving.Parent = lumberYard
+    end
+
+    -- Chopping block with embedded axe
+    local choppingBlock = Instance.new("Part")
+    choppingBlock.Name = "ChoppingBlock"
+    choppingBlock.Shape = Enum.PartType.Cylinder
+    choppingBlock.Size = Vector3.new(1.5, 2, 2)
+    choppingBlock.Position = Vector3.new(exteriorX + 12, extGround + 0.75, exteriorZ - 6)
+    choppingBlock.Anchored = true
+    choppingBlock.Material = Enum.Material.Wood
+    choppingBlock.Color = Color3.fromRGB(85, 60, 35)
+    choppingBlock.CanCollide = false
+    choppingBlock.Parent = lumberYard
+
+    -- Axe in chopping block
+    local axeHandle = Instance.new("Part")
+    axeHandle.Name = "AxeHandle"
+    axeHandle.Size = Vector3.new(0.2, 2, 0.2)
+    axeHandle.Position = Vector3.new(exteriorX + 12, extGround + 2.5, exteriorZ - 6)
+    axeHandle.Orientation = Vector3.new(0, 0, 15)
+    axeHandle.Anchored = true
+    axeHandle.Material = Enum.Material.Wood
+    axeHandle.Color = Color3.fromRGB(100, 70, 45)
+    axeHandle.CanCollide = false
+    axeHandle.Parent = lumberYard
+
+    local axeHead = Instance.new("Part")
+    axeHead.Name = "AxeHead"
+    axeHead.Size = Vector3.new(0.8, 0.3, 0.15)
+    axeHead.Position = Vector3.new(exteriorX + 12.2, extGround + 3.3, exteriorZ - 6)
+    axeHead.Orientation = Vector3.new(0, 0, 15)
+    axeHead.Anchored = true
+    axeHead.Material = Enum.Material.Metal
+    axeHead.Color = Color3.fromRGB(140, 140, 150)
+    axeHead.CanCollide = false
+    axeHead.Parent = lumberYard
+
+    -- Stacked plank pallets
+    for sp = 1, 3 do
+        local plankStack = Instance.new("Part")
+        plankStack.Name = "PlankPallet" .. sp
+        plankStack.Size = Vector3.new(3, 0.8 + sp * 0.3, 1.5)
+        plankStack.Position = Vector3.new(exteriorX - 6, extGround + (0.8 + sp * 0.3)/2, exteriorZ + 6 + (sp - 1) * 2)
+        plankStack.Anchored = true
+        plankStack.Material = Enum.Material.WoodPlanks
+        plankStack.Color = Color3.fromRGB(190, 160, 110)
+        plankStack.CanCollide = false
+        plankStack.Parent = lumberYard
+    end
 
     lumberYard.Parent = villageFolder
 
@@ -8011,6 +8740,97 @@ local function createLumberMill()
 
     -- ========== EXIT PORTAL ==========
     createExitPortal(millModel, Vector3.new(baseX, GROUND_Y + 4, baseZ + 28))
+
+    -- ===== FOREST DECORATIVE ENHANCEMENTS =====
+    -- Fallen log on ground
+    local fallenLog = Instance.new("Part")
+    fallenLog.Name = "FallenLog"
+    fallenLog.Shape = Enum.PartType.Cylinder
+    fallenLog.Size = Vector3.new(8, 2, 2)
+    fallenLog.Position = Vector3.new(baseX - 10, GROUND_Y + 1, baseZ - 15)
+    fallenLog.Orientation = Vector3.new(0, 30, 90)
+    fallenLog.Anchored = true
+    fallenLog.Material = Enum.Material.Wood
+    fallenLog.Color = Color3.fromRGB(70, 50, 30)
+    fallenLog.CanCollide = false
+    fallenLog.Parent = millModel
+
+    -- Mushroom props near trees
+    local mushroomPositions = {
+        Vector3.new(baseX - 28, GROUND_Y, baseZ - 10),
+        Vector3.new(baseX - 24, GROUND_Y, baseZ + 6),
+        Vector3.new(baseX + 28, GROUND_Y, baseZ - 8),
+        Vector3.new(baseX + 24, GROUND_Y, baseZ + 8),
+        Vector3.new(baseX - 32, GROUND_Y, baseZ + 2),
+    }
+    for mi, mpos in mushroomPositions do
+        -- Stem
+        local stem = Instance.new("Part")
+        stem.Name = "MushroomStem" .. mi
+        stem.Shape = Enum.PartType.Cylinder
+        stem.Size = Vector3.new(0.5, 0.4, 0.4)
+        stem.Position = mpos + Vector3.new(0, 0.25, 0)
+        stem.Anchored = true
+        stem.Material = Enum.Material.SmoothPlastic
+        stem.Color = Color3.fromRGB(230, 220, 200)
+        stem.CanCollide = false
+        stem.Parent = millModel
+
+        -- Cap
+        local cap = Instance.new("Part")
+        cap.Name = "MushroomCap" .. mi
+        cap.Shape = Enum.PartType.Cylinder
+        cap.Size = Vector3.new(0.3, 0.8, 0.8)
+        cap.Position = mpos + Vector3.new(0, 0.55, 0)
+        cap.Anchored = true
+        cap.Material = Enum.Material.SmoothPlastic
+        cap.Color = Color3.fromRGB(180, 50 + mi * 20, 40)
+        cap.CanCollide = false
+        cap.Parent = millModel
+    end
+
+    -- Stone path through forest to logging areas
+    for sp = 0, 8 do
+        local stone = Instance.new("Part")
+        stone.Name = "ForestPathStone" .. sp
+        stone.Size = Vector3.new(2.5, 0.15, 2)
+        stone.Position = Vector3.new(baseX, GROUND_Y + 0.1, baseZ - 18 + sp * 5)
+        stone.Anchored = true
+        stone.Material = Enum.Material.Cobblestone
+        stone.Color = Color3.fromRGB(90, 85, 78)
+        stone.CanCollide = false
+        stone.Parent = millModel
+    end
+
+    -- Leaf particle emitter on sky part (falling leaves effect)
+    local leafEmitter = Instance.new("ParticleEmitter")
+    leafEmitter.Name = "FallingLeaves"
+    leafEmitter.Color = ColorSequence.new(Color3.fromRGB(60, 120, 40))
+    leafEmitter.Size = NumberSequence.new(0.3, 0.5)
+    leafEmitter.Lifetime = NumberRange.new(4, 8)
+    leafEmitter.Rate = 3
+    leafEmitter.Speed = NumberRange.new(1, 3)
+    leafEmitter.SpreadAngle = Vector2.new(180, 0)
+    leafEmitter.Rotation = NumberRange.new(0, 360)
+    leafEmitter.RotSpeed = NumberRange.new(20, 60)
+    leafEmitter.Parent = sky
+
+    -- Bird nest props in tree areas
+    for _, nestPos in {
+        Vector3.new(baseX - 28, GROUND_Y + 10, baseZ - 8),
+        Vector3.new(baseX + 26, GROUND_Y + 9, baseZ + 6),
+    } do
+        local nest = Instance.new("Part")
+        nest.Name = "BirdNest"
+        nest.Shape = Enum.PartType.Cylinder
+        nest.Size = Vector3.new(0.4, 1, 1)
+        nest.Position = nestPos
+        nest.Anchored = true
+        nest.Material = Enum.Material.Fabric
+        nest.Color = Color3.fromRGB(110, 85, 50)
+        nest.CanCollide = false
+        nest.Parent = millModel
+    end
 
     -- Parent the lumber mill interior
     millModel.Parent = interiorsFolder
@@ -10489,6 +11309,107 @@ local function createFarm(farmNumber)
         print(string.format("[Farm] %s opened Upgrade Menu", player.Name))
     end)
 
+    -- ===== FARM DECORATIVE ENHANCEMENTS =====
+    -- Scarecrow in crop field area
+    local scarecrowPos = Vector3.new(baseX - 15, GROUND_Y, baseZ - 10)
+    -- Post
+    local scPost = Instance.new("Part")
+    scPost.Name = "ScarecrowPost"
+    scPost.Size = Vector3.new(0.4, 5, 0.4)
+    scPost.Position = scarecrowPos + Vector3.new(0, 2.5, 0)
+    scPost.Anchored = true
+    scPost.Material = Enum.Material.Wood
+    scPost.Color = Color3.fromRGB(80, 55, 35)
+    scPost.CanCollide = false
+    scPost.Parent = farmModel
+
+    -- Crossbar (arms)
+    local scArms = Instance.new("Part")
+    scArms.Name = "ScarecrowArms"
+    scArms.Size = Vector3.new(3, 0.3, 0.3)
+    scArms.Position = scarecrowPos + Vector3.new(0, 4, 0)
+    scArms.Anchored = true
+    scArms.Material = Enum.Material.Wood
+    scArms.Color = Color3.fromRGB(80, 55, 35)
+    scArms.CanCollide = false
+    scArms.Parent = farmModel
+
+    -- Head (sack)
+    local scHead = Instance.new("Part")
+    scHead.Name = "ScarecrowHead"
+    scHead.Shape = Enum.PartType.Ball
+    scHead.Size = Vector3.new(1, 1, 1)
+    scHead.Position = scarecrowPos + Vector3.new(0, 5.2, 0)
+    scHead.Anchored = true
+    scHead.Material = Enum.Material.Fabric
+    scHead.Color = Color3.fromRGB(200, 175, 130)
+    scHead.CanCollide = false
+    scHead.Parent = farmModel
+
+    -- Hat
+    local scHat = Instance.new("Part")
+    scHat.Name = "ScarecrowHat"
+    scHat.Shape = Enum.PartType.Cylinder
+    scHat.Size = Vector3.new(0.5, 1.5, 1.5)
+    scHat.Position = scarecrowPos + Vector3.new(0, 5.8, 0)
+    scHat.Anchored = true
+    scHat.Material = Enum.Material.Fabric
+    scHat.Color = Color3.fromRGB(120, 90, 50)
+    scHat.CanCollide = false
+    scHat.Parent = farmModel
+
+    -- Water trough near storage
+    local troughPos = Vector3.new(baseX + 20, GROUND_Y, baseZ + 15)
+    local trough = Instance.new("Part")
+    trough.Name = "WaterTrough"
+    trough.Size = Vector3.new(4, 1, 1.5)
+    trough.Position = troughPos + Vector3.new(0, 0.5, 0)
+    trough.Anchored = true
+    trough.Material = Enum.Material.Wood
+    trough.Color = Color3.fromRGB(90, 65, 40)
+    trough.CanCollide = false
+    trough.Parent = farmModel
+
+    local troughWater = Instance.new("Part")
+    troughWater.Name = "TroughWater"
+    troughWater.Size = Vector3.new(3.5, 0.3, 1)
+    troughWater.Position = troughPos + Vector3.new(0, 0.8, 0)
+    troughWater.Anchored = true
+    troughWater.Material = Enum.Material.Glass
+    troughWater.Color = Color3.fromRGB(70, 130, 190)
+    troughWater.Transparency = 0.3
+    troughWater.CanCollide = false
+    troughWater.Parent = farmModel
+
+    -- Flour sacks near mill station (round sack shapes)
+    for si = 1, 3 do
+        local sack = Instance.new("Part")
+        sack.Name = "FlourSack" .. si
+        sack.Size = Vector3.new(1, 1.2, 0.8)
+        sack.Position = Vector3.new(baseX + 30 + (si - 2) * 1.5, GROUND_Y + 0.6, baseZ - 18)
+        sack.Anchored = true
+        sack.Material = Enum.Material.Fabric
+        sack.Color = Color3.fromRGB(220, 210, 190)
+        sack.CanCollide = false
+        sack.Parent = farmModel
+
+        local sackMesh = Instance.new("SpecialMesh")
+        sackMesh.MeshType = Enum.MeshType.Sphere
+        sackMesh.Scale = Vector3.new(1, 1.3, 0.9)
+        sackMesh.Parent = sack
+
+        -- Rope tie on top
+        local ropeTie = Instance.new("Part")
+        ropeTie.Name = "SackRope" .. si
+        ropeTie.Size = Vector3.new(0.6, 0.15, 0.6)
+        ropeTie.Position = Vector3.new(baseX + 30 + (si - 2) * 1.5, GROUND_Y + 1.3, baseZ - 18)
+        ropeTie.Anchored = true
+        ropeTie.Material = Enum.Material.Fabric
+        ropeTie.Color = Color3.fromRGB(150, 130, 90)
+        ropeTie.CanCollide = false
+        ropeTie.Parent = farmModel
+    end
+
     -- Parent the farm interior
     farmModel.Parent = interiorsFolder
     currentFarmState.model = farmModel
@@ -11760,6 +12681,159 @@ local function createBarracks()
         initPlayerBarracksData(player)
     end
 
+    -- ===== BARRACKS DECORATIVE ENHANCEMENTS =====
+    -- Training dummies in training yard
+    local dummyPositions = {
+        Vector3.new(baseX - 10, GROUND_Y, baseZ - 5),
+        Vector3.new(baseX + 10, GROUND_Y, baseZ - 5),
+        Vector3.new(baseX, GROUND_Y, baseZ + 8),
+    }
+    for di, dpos in dummyPositions do
+        -- Post
+        local dPost = Instance.new("Part")
+        dPost.Name = "DummyPost" .. di
+        dPost.Size = Vector3.new(0.5, 5, 0.5)
+        dPost.Position = dpos + Vector3.new(0, 2.5, 0)
+        dPost.Anchored = true
+        dPost.Material = Enum.Material.Wood
+        dPost.Color = Color3.fromRGB(80, 55, 35)
+        dPost.CanCollide = false
+        dPost.Parent = barracksModel
+
+        -- Crossbar
+        local dCross = Instance.new("Part")
+        dCross.Name = "DummyCross" .. di
+        dCross.Size = Vector3.new(2.5, 0.4, 0.4)
+        dCross.Position = dpos + Vector3.new(0, 4, 0)
+        dCross.Anchored = true
+        dCross.Material = Enum.Material.Wood
+        dCross.Color = Color3.fromRGB(80, 55, 35)
+        dCross.CanCollide = false
+        dCross.Parent = barracksModel
+
+        -- Sack head
+        local dHead = Instance.new("Part")
+        dHead.Name = "DummyHead" .. di
+        dHead.Shape = Enum.PartType.Ball
+        dHead.Size = Vector3.new(1.2, 1.2, 1.2)
+        dHead.Position = dpos + Vector3.new(0, 5.5, 0)
+        dHead.Anchored = true
+        dHead.Material = Enum.Material.Fabric
+        dHead.Color = Color3.fromRGB(180, 160, 120)
+        dHead.CanCollide = false
+        dHead.Parent = barracksModel
+    end
+
+    -- Archery targets on back wall
+    for ti = 1, 3 do
+        -- Target board
+        local target = Instance.new("Part")
+        target.Name = "ArcheryTarget" .. ti
+        target.Shape = Enum.PartType.Cylinder
+        target.Size = Vector3.new(0.5, 3, 3)
+        target.Position = Vector3.new(baseX - 20 + ti * 15, GROUND_Y + 4, baseZ - 41)
+        target.Orientation = Vector3.new(0, 0, 90)
+        target.Anchored = true
+        target.Material = Enum.Material.Wood
+        target.Color = Color3.fromRGB(220, 210, 180)
+        target.CanCollide = false
+        target.Parent = barracksModel
+
+        -- Red ring
+        local ring = Instance.new("Part")
+        ring.Name = "TargetRing" .. ti
+        ring.Shape = Enum.PartType.Cylinder
+        ring.Size = Vector3.new(0.52, 2, 2)
+        ring.Position = Vector3.new(baseX - 20 + ti * 15, GROUND_Y + 4, baseZ - 41.1)
+        ring.Orientation = Vector3.new(0, 0, 90)
+        ring.Anchored = true
+        ring.Material = Enum.Material.SmoothPlastic
+        ring.Color = Color3.fromRGB(200, 40, 40)
+        ring.CanCollide = false
+        ring.Parent = barracksModel
+
+        -- Gold center
+        local center = Instance.new("Part")
+        center.Name = "TargetCenter" .. ti
+        center.Shape = Enum.PartType.Cylinder
+        center.Size = Vector3.new(0.54, 0.8, 0.8)
+        center.Position = Vector3.new(baseX - 20 + ti * 15, GROUND_Y + 4, baseZ - 41.2)
+        center.Orientation = Vector3.new(0, 0, 90)
+        center.Anchored = true
+        center.Material = Enum.Material.SmoothPlastic
+        center.Color = Color3.fromRGB(255, 200, 50)
+        center.CanCollide = false
+        center.Parent = barracksModel
+    end
+
+    -- Weapon racks along side walls
+    for _, rackX in {baseX - 55, baseX + 55} do
+        -- Rack frame
+        local rackFrame = Instance.new("Part")
+        rackFrame.Name = "WeaponRack"
+        rackFrame.Size = Vector3.new(1, 4, 6)
+        rackFrame.Position = Vector3.new(rackX, GROUND_Y + 2, baseZ)
+        rackFrame.Anchored = true
+        rackFrame.Material = Enum.Material.Wood
+        rackFrame.Color = Color3.fromRGB(80, 55, 35)
+        rackFrame.CanCollide = false
+        rackFrame.Parent = barracksModel
+
+        -- Swords on rack
+        for si = 1, 3 do
+            local sword = Instance.new("Part")
+            sword.Name = "RackSword" .. si
+            sword.Size = Vector3.new(0.2, 3, 0.3)
+            sword.Position = Vector3.new(rackX, GROUND_Y + 2.5, baseZ - 2 + si * 1.5)
+            sword.Orientation = Vector3.new(0, 0, 10)
+            sword.Anchored = true
+            sword.Material = Enum.Material.Metal
+            sword.Color = Color3.fromRGB(170, 170, 175)
+            sword.CanCollide = false
+            sword.Parent = barracksModel
+        end
+    end
+
+    -- Military flag poles with banners
+    for _, fpPos in {
+        Vector3.new(baseX - 45, GROUND_Y, baseZ + 30),
+        Vector3.new(baseX + 45, GROUND_Y, baseZ + 30),
+        Vector3.new(baseX - 45, GROUND_Y, baseZ - 30),
+        Vector3.new(baseX + 45, GROUND_Y, baseZ - 30),
+    } do
+        local fp = Instance.new("Part")
+        fp.Name = "MilitaryFlagPole"
+        fp.Size = Vector3.new(0.3, 10, 0.3)
+        fp.Position = fpPos + Vector3.new(0, 5, 0)
+        fp.Anchored = true
+        fp.Material = Enum.Material.Metal
+        fp.Color = Color3.fromRGB(60, 55, 50)
+        fp.CanCollide = false
+        fp.Parent = barracksModel
+
+        local fb = Instance.new("Part")
+        fb.Name = "MilitaryBanner"
+        fb.Size = Vector3.new(0.1, 3, 2)
+        fb.Position = fpPos + Vector3.new(0, 8.5, 1.5)
+        fb.Anchored = true
+        fb.Material = Enum.Material.Fabric
+        fb.Color = Color3.fromRGB(180, 30, 30)
+        fb.CanCollide = false
+        fb.Parent = barracksModel
+    end
+
+    -- Sand ring for sparring (circular darker sand in center)
+    local sparRing = Instance.new("Part")
+    sparRing.Name = "SparringRing"
+    sparRing.Shape = Enum.PartType.Cylinder
+    sparRing.Size = Vector3.new(0.15, 20, 20)
+    sparRing.Position = Vector3.new(baseX, GROUND_Y + 0.2, baseZ)
+    sparRing.Anchored = true
+    sparRing.Material = Enum.Material.Sand
+    sparRing.Color = Color3.fromRGB(170, 150, 110)
+    sparRing.CanCollide = false
+    sparRing.Parent = barracksModel
+
     -- Parent the barracks interior
     barracksModel.Parent = interiorsFolder
     BarracksState.model = barracksModel
@@ -12365,6 +13439,141 @@ local function createTownHall()
         teleportToInterior(player, "TownHall")
         task.delay(1, function() debounce[player.UserId] = nil end)
     end)
+
+    -- Stained glass windows
+    local stainedGlassColors = {
+        Color3.fromRGB(180, 40, 40),
+        Color3.fromRGB(40, 80, 180),
+        Color3.fromRGB(200, 170, 40),
+    }
+    for gi, glassColor in stainedGlassColors do
+        local stainedGlass = Instance.new("Part")
+        stainedGlass.Name = "StainedGlass" .. gi
+        stainedGlass.Size = Vector3.new(0.3, 3.5, 2)
+        stainedGlass.Position = Vector3.new(exteriorX + (gi - 2) * 6, extGround + 6, exteriorZ - 10.2)
+        stainedGlass.Anchored = true
+        stainedGlass.Material = Enum.Material.Glass
+        stainedGlass.Color = glassColor
+        stainedGlass.Transparency = 0.3
+        stainedGlass.CanCollide = false
+        stainedGlass.Parent = townHallExterior
+    end
+
+    -- Stone steps leading to entrance
+    for si = 1, 3 do
+        local step = Instance.new("Part")
+        step.Name = "Step" .. si
+        step.Size = Vector3.new(6 + si * 2, 0.5, 1.5)
+        step.Position = Vector3.new(exteriorX, extGround + (si - 1) * 0.5, exteriorZ - 10 - si * 1.5)
+        step.Anchored = true
+        step.Material = Enum.Material.Cobblestone
+        step.Color = Color3.fromRGB(160, 155, 145)
+        step.Parent = townHallExterior
+    end
+
+    -- Flag on spire
+    local spireFlagPole = Instance.new("Part")
+    spireFlagPole.Name = "SpireFlagPole"
+    spireFlagPole.Size = Vector3.new(0.2, 5, 0.2)
+    spireFlagPole.Position = Vector3.new(exteriorX, extGround + 46, exteriorZ)
+    spireFlagPole.Anchored = true
+    spireFlagPole.Material = Enum.Material.Metal
+    spireFlagPole.Color = Color3.fromRGB(60, 55, 50)
+    spireFlagPole.CanCollide = false
+    spireFlagPole.Parent = townHallExterior
+
+    local spireFlag = Instance.new("Part")
+    spireFlag.Name = "SpireFlag"
+    spireFlag.Size = Vector3.new(0.1, 3, 2)
+    spireFlag.Position = Vector3.new(exteriorX, extGround + 47, exteriorZ + 1.5)
+    spireFlag.Anchored = true
+    spireFlag.Material = Enum.Material.Fabric
+    spireFlag.Color = Color3.fromRGB(180, 150, 50)
+    spireFlag.CanCollide = false
+    spireFlag.Parent = townHallExterior
+
+    -- Buttress supports on side walls
+    for _, bside in {-1, 1} do
+        for bi = 1, 2 do
+            local buttress = Instance.new("Part")
+            buttress.Name = "Buttress"
+            buttress.Size = Vector3.new(1.5, 8, 2)
+            buttress.Position = Vector3.new(exteriorX + bside * 14.5, extGround + 4, exteriorZ - 5 + bi * 10)
+            buttress.Anchored = true
+            buttress.Material = Enum.Material.Brick
+            buttress.Color = darkStoneColor
+            buttress.CanCollide = false
+            buttress.Parent = townHallExterior
+        end
+    end
+
+    -- Royal banner above entrance
+    local royalBanner = Instance.new("Part")
+    royalBanner.Name = "RoyalBanner"
+    royalBanner.Size = Vector3.new(0.15, 4, 3)
+    royalBanner.Position = Vector3.new(exteriorX, extGround + 10, exteriorZ - 10.3)
+    royalBanner.Anchored = true
+    royalBanner.Material = Enum.Material.Fabric
+    royalBanner.Color = Color3.fromRGB(100, 20, 20)
+    royalBanner.CanCollide = false
+    royalBanner.Parent = townHallExterior
+
+    -- Banner gold trim
+    local bannerTrim = Instance.new("Part")
+    bannerTrim.Name = "BannerTrim"
+    bannerTrim.Size = Vector3.new(0.16, 0.3, 3)
+    bannerTrim.Position = Vector3.new(exteriorX, extGround + 8, exteriorZ - 10.3)
+    bannerTrim.Anchored = true
+    bannerTrim.Material = Enum.Material.Metal
+    bannerTrim.Color = Color3.fromRGB(200, 170, 50)
+    bannerTrim.CanCollide = false
+    bannerTrim.Parent = townHallExterior
+
+    -- Garden near entrance
+    local gardenBed = Instance.new("Part")
+    gardenBed.Name = "Garden"
+    gardenBed.Size = Vector3.new(8, 0.3, 3)
+    gardenBed.Position = Vector3.new(exteriorX + 10, extGround + 0.15, exteriorZ - 12)
+    gardenBed.Anchored = true
+    gardenBed.Material = Enum.Material.Ground
+    gardenBed.Color = Color3.fromRGB(70, 50, 30)
+    gardenBed.CanCollide = false
+    gardenBed.Parent = townHallExterior
+
+    for gf = 1, 5 do
+        local gardenFlower = Instance.new("Part")
+        gardenFlower.Name = "GardenFlower" .. gf
+        gardenFlower.Shape = Enum.PartType.Ball
+        gardenFlower.Size = Vector3.new(0.6, 0.6, 0.6)
+        gardenFlower.Position = Vector3.new(exteriorX + 7 + gf * 1.2, extGround + 0.6, exteriorZ - 12)
+        gardenFlower.Anchored = true
+        gardenFlower.Material = Enum.Material.Grass
+        gardenFlower.Color = stainedGlassColors[(gf % 3) + 1]
+        gardenFlower.CanCollide = false
+        gardenFlower.Parent = townHallExterior
+    end
+
+    -- Golden window glow
+    for _, wPos in {
+        Vector3.new(exteriorX - 14.5, extGround + 5, exteriorZ),
+        Vector3.new(exteriorX + 14.5, extGround + 5, exteriorZ),
+        Vector3.new(exteriorX, extGround + 5, exteriorZ - 10.5),
+    } do
+        local windowGlow = Instance.new("PointLight")
+        windowGlow.Name = "WindowGlow"
+        windowGlow.Color = Color3.fromRGB(255, 220, 120)
+        windowGlow.Brightness = 1.2
+        windowGlow.Range = 15
+        local glowPart = Instance.new("Part")
+        glowPart.Name = "WindowGlowSource"
+        glowPart.Size = Vector3.new(0.5, 0.5, 0.5)
+        glowPart.Position = wPos
+        glowPart.Anchored = true
+        glowPart.Transparency = 1
+        glowPart.CanCollide = false
+        glowPart.Parent = townHallExterior
+        windowGlow.Parent = glowPart
+    end
 
     townHallExterior.Parent = villageFolder
 
@@ -13699,6 +14908,110 @@ local function createTownHall()
     -- (Old stations removed: Tax Office, Census Desk, Research Library,
     -- Treasury Vault, Advisor Quarters, Royal Archives)
     -- See commit history for original implementation
+    -- ===== TOWN HALL DECORATIVE ENHANCEMENTS =====
+    -- Tapestry/banners on walls
+    local tapestryColors = {
+        Color3.fromRGB(120, 20, 20),
+        Color3.fromRGB(20, 50, 120),
+        Color3.fromRGB(100, 80, 20),
+    }
+    for ti, tColor in tapestryColors do
+        local tapestry = Instance.new("Part")
+        tapestry.Name = "Tapestry" .. ti
+        tapestry.Size = Vector3.new(0.15, 6, 3)
+        tapestry.Position = Vector3.new(baseX - 20 + ti * 12, GROUND_Y + 6, baseZ - 28)
+        tapestry.Anchored = true
+        tapestry.Material = Enum.Material.Fabric
+        tapestry.Color = tColor
+        tapestry.CanCollide = false
+        tapestry.Parent = townHallModel
+
+        -- Gold trim at bottom
+        local trimPart = Instance.new("Part")
+        trimPart.Name = "TapestryTrim" .. ti
+        trimPart.Size = Vector3.new(0.16, 0.3, 3)
+        trimPart.Position = Vector3.new(baseX - 20 + ti * 12, GROUND_Y + 3, baseZ - 28)
+        trimPart.Anchored = true
+        trimPart.Material = Enum.Material.Metal
+        trimPart.Color = Color3.fromRGB(200, 170, 50)
+        trimPart.CanCollide = false
+        trimPart.Parent = townHallModel
+    end
+
+    -- Book shelves along walls
+    for _, shelfPos in {
+        Vector3.new(baseX - 28, GROUND_Y, baseZ - 10),
+        Vector3.new(baseX - 28, GROUND_Y, baseZ + 10),
+        Vector3.new(baseX + 28, GROUND_Y, baseZ - 10),
+        Vector3.new(baseX + 28, GROUND_Y, baseZ + 10),
+    } do
+        -- Shelf frame
+        local shelf = Instance.new("Part")
+        shelf.Name = "BookShelf"
+        shelf.Size = Vector3.new(1.5, 6, 4)
+        shelf.Position = shelfPos + Vector3.new(0, 3, 0)
+        shelf.Anchored = true
+        shelf.Material = Enum.Material.Wood
+        shelf.Color = Color3.fromRGB(70, 48, 30)
+        shelf.CanCollide = false
+        shelf.Parent = townHallModel
+
+        -- Books on shelves (colored blocks)
+        local bookColors = {
+            Color3.fromRGB(150, 30, 30),
+            Color3.fromRGB(30, 80, 30),
+            Color3.fromRGB(30, 30, 120),
+            Color3.fromRGB(120, 100, 30),
+        }
+        for bi = 1, 4 do
+            local book = Instance.new("Part")
+            book.Name = "Book" .. bi
+            book.Size = Vector3.new(0.8, 0.8, 0.4)
+            book.Position = shelfPos + Vector3.new(0.3, 1 + bi * 1.2, (bi - 2.5) * 0.8)
+            book.Anchored = true
+            book.Material = Enum.Material.SmoothPlastic
+            book.Color = bookColors[bi]
+            book.CanCollide = false
+            book.Parent = townHallModel
+        end
+    end
+
+    -- Candelabra props
+    for _, candlePos in {
+        Vector3.new(baseX - 10, GROUND_Y + 3.5, baseZ - 15),
+        Vector3.new(baseX + 10, GROUND_Y + 3.5, baseZ - 15),
+    } do
+        -- Base
+        local candleBase = Instance.new("Part")
+        candleBase.Name = "CandelabraBase"
+        candleBase.Shape = Enum.PartType.Cylinder
+        candleBase.Size = Vector3.new(0.3, 0.8, 0.8)
+        candleBase.Position = candlePos
+        candleBase.Anchored = true
+        candleBase.Material = Enum.Material.Metal
+        candleBase.Color = Color3.fromRGB(180, 150, 50)
+        candleBase.CanCollide = false
+        candleBase.Parent = townHallModel
+
+        -- Arms and candles
+        for ci = -1, 1 do
+            local candle = Instance.new("Part")
+            candle.Name = "Candle"
+            candle.Size = Vector3.new(0.15, 0.8, 0.15)
+            candle.Position = candlePos + Vector3.new(ci * 0.3, 0.6, 0)
+            candle.Anchored = true
+            candle.Material = Enum.Material.SmoothPlastic
+            candle.Color = Color3.fromRGB(240, 230, 200)
+            candle.CanCollide = false
+            candle.Parent = townHallModel
+
+            local flame = Instance.new("Fire")
+            flame.Size = 1
+            flame.Heat = 1
+            flame.Parent = candle
+        end
+    end
+
     -- Parent the town hall interior
     townHallModel.Parent = interiorsFolder
     TownHallState.model = townHallModel
@@ -13731,24 +15044,56 @@ local function createDecorations()
         local tree = Instance.new("Model")
         tree.Name = "Tree" .. i
 
+        -- Varied tree height
+        local trunkHeight = 7 + (i % 3)
         local trunk = Instance.new("Part")
         trunk.Name = "Trunk"
-        trunk.Size = Vector3.new(2, 8, 2)
-        trunk.Position = pos + Vector3.new(0, 4, 0)
+        trunk.Size = Vector3.new(2.5, trunkHeight, 2.5)
+        trunk.Position = pos + Vector3.new(0, trunkHeight/2, 0)
         trunk.Anchored = true
         trunk.Material = Enum.Material.Wood
-        trunk.Color = Color3.fromRGB(80, 55, 35)
+        trunk.Color = Color3.fromRGB(75 + (i * 5) % 15, 50 + (i * 3) % 10, 30 + (i * 7) % 10)
         trunk.Parent = tree
 
+        -- Main canopy (large)
+        local greenShade = 100 + (i * 17) % 40
         local leaves = Instance.new("Part")
         leaves.Name = "Leaves"
         leaves.Shape = Enum.PartType.Ball
-        leaves.Size = Vector3.new(8, 7, 8)
-        leaves.Position = pos + Vector3.new(0, 10, 0)
+        leaves.Size = Vector3.new(9, 8, 9)
+        leaves.Position = pos + Vector3.new(0, trunkHeight + 2, 0)
         leaves.Anchored = true
         leaves.Material = Enum.Material.Grass
-        leaves.Color = Color3.fromRGB(60, 120, 50)
+        leaves.Color = Color3.fromRGB(45 + (i * 7) % 20, greenShade, 40 + (i * 11) % 20)
+        leaves.CanCollide = false
         leaves.Parent = tree
+
+        -- Secondary canopy (smaller, offset for organic shape)
+        local leaves2 = Instance.new("Part")
+        leaves2.Name = "Leaves2"
+        leaves2.Shape = Enum.PartType.Ball
+        leaves2.Size = Vector3.new(6, 5, 6)
+        leaves2.Position = pos + Vector3.new(2 * ((i % 2 == 0) and 1 or -1), trunkHeight + 1, 1.5 * ((i % 3 == 0) and 1 or -1))
+        leaves2.Anchored = true
+        leaves2.Material = Enum.Material.Grass
+        leaves2.Color = Color3.fromRGB(50 + (i * 9) % 20, greenShade - 10, 45 + (i * 5) % 15)
+        leaves2.CanCollide = false
+        leaves2.Parent = tree
+
+        -- Root bumps at base
+        for r = 1, 3 do
+            local root = Instance.new("Part")
+            root.Name = "Root" .. r
+            root.Size = Vector3.new(1.2, 0.6, 0.5)
+            local angle = math.rad((r - 1) * 120 + i * 30)
+            root.Position = pos + Vector3.new(math.cos(angle) * 1.3, 0.3, math.sin(angle) * 1.3)
+            root.Orientation = Vector3.new(0, math.deg(angle), 15)
+            root.Anchored = true
+            root.Material = Enum.Material.Wood
+            root.Color = Color3.fromRGB(70, 48, 30)
+            root.CanCollide = false
+            root.Parent = tree
+        end
 
         tree.Parent = decorFolder
     end
@@ -13778,15 +15123,53 @@ local function createDecorations()
         pole.Color = Color3.fromRGB(50, 50, 55)
         pole.Parent = lamp
 
+        -- Hanging bracket (L-shaped arm)
+        local bracket = Instance.new("Part")
+        bracket.Name = "Bracket"
+        bracket.Size = Vector3.new(0.3, 0.3, 1.5)
+        bracket.Position = pos + Vector3.new(0, 8, 0.75)
+        bracket.Anchored = true
+        bracket.Material = Enum.Material.Metal
+        bracket.Color = Color3.fromRGB(45, 45, 50)
+        bracket.CanCollide = false
+        bracket.Parent = lamp
+
+        -- Lantern hung from bracket end
         local lantern = Instance.new("Part")
         lantern.Name = "Lantern"
-        lantern.Size = Vector3.new(1.5, 2, 1.5)
-        lantern.Position = pos + Vector3.new(0, 9, 0)
+        lantern.Size = Vector3.new(1.2, 1.8, 1.2)
+        lantern.Position = pos + Vector3.new(0, 7, 1.5)
         lantern.Anchored = true
         lantern.Material = Enum.Material.Glass
         lantern.Color = Color3.fromRGB(255, 220, 150)
         lantern.Transparency = 0.3
+        lantern.CanCollide = false
         lantern.Parent = lamp
+
+        -- Lantern cage bars (4 vertical bars around glass)
+        for b = 0, 3 do
+            local bar = Instance.new("Part")
+            bar.Name = "CageBar" .. b
+            bar.Size = Vector3.new(0.1, 1.8, 0.1)
+            local bAngle = math.rad(b * 90)
+            bar.Position = pos + Vector3.new(math.cos(bAngle) * 0.7, 7, 1.5 + math.sin(bAngle) * 0.7)
+            bar.Anchored = true
+            bar.Material = Enum.Material.Metal
+            bar.Color = Color3.fromRGB(45, 45, 50)
+            bar.CanCollide = false
+            bar.Parent = lamp
+        end
+
+        -- Lantern top cap
+        local cap = Instance.new("Part")
+        cap.Name = "LanternCap"
+        cap.Size = Vector3.new(1.4, 0.2, 1.4)
+        cap.Position = pos + Vector3.new(0, 7.9, 1.5)
+        cap.Anchored = true
+        cap.Material = Enum.Material.Metal
+        cap.Color = Color3.fromRGB(45, 45, 50)
+        cap.CanCollide = false
+        cap.Parent = lamp
 
         local light = Instance.new("PointLight")
         light.Color = Color3.fromRGB(255, 200, 120)
@@ -13806,43 +15189,356 @@ local function createDecorations()
     }
 
     for i, data in benchPositions do
-        local bench = Instance.new("Part")
+        local bench = Instance.new("Model")
         bench.Name = "Bench" .. i
-        bench.Size = Vector3.new(4, 1.5, 1.5)
-        bench.Position = data.pos + Vector3.new(0, 0.75, 0)
-        bench.Orientation = Vector3.new(0, data.rot, 0)
-        bench.Anchored = true
-        bench.Material = Enum.Material.Wood
-        bench.Color = Color3.fromRGB(90, 65, 45)
+
+        -- Seat plank
+        local seat = Instance.new("Part")
+        seat.Name = "Seat"
+        seat.Size = Vector3.new(4, 0.3, 1.5)
+        seat.Position = data.pos + Vector3.new(0, 1.2, 0)
+        seat.Orientation = Vector3.new(0, data.rot, 0)
+        seat.Anchored = true
+        seat.Material = Enum.Material.Wood
+        seat.Color = Color3.fromRGB(90, 65, 45)
+        seat.Parent = bench
+
+        -- Backrest
+        local backrest = Instance.new("Part")
+        backrest.Name = "Backrest"
+        backrest.Size = Vector3.new(4, 1.2, 0.2)
+        backrest.Position = data.pos + Vector3.new(0, 1.9, -0.65)
+        backrest.Orientation = Vector3.new(-10, data.rot, 0)
+        backrest.Anchored = true
+        backrest.Material = Enum.Material.Wood
+        backrest.Color = Color3.fromRGB(85, 60, 40)
+        backrest.Parent = bench
+
+        -- Legs (2)
+        local rad = math.rad(data.rot)
+        for _, side in {-1.5, 1.5} do
+            local leg = Instance.new("Part")
+            leg.Name = "Leg"
+            leg.Size = Vector3.new(0.4, 1.2, 1.2)
+            local legOffset = Vector3.new(side, 0.6, 0)
+            local rotX = legOffset.X * math.cos(rad) - legOffset.Z * math.sin(rad)
+            local rotZ = legOffset.X * math.sin(rad) + legOffset.Z * math.cos(rad)
+            leg.Position = data.pos + Vector3.new(rotX, legOffset.Y, rotZ)
+            leg.Orientation = Vector3.new(0, data.rot, 0)
+            leg.Anchored = true
+            leg.Material = Enum.Material.Wood
+            leg.Color = Color3.fromRGB(75, 55, 35)
+            leg.Parent = bench
+        end
+
         bench.Parent = decorFolder
     end
 
-    -- Central well/fountain
+    -- Central well with roof structure
     local well = Instance.new("Model")
     well.Name = "CentralWell"
 
+    -- Taller stone rim
     local wellBase = Instance.new("Part")
     wellBase.Name = "Base"
     wellBase.Shape = Enum.PartType.Cylinder
-    wellBase.Size = Vector3.new(2, 6, 6)
-    wellBase.Position = Vector3.new(60, GROUND_Y + 1, 45)
+    wellBase.Size = Vector3.new(3, 7, 7)
+    wellBase.Position = Vector3.new(60, GROUND_Y + 1.5, 45)
     wellBase.Anchored = true
     wellBase.Material = Enum.Material.Cobblestone
     wellBase.Color = Color3.fromRGB(110, 105, 100)
     wellBase.Parent = well
 
+    -- Water with shimmer
     local wellWater = Instance.new("Part")
     wellWater.Name = "Water"
     wellWater.Shape = Enum.PartType.Cylinder
-    wellWater.Size = Vector3.new(0.5, 4, 4)
-    wellWater.Position = Vector3.new(60, GROUND_Y + 1.5, 45)
+    wellWater.Size = Vector3.new(0.5, 5, 5)
+    wellWater.Position = Vector3.new(60, GROUND_Y + 1, 45)
     wellWater.Anchored = true
     wellWater.Material = Enum.Material.Glass
-    wellWater.Color = Color3.fromRGB(80, 140, 200)
-    wellWater.Transparency = 0.4
+    wellWater.Color = Color3.fromRGB(70, 130, 190)
+    wellWater.Transparency = 0.35
     wellWater.Parent = well
 
+    -- Roof support posts (4 posts)
+    for p = 0, 3 do
+        local post = Instance.new("Part")
+        post.Name = "WellPost" .. p
+        post.Size = Vector3.new(0.5, 5, 0.5)
+        local pAngle = math.rad(p * 90 + 45)
+        post.Position = Vector3.new(60 + math.cos(pAngle) * 3, GROUND_Y + 5.5, 45 + math.sin(pAngle) * 3)
+        post.Anchored = true
+        post.Material = Enum.Material.Wood
+        post.Color = Color3.fromRGB(70, 48, 30)
+        post.Parent = well
+    end
+
+    -- Roof (peaked, two sloped Parts)
+    local roofLeft = Instance.new("Part")
+    roofLeft.Name = "WellRoofLeft"
+    roofLeft.Size = Vector3.new(5, 0.3, 7)
+    roofLeft.Position = Vector3.new(58.8, GROUND_Y + 8.5, 45)
+    roofLeft.Orientation = Vector3.new(0, 0, 25)
+    roofLeft.Anchored = true
+    roofLeft.Material = Enum.Material.Wood
+    roofLeft.Color = Color3.fromRGB(80, 55, 35)
+    roofLeft.CanCollide = false
+    roofLeft.Parent = well
+
+    local roofRight = Instance.new("Part")
+    roofRight.Name = "WellRoofRight"
+    roofRight.Size = Vector3.new(5, 0.3, 7)
+    roofRight.Position = Vector3.new(61.2, GROUND_Y + 8.5, 45)
+    roofRight.Orientation = Vector3.new(0, 0, -25)
+    roofRight.Anchored = true
+    roofRight.Material = Enum.Material.Wood
+    roofRight.Color = Color3.fromRGB(80, 55, 35)
+    roofRight.CanCollide = false
+    roofRight.Parent = well
+
+    -- Roof beam (horizontal, holds rope)
+    local roofBeam = Instance.new("Part")
+    roofBeam.Name = "RoofBeam"
+    roofBeam.Size = Vector3.new(0.4, 0.4, 7)
+    roofBeam.Position = Vector3.new(60, GROUND_Y + 9.2, 45)
+    roofBeam.Anchored = true
+    roofBeam.Material = Enum.Material.Wood
+    roofBeam.Color = Color3.fromRGB(70, 48, 30)
+    roofBeam.CanCollide = false
+    roofBeam.Parent = well
+
+    -- Rope from beam
+    local rope = Instance.new("Part")
+    rope.Name = "Rope"
+    rope.Size = Vector3.new(0.15, 4, 0.15)
+    rope.Position = Vector3.new(60, GROUND_Y + 7, 45)
+    rope.Anchored = true
+    rope.Material = Enum.Material.Fabric
+    rope.Color = Color3.fromRGB(160, 140, 100)
+    rope.CanCollide = false
+    rope.Parent = well
+
+    -- Bucket at rope end
+    local bucket = Instance.new("Part")
+    bucket.Name = "Bucket"
+    bucket.Shape = Enum.PartType.Cylinder
+    bucket.Size = Vector3.new(1, 1, 1)
+    bucket.Position = Vector3.new(60, GROUND_Y + 4.8, 45)
+    bucket.Orientation = Vector3.new(0, 0, 0)
+    bucket.Anchored = true
+    bucket.Material = Enum.Material.Wood
+    bucket.Color = Color3.fromRGB(90, 65, 40)
+    bucket.CanCollide = false
+    bucket.Parent = well
+
     well.Parent = decorFolder
+
+
+    -- Barrel clusters near buildings
+    local barrelPositions = {
+        Vector3.new(35, GROUND_Y, 35),
+        Vector3.new(85, GROUND_Y, 35),
+        Vector3.new(35, GROUND_Y, 115),
+        Vector3.new(85, GROUND_Y, 115),
+    }
+    for i, bpos in barrelPositions do
+        for j = 1, 3 do
+            local barrel = Instance.new("Part")
+            barrel.Name = "Barrel" .. i .. "_" .. j
+            barrel.Shape = Enum.PartType.Cylinder
+            barrel.Size = Vector3.new(2, 1.5, 1.5)
+            barrel.Position = bpos + Vector3.new((j - 2) * 1.8, 1, (j % 2) * 0.5)
+            barrel.Anchored = true
+            barrel.Material = Enum.Material.WoodPlanks
+            barrel.Color = Color3.fromRGB(100 + j * 10, 70 + j * 5, 40 + j * 5)
+            barrel.CanCollide = false
+            barrel.Parent = decorFolder
+        end
+    end
+
+    -- Crate stacks near paths
+    local cratePositions = {
+        Vector3.new(50, GROUND_Y, 40),
+        Vector3.new(70, GROUND_Y, 40),
+        Vector3.new(50, GROUND_Y, 80),
+        Vector3.new(70, GROUND_Y, 80),
+    }
+    for i, cpos in cratePositions do
+        local crate = Instance.new("Part")
+        crate.Name = "Crate" .. i
+        crate.Size = Vector3.new(1.5, 1.5, 1.5)
+        crate.Position = cpos + Vector3.new(0, 0.75, 0)
+        crate.Anchored = true
+        crate.Material = Enum.Material.WoodPlanks
+        crate.Color = Color3.fromRGB(150, 120, 80)
+        crate.CanCollide = false
+        crate.Parent = decorFolder
+
+        -- Stacked crate on top (slightly rotated)
+        if i % 2 == 0 then
+            local crate2 = Instance.new("Part")
+            crate2.Name = "Crate" .. i .. "_top"
+            crate2.Size = Vector3.new(1.3, 1.3, 1.3)
+            crate2.Position = cpos + Vector3.new(0.2, 2.1, 0.1)
+            crate2.Orientation = Vector3.new(0, 15, 0)
+            crate2.Anchored = true
+            crate2.Material = Enum.Material.WoodPlanks
+            crate2.Color = Color3.fromRGB(140, 115, 75)
+            crate2.CanCollide = false
+            crate2.Parent = decorFolder
+        end
+    end
+
+    -- Flower beds along paths
+    local flowerPositions = {
+        Vector3.new(53, GROUND_Y, 60),
+        Vector3.new(67, GROUND_Y, 60),
+        Vector3.new(53, GROUND_Y, 110),
+        Vector3.new(67, GROUND_Y, 110),
+    }
+    local flowerColors = {
+        Color3.fromRGB(220, 60, 60),
+        Color3.fromRGB(255, 200, 60),
+        Color3.fromRGB(200, 80, 200),
+        Color3.fromRGB(255, 150, 50),
+    }
+    for i, fpos in flowerPositions do
+        -- Soil bed
+        local bed = Instance.new("Part")
+        bed.Name = "FlowerBed" .. i
+        bed.Size = Vector3.new(3, 0.3, 1.5)
+        bed.Position = fpos + Vector3.new(0, 0.15, 0)
+        bed.Anchored = true
+        bed.Material = Enum.Material.Ground
+        bed.Color = Color3.fromRGB(80, 55, 35)
+        bed.CanCollide = false
+        bed.Parent = decorFolder
+
+        -- Flowers
+        for f = 1, 4 do
+            local flower = Instance.new("Part")
+            flower.Name = "Flower" .. f
+            flower.Shape = Enum.PartType.Ball
+            flower.Size = Vector3.new(0.5, 0.5, 0.5)
+            flower.Position = fpos + Vector3.new((f - 2.5) * 0.6, 0.5, 0)
+            flower.Anchored = true
+            flower.Material = Enum.Material.Grass
+            flower.Color = flowerColors[(f + i) % #flowerColors + 1]
+            flower.CanCollide = false
+            flower.Parent = decorFolder
+        end
+    end
+
+    -- Market stall near center
+    local stallPos = Vector3.new(45, GROUND_Y, 75)
+    local stallModel = Instance.new("Model")
+    stallModel.Name = "MarketStall"
+
+    -- Counter
+    local counter = Instance.new("Part")
+    counter.Name = "Counter"
+    counter.Size = Vector3.new(6, 3, 2)
+    counter.Position = stallPos + Vector3.new(0, 1.5, 0)
+    counter.Anchored = true
+    counter.Material = Enum.Material.Wood
+    counter.Color = Color3.fromRGB(100, 70, 45)
+    counter.Parent = stallModel
+
+    -- Support posts for canopy
+    for _, sx in {-2.8, 2.8} do
+        local spost = Instance.new("Part")
+        spost.Name = "StallPost"
+        spost.Size = Vector3.new(0.4, 5, 0.4)
+        spost.Position = stallPos + Vector3.new(sx, 2.5, 1)
+        spost.Anchored = true
+        spost.Material = Enum.Material.Wood
+        spost.Color = Color3.fromRGB(80, 55, 35)
+        spost.Parent = stallModel
+    end
+
+    -- Fabric canopy
+    local canopy = Instance.new("Part")
+    canopy.Name = "Canopy"
+    canopy.Size = Vector3.new(7, 0.2, 3.5)
+    canopy.Position = stallPos + Vector3.new(0, 5.2, 0.5)
+    canopy.Orientation = Vector3.new(8, 0, 0)
+    canopy.Anchored = true
+    canopy.Material = Enum.Material.Fabric
+    canopy.Color = Color3.fromRGB(160, 40, 40)
+    canopy.CanCollide = false
+    canopy.Parent = stallModel
+
+    stallModel.Parent = decorFolder
+
+    -- Notice board near entrance
+    local noticeBoard = Instance.new("Part")
+    noticeBoard.Name = "NoticeBoard"
+    noticeBoard.Size = Vector3.new(3, 2.5, 0.3)
+    noticeBoard.Position = Vector3.new(78, GROUND_Y + 3, 14)
+    noticeBoard.Anchored = true
+    noticeBoard.Material = Enum.Material.Wood
+    noticeBoard.Color = Color3.fromRGB(90, 65, 40)
+    noticeBoard.CanCollide = false
+    noticeBoard.Parent = decorFolder
+
+    local noticeBoardPost = Instance.new("Part")
+    noticeBoardPost.Name = "NoticeBoardPost"
+    noticeBoardPost.Size = Vector3.new(0.4, 4, 0.4)
+    noticeBoardPost.Position = Vector3.new(78, GROUND_Y + 2, 14)
+    noticeBoardPost.Anchored = true
+    noticeBoardPost.Material = Enum.Material.Wood
+    noticeBoardPost.Color = Color3.fromRGB(70, 48, 30)
+    noticeBoardPost.Parent = decorFolder
+
+    -- Notice board text
+    local noticeGui = Instance.new("SurfaceGui")
+    noticeGui.Face = Enum.NormalId.Front
+    noticeGui.Parent = noticeBoard
+    local noticeLabel = Instance.new("TextLabel")
+    noticeLabel.Size = UDim2.new(1, 0, 1, 0)
+    noticeLabel.BackgroundTransparency = 1
+    noticeLabel.Text = "VILLAGE\nNOTICES"
+    noticeLabel.TextColor3 = Color3.fromRGB(40, 30, 20)
+    noticeLabel.TextScaled = true
+    noticeLabel.Font = Enum.Font.Antique
+    noticeLabel.Parent = noticeGui
+
+    -- Hay cart near farm area
+    local cartBase = Instance.new("Part")
+    cartBase.Name = "HayCartBase"
+    cartBase.Size = Vector3.new(4, 1, 2.5)
+    cartBase.Position = Vector3.new(85, GROUND_Y + 1, 95)
+    cartBase.Anchored = true
+    cartBase.Material = Enum.Material.Wood
+    cartBase.Color = Color3.fromRGB(100, 70, 45)
+    cartBase.CanCollide = false
+    cartBase.Parent = decorFolder
+
+    local hayPile = Instance.new("Part")
+    hayPile.Name = "HayPile"
+    hayPile.Size = Vector3.new(3.5, 1.5, 2)
+    hayPile.Position = Vector3.new(85, GROUND_Y + 2.2, 95)
+    hayPile.Anchored = true
+    hayPile.Material = Enum.Material.Fabric
+    hayPile.Color = Color3.fromRGB(210, 185, 120)
+    hayPile.CanCollide = false
+    hayPile.Parent = decorFolder
+
+    -- Cart wheels
+    for _, wOff in {{-2.2, -1.3}, {-2.2, 1.3}, {2.2, -1.3}, {2.2, 1.3}} do
+        local wheel = Instance.new("Part")
+        wheel.Name = "CartWheel"
+        wheel.Shape = Enum.PartType.Cylinder
+        wheel.Size = Vector3.new(0.3, 1.5, 1.5)
+        wheel.Position = Vector3.new(85 + wOff[1], GROUND_Y + 0.75, 95 + wOff[2])
+        wheel.Orientation = Vector3.new(0, 90, 0)
+        wheel.Anchored = true
+        wheel.Material = Enum.Material.Wood
+        wheel.Color = Color3.fromRGB(70, 48, 30)
+        wheel.CanCollide = false
+        wheel.Parent = decorFolder
+    end
 
     print("  ✓ Decorations added")
 end
@@ -14828,6 +16524,35 @@ local success, errorMsg = pcall(function()
     createBarracks()
     createTownHall()
     createDecorations()
+
+    -- ========== KILL ZONES (respawn players who fall out of bounds) ==========
+    local function createKillZone(name, pos, sz)
+        local zone = Instance.new("Part")
+        zone.Name = name
+        zone.Size = sz
+        zone.Position = pos
+        zone.Anchored = true
+        zone.Transparency = 1
+        zone.CanCollide = false
+        zone.Parent = workspace
+        zone.Touched:Connect(function(hit)
+            local character = hit.Parent
+            local humanoid = character and character:FindFirstChild("Humanoid")
+            if not humanoid then return end
+            local hrp = character:FindFirstChild("HumanoidRootPart")
+            if hrp then
+                hrp.CFrame = CFrame.new(60, GROUND_Y + 5, 18)
+            end
+        end)
+    end
+    -- Main village kill zone
+    createKillZone("VillageKillZone", Vector3.new(60, -50, 90), Vector3.new(500, 5, 500))
+    -- Interior kill zones (below each interior Y level)
+    createKillZone("GoldMineKillZone", Vector3.new(0, 440, 0), Vector3.new(500, 5, 500))
+    createKillZone("LumberMillKillZone", Vector3.new(0, 540, 0), Vector3.new(500, 5, 500))
+    createKillZone("FarmKillZone", Vector3.new(0, 640, 0), Vector3.new(500, 5, 500))
+    createKillZone("BarracksKillZone", Vector3.new(0, 790, 0), Vector3.new(500, 5, 500))
+    createKillZone("TownHallKillZone", Vector3.new(0, 890, 0), Vector3.new(500, 5, 500))
 end)
 
 if success then
