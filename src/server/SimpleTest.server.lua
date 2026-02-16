@@ -2617,53 +2617,35 @@ local function setNPCCarrying(npc, itemType, amount)
             color = Color3.fromRGB(120, 90, 60)
         }, CFrame.new(0, 0.5, 0.8)) -- Behind torso, slightly up
 
-        -- Ore chunks on top of sack (jagged rock shapes with gold specks)
+        -- Ore chunks on top of sack (jagged rock shapes with random orientation)
         for i = 1, math.min(amount, 3) do
-            -- Main rock chunk
             local ore = createWeldedPart({
                 name = "Ore" .. i,
-                size = Vector3.new(0.35, 0.35, 0.35),
-                material = Enum.Material.Rock,
-                color = Color3.fromRGB(75 + i * 5, 70 + i * 3, 62 + i * 2)
-            }, CFrame.new((i-2) * 0.25, 0.5 + sackHeight/2 + 0.15, 0.8) * CFrame.Angles(math.rad(i * 25), math.rad(i * 50), math.rad(i * 18)))
+                size = Vector3.new(0.3, 0.3, 0.3),
+                material = Enum.Material.Slate,
+                color = Color3.fromRGB(90 + i * 10, 75 + i * 8, 60 + i * 5)
+            }, CFrame.new((i-2) * 0.25, 0.5 + sackHeight/2 + 0.15, 0.8) * CFrame.Angles(math.rad(i * 20), math.rad(i * 45), math.rad(i * 15)))
             if ore then
                 local mesh = Instance.new("SpecialMesh")
                 mesh.MeshType = Enum.MeshType.Sphere
-                mesh.Scale = Vector3.new(0.7 + i * 0.12, 0.6 + i * 0.1, 0.85 + i * 0.05)
+                mesh.Scale = Vector3.new(0.8 + i * 0.1, 0.7 + i * 0.15, 0.9)
                 mesh.Parent = ore
-                -- Gold speck embedded in ore
-                local speck = createWeldedPart({
-                    name = "GoldSpeck" .. i,
-                    size = Vector3.new(0.08, 0.06, 0.08),
-                    material = Enum.Material.SmoothPlastic,
-                    color = Color3.fromRGB(218, 175, 32)
-                }, CFrame.new((i-2) * 0.25 + 0.05, 0.5 + sackHeight/2 + 0.25, 0.8 + 0.08))
-                if speck then speck.Reflectance = 0.6 end
             end
         end
     elseif itemType == "gold" then
-        -- Gold ingots stacked on back (realistic trapezoidal shape with shine)
+        -- Gold bars/ingots stacked on back (with trapezoidal mesh)
         for i = 1, math.min(amount, 3) do
             local bar = createWeldedPart({
                 name = "GoldBar" .. i,
-                size = Vector3.new(0.6, 0.25, 0.35),
-                material = Enum.Material.SmoothPlastic,
-                color = Color3.fromRGB(218, 175, 32)
-            }, CFrame.new((i-2) * 0.32, 0.5 + (i-1) * 0.3, 0.7))
+                size = Vector3.new(0.6, 0.3, 0.3),
+                material = Enum.Material.Metal,
+                color = Color3.fromRGB(255, 200, 50)
+            }, CFrame.new((i-2) * 0.3, 0.5 + (i-1) * 0.35, 0.7))
             if bar then
-                bar.Reflectance = 0.8
                 local mesh = Instance.new("SpecialMesh")
                 mesh.MeshType = Enum.MeshType.Brick
-                mesh.Scale = Vector3.new(1.15, 0.85, 0.95)
+                mesh.Scale = Vector3.new(1.2, 0.8, 1)
                 mesh.Parent = bar
-                -- Top bevel for ingot shape
-                local bevel = createWeldedPart({
-                    name = "GoldBevel" .. i,
-                    size = Vector3.new(0.45, 0.08, 0.25),
-                    material = Enum.Material.SmoothPlastic,
-                    color = Color3.fromRGB(235, 195, 55)
-                }, CFrame.new((i-2) * 0.32, 0.5 + (i-1) * 0.3 + 0.14, 0.7))
-                if bevel then bevel.Reflectance = 0.9 end
             end
         end
     elseif itemType == "logs" then
@@ -3386,7 +3368,7 @@ local function updatePlayerOreVisual(player, amount)
     weld.C0 = CFrame.new(0, 0.2, 0.9) -- Position on back
     weld.Parent = sack
 
-    -- Add ore chunks on top based on amount (rocky with gold specks)
+    -- Add ore chunks on top based on amount
     local oreCount = math.min(amount, 5) -- Show up to 5 visible ore chunks
     for i = 1, oreCount do
         local ore = Instance.new("Part")
@@ -3394,44 +3376,22 @@ local function updatePlayerOreVisual(player, amount)
         ore.Size = Vector3.new(0.4, 0.4, 0.4)
         ore.Anchored = false
         ore.CanCollide = false
-        ore.Material = Enum.Material.Rock
-        ore.Color = Color3.fromRGB(80 + i * 4, 72 + i * 3, 60 + i * 2)
+        ore.Material = Enum.Material.Metal
+        ore.Color = Color3.fromRGB(255, 200, 50) -- Gold ore color
         ore.Parent = backpack
-
-        -- Jagged rock shape
-        local mesh = Instance.new("SpecialMesh")
-        mesh.MeshType = Enum.MeshType.Sphere
-        mesh.Scale = Vector3.new(0.7 + i * 0.08, 0.6 + i * 0.1, 0.85)
-        mesh.Parent = ore
 
         local oreWeld = Instance.new("Weld")
         oreWeld.Part0 = sack
         oreWeld.Part1 = ore
+        -- Arrange ore chunks on top of sack
         local angle = (i - 1) * (math.pi * 2 / oreCount)
         local radius = 0.3
         oreWeld.C0 = CFrame.new(
             math.cos(angle) * radius,
             sack.Size.Y / 2 + 0.1,
             math.sin(angle) * radius
-        ) * CFrame.Angles(math.rad(i * 22), math.rad(i * 40), math.rad(i * 15))
+        )
         oreWeld.Parent = ore
-
-        -- Small gold speck on each ore chunk
-        local speck = Instance.new("Part")
-        speck.Name = "GoldSpeck" .. i
-        speck.Size = Vector3.new(0.1, 0.08, 0.1)
-        speck.Anchored = false
-        speck.CanCollide = false
-        speck.Material = Enum.Material.SmoothPlastic
-        speck.Color = Color3.fromRGB(218, 175, 32)
-        speck.Reflectance = 0.7
-        speck.Parent = backpack
-
-        local speckWeld = Instance.new("Weld")
-        speckWeld.Part0 = ore
-        speckWeld.Part1 = speck
-        speckWeld.C0 = CFrame.new(0.08, 0.1, 0.05)
-        speckWeld.Parent = speck
     end
 
     -- Add text showing count
@@ -4359,47 +4319,27 @@ local function createGoldMine()
         -- Create or show bars as needed
         for i = 1, MAX_VISIBLE_BARS do
             if not visualGoldBars[i] then
-                -- Create gold ingot with realistic shape and shine
+                -- Create new gold bar
                 local bar = Instance.new("Part")
                 bar.Name = "GoldBar" .. i
-                bar.Size = Vector3.new(0.6, 0.28, 0.4)
+                bar.Size = Vector3.new(0.6, 0.3, 0.4)
                 -- Stack bars in a neat grid (5 columns, 5 rows)
                 local row = math.floor((i - 1) / 5)
                 local col = (i - 1) % 5
-                bar.Position = smelterPos + Vector3.new(4 + col * 0.45, 3.2 + row * 0.33, -0.8 + (i % 2) * 0.25)
+                bar.Position = smelterPos + Vector3.new(4 + col * 0.45, 3.2 + row * 0.35, -0.8 + (i % 2) * 0.25)
                 bar.Anchored = true
-                bar.Material = Enum.Material.SmoothPlastic
-                bar.Color = Color3.fromRGB(218, 175, 32)
-                bar.Reflectance = 0.8
+                bar.Material = Enum.Material.Metal
+                bar.Color = Color3.fromRGB(255, 200, 50)
                 bar.CanCollide = false
                 bar.Parent = goldBarContainer
-
-                -- Trapezoidal ingot mesh
-                local mesh = Instance.new("SpecialMesh")
-                mesh.MeshType = Enum.MeshType.Brick
-                mesh.Scale = Vector3.new(1.15, 0.85, 0.95)
-                mesh.Parent = bar
-
-                -- Top highlight bevel (lighter gold)
-                local bevel = Instance.new("Part")
-                bevel.Name = "GoldBevel" .. i
-                bevel.Size = Vector3.new(0.45, 0.06, 0.3)
-                bevel.Position = bar.Position + Vector3.new(0, 0.15, 0)
-                bevel.Anchored = true
-                bevel.Material = Enum.Material.SmoothPlastic
-                bevel.Color = Color3.fromRGB(235, 195, 55)
-                bevel.Reflectance = 0.9
-                bevel.CanCollide = false
-                bevel.Parent = goldBarContainer
-
-                -- Warm glow
-                local shine = Instance.new("PointLight")
-                shine.Brightness = 0.3
-                shine.Range = 3
-                shine.Color = Color3.fromRGB(255, 210, 80)
-                shine.Parent = bar
-
                 visualGoldBars[i] = bar
+
+                -- Add gold shine effect
+                local shine = Instance.new("SurfaceLight")
+                shine.Face = Enum.NormalId.Top
+                shine.Brightness = 0.5
+                shine.Color = Color3.fromRGB(255, 220, 100)
+                shine.Parent = bar
             end
 
             -- Show or hide based on count (1 bar = 1 gold)
@@ -4702,9 +4642,8 @@ local function createGoldMine()
     local goldTrim = Instance.new("Part")
     goldTrim.Size = Vector3.new(5.5, 0.4, 0.4)
     goldTrim.Anchored = true
-    goldTrim.Material = Enum.Material.SmoothPlastic
-    goldTrim.Color = Color3.fromRGB(218, 175, 32)
-    goldTrim.Reflectance = 0.7
+    goldTrim.Material = Enum.Material.Metal
+    goldTrim.Color = Color3.fromRGB(220, 180, 50)
     goldTrim.CFrame = goldChest.CFrame * CFrame.new(0, 0, -1.6)
     goldTrim.Parent = mineModel
 
@@ -4723,35 +4662,21 @@ local function createGoldMine()
 
         for i = 1, MAX_CHEST_GOLD_VISUALS do
             if not visualChestGold[i] then
+                -- Create gold coin/bar
                 local coin = Instance.new("Part")
                 coin.Name = "ChestGold" .. i
+                coin.Shape = (i % 3 == 0) and Enum.PartType.Cylinder or Enum.PartType.Block
+                coin.Size = (i % 3 == 0) and Vector3.new(0.2, 0.6, 0.6) or Vector3.new(0.7, 0.35, 0.35)
                 local row = math.floor((i - 1) / 5)
                 local col = (i - 1) % 5
-
+                coin.Position = chestPos + Vector3.new(-1.5 + col * 0.7, 1.8 + row * 0.4, -0.5 + (i % 2) * 0.4)
                 if i % 3 == 0 then
-                    -- Gold coin (disc shape)
-                    coin.Shape = Enum.PartType.Cylinder
-                    coin.Size = Vector3.new(0.12, 0.55, 0.55)
                     coin.Orientation = Vector3.new(0, 0, 90)
-                    coin.Position = chestPos + Vector3.new(-1.5 + col * 0.7, 1.8 + row * 0.4, -0.5 + (i % 2) * 0.4)
-                    coin.Color = Color3.fromRGB(228, 185, 42)
-                else
-                    -- Gold ingot (bar shape)
-                    coin.Shape = Enum.PartType.Block
-                    coin.Size = Vector3.new(0.55, 0.25, 0.3)
-                    coin.Position = chestPos + Vector3.new(-1.5 + col * 0.7, 1.8 + row * 0.35, -0.5 + (i % 2) * 0.4)
-                    coin.Color = Color3.fromRGB(218, 175, 32)
-                    -- Ingot taper mesh
-                    local mesh = Instance.new("SpecialMesh")
-                    mesh.MeshType = Enum.MeshType.Brick
-                    mesh.Scale = Vector3.new(1.1, 0.85, 0.95)
-                    mesh.Parent = coin
                 end
-
                 coin.Anchored = true
                 coin.CanCollide = false
-                coin.Material = Enum.Material.SmoothPlastic
-                coin.Reflectance = 0.75
+                coin.Material = Enum.Material.Metal
+                coin.Color = Color3.fromRGB(255, 200, 50)
                 coin.Parent = chestGoldContainer
                 visualChestGold[i] = coin
             end
