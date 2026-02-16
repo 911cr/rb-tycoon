@@ -2555,6 +2555,22 @@ local NPC_ANIMS = {
 -- Keyed by NPC model, value = {idle = AnimationTrack, walk = AnimationTrack}
 local _npcAnimTracks = {}
 
+-- Ensure NPC body parts remain visible (R15 MeshParts from
+-- CreateHumanoidModelFromDescription can revert to Transparency=1
+-- when the animation system runs, since server NPCs bypass the
+-- normal avatar rendering pipeline)
+local function ensureNPCVisible(npc)
+    if not npc or not npc.Parent then return false end
+    local fixed = false
+    for _, part in npc:GetDescendants() do
+        if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" and part.Transparency >= 0.5 then
+            part.Transparency = 0
+            fixed = true
+        end
+    end
+    return fixed
+end
+
 -- Create an R15 humanoid NPC worker, or fall back to box-part NPC
 local function createWorkerNPC(name, position, color, workerType)
     -- Look up appearance config for this worker type
@@ -2710,6 +2726,18 @@ local function createWorkerNPC(name, position, color, workerType)
     -- Add worker-type-specific accessories (hats, tools, etc.)
     addWorkerAccessories(npc, workerType)
 
+    -- Start periodic visibility enforcer (R15 animation system can revert
+    -- MeshPart transparency to 1 since server NPCs bypass avatar pipeline)
+    task.spawn(function()
+        while npc and npc.Parent do
+            local wasFixed = ensureNPCVisible(npc)
+            if wasFixed then
+                warn("[NPC Visibility] Fixed invisible parts on: " .. npc.Name)
+            end
+            task.wait(1)
+        end
+    end)
+
     return npc
 end
 
@@ -2835,6 +2863,8 @@ local function walkNPCTo(npc, destination, speed, callback)
                         if tracks.walk then tracks.walk:Stop() end
                         if tracks.idle and not tracks.idle.IsPlaying then tracks.idle:Play() end
                     end
+                    -- Enforce visibility after walk (animation transitions can reset MeshPart transparency)
+                    ensureNPCVisible(npc)
                     if callback then callback() end
                 end
             end
@@ -4425,7 +4455,7 @@ local function createGoldMine()
 
     -- ===== LIGHTING (dim cave with torch spots) =====
     for i = 1, 6 do
-        local torchPos = Vector3.new(baseX - 30 + i * 12, GROUND_Y + 5, baseZ - 18)
+        local torchPos = Vector3.new(baseX - 30 + i * 12, GROUND_Y + 0.75, baseZ - 18)
         createTorch(mineModel, torchPos)
         createTorch(mineModel, torchPos + Vector3.new(0, 0, 36))
     end
@@ -6466,7 +6496,7 @@ local function createGoldMine()
             local beamLantern = Instance.new("Part")
             beamLantern.Name = "BeamLantern"
             beamLantern.Size = Vector3.new(0.5, 0.7, 0.5)
-            beamLantern.Position = Vector3.new(bx, GROUND_Y + 12, bz)
+            beamLantern.Position = Vector3.new(bx, GROUND_Y + 14.35, bz)
             beamLantern.Anchored = true
             beamLantern.Material = Enum.Material.Glass
             beamLantern.Color = Color3.fromRGB(255, 210, 130)
