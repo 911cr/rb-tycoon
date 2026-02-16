@@ -785,69 +785,115 @@ local function createTorch(): Model
     return torch
 end
 
+--[[
+    Arched stone bridge parameters.
+    ARCH_HEIGHT  = how high the crown rises above road level (studs)
+    ARCH_SEGMENTS = number of deck sections forming the curve
+]]
+local ARCH_HEIGHT = 3
+local ARCH_SEGMENTS = 9
+
 local function createBridge(length: number, width: number): Model
     local bridge = Instance.new("Model")
     bridge.Name = "StoneBridge"
 
-    -- Deck (PrimaryPart — center at Y=0.5 so bottom sits at model origin Y)
-    local deck = Instance.new("Part")
-    deck.Name = "Deck"
-    deck.Size = Vector3.new(width, 1, length)
-    deck.CFrame = CFrame.new(0, 0.5, 0)
-    deck.Anchored = true
-    deck.Material = Enum.Material.Cobblestone
-    deck.Color = Colors.BridgeStone
-    deck.Parent = bridge
-    bridge.PrimaryPart = deck
+    local halfLen = length / 2
+    local segLen = length / ARCH_SEGMENTS
 
-    -- Low stone railing walls
-    for side = -1, 1, 2 do
-        local railing = Instance.new("Part")
-        railing.Name = "Railing"
-        railing.Size = Vector3.new(0.6, 1.2, length)
-        railing.Position = Vector3.new(side * (width / 2 - 0.3), 1.6, 0)
-        railing.Anchored = true
-        railing.Material = Enum.Material.Rock
-        railing.Color = Colors.Rock
-        railing.Parent = bridge
-
-        -- Flat capstone on top of railing
-        local cap = Instance.new("Part")
-        cap.Name = "RailingCap"
-        cap.Size = Vector3.new(0.9, 0.25, length + 0.4)
-        cap.Position = Vector3.new(side * (width / 2 - 0.3), 2.35, 0)
-        cap.Anchored = true
-        cap.Material = Enum.Material.Cobblestone
-        cap.Color = Colors.RockLight
-        cap.Parent = bridge
+    -- Parabolic arch curve: y(z) = ARCH_HEIGHT * (1 - (z/halfLen)^2)
+    -- Peaks at center (z=0), touches y=0 at both ends (z = ±halfLen)
+    local function archY(z: number): number
+        local t = z / halfLen
+        return ARCH_HEIGHT * (1 - t * t)
     end
 
-    -- Corner posts (decorative pillars at each end of each railing)
+    -- Invisible anchor at road-level center for PivotTo positioning
+    local anchor = Instance.new("Part")
+    anchor.Name = "Anchor"
+    anchor.Size = Vector3.new(1, 1, 1)
+    anchor.Transparency = 1
+    anchor.CanCollide = false
+    anchor.Anchored = true
+    anchor.CFrame = CFrame.new(0, 0, 0)
+    anchor.Parent = bridge
+    bridge.PrimaryPart = anchor
+
+    -- ---- Arched deck + railings (one set per segment) ----
+    for i = 0, ARCH_SEGMENTS - 1 do
+        local z0 = -halfLen + i * segLen
+        local z1 = z0 + segLen
+        local zMid = (z0 + z1) / 2
+
+        local y0 = archY(z0)
+        local y1 = archY(z1)
+        local yMid = (y0 + y1) / 2
+
+        local rise = y1 - y0
+        local tiltAngle = math.atan2(rise, segLen)
+        local actualLen = math.sqrt(segLen * segLen + rise * rise)
+
+        -- Deck segment (tilted to follow arch)
+        local deck = Instance.new("Part")
+        deck.Name = "Deck"
+        deck.Size = Vector3.new(width, 1, actualLen + 0.3)
+        deck.CFrame = CFrame.new(0, yMid + 0.5, zMid)
+            * CFrame.Angles(-tiltAngle, 0, 0)
+        deck.Anchored = true
+        deck.Material = Enum.Material.Cobblestone
+        deck.Color = Colors.BridgeStone
+        deck.Parent = bridge
+
+        -- Stone railing walls (follow the same tilt)
+        for side = -1, 1, 2 do
+            local railing = Instance.new("Part")
+            railing.Name = "Railing"
+            railing.Size = Vector3.new(0.6, 1.2, actualLen + 0.3)
+            railing.CFrame = CFrame.new(side * (width / 2 - 0.3), yMid + 1.6, zMid)
+                * CFrame.Angles(-tiltAngle, 0, 0)
+            railing.Anchored = true
+            railing.Material = Enum.Material.Rock
+            railing.Color = Colors.Rock
+            railing.Parent = bridge
+
+            -- Capstone slab on top of railing
+            local cap = Instance.new("Part")
+            cap.Name = "RailingCap"
+            cap.Size = Vector3.new(0.9, 0.25, actualLen + 0.5)
+            cap.CFrame = CFrame.new(side * (width / 2 - 0.3), yMid + 2.35, zMid)
+                * CFrame.Angles(-tiltAngle, 0, 0)
+            cap.Anchored = true
+            cap.Material = Enum.Material.Cobblestone
+            cap.Color = Colors.RockLight
+            cap.Parent = bridge
+        end
+    end
+
+    -- ---- Corner posts at the four bridge ends ----
     for side = -1, 1, 2 do
         for endDir = -1, 1, 2 do
+            local zPos = endDir * (halfLen - 0.5)
+            local yBase = archY(zPos) -- ~0 at the ends
+
             local post = Instance.new("Part")
             post.Name = "Post"
-            post.Shape = Enum.PartType.Block
-            post.Size = Vector3.new(1.0, 2.2, 1.0)
+            post.Size = Vector3.new(1.0, 2.5, 1.0)
             post.Position = Vector3.new(
                 side * (width / 2 - 0.3),
-                2.1,
-                endDir * (length / 2 - 0.5)
+                yBase + 2.25,
+                zPos
             )
             post.Anchored = true
             post.Material = Enum.Material.Rock
             post.Color = Colors.RockDark
             post.Parent = bridge
 
-            -- Post cap (slightly wider top)
             local postCap = Instance.new("Part")
             postCap.Name = "PostCap"
-            postCap.Shape = Enum.PartType.Block
             postCap.Size = Vector3.new(1.3, 0.3, 1.3)
             postCap.Position = Vector3.new(
                 side * (width / 2 - 0.3),
-                3.35,
-                endDir * (length / 2 - 0.5)
+                yBase + 3.65,
+                zPos
             )
             postCap.Anchored = true
             postCap.Material = Enum.Material.Cobblestone
@@ -856,27 +902,34 @@ local function createBridge(length: number, width: number): Model
         end
     end
 
-    -- Support pillars (extend below deck into the riverbed)
-    for zDir = -1, 1, 2 do
+    -- ---- Stone support pillars under the arch ----
+    -- Two quarter-span pillars + one center keystone
+    for _, zFrac in {-0.4, 0, 0.4} do
+        local zPos = halfLen * zFrac
+        local topY = archY(zPos)
+        local pillarH = topY + 7 -- extends well below water level
+
         local pillar = Instance.new("Part")
         pillar.Name = "Support"
-        pillar.Size = Vector3.new(width * 0.5, 8, 2.5)
-        pillar.Position = Vector3.new(0, -3.5, zDir * (length / 2 - 3))
+        pillar.Size = Vector3.new(width * 0.4, pillarH, 2.5)
+        pillar.Position = Vector3.new(0, topY - pillarH / 2, zPos)
         pillar.Anchored = true
         pillar.Material = Enum.Material.Rock
-        pillar.Color = Colors.Rock
+        pillar.Color = (zFrac == 0) and Colors.RockDark or Colors.Rock
         pillar.Parent = bridge
     end
 
-    -- Center keystone (wider support under middle of bridge)
-    local keystone = Instance.new("Part")
-    keystone.Name = "Keystone"
-    keystone.Size = Vector3.new(width * 0.35, 6, 3)
-    keystone.Position = Vector3.new(0, -2.5, 0)
-    keystone.Anchored = true
-    keystone.Material = Enum.Material.Rock
-    keystone.Color = Colors.RockDark
-    keystone.Parent = bridge
+    -- ---- Stone abutments where bridge meets the banks ----
+    for endDir = -1, 1, 2 do
+        local abutment = Instance.new("Part")
+        abutment.Name = "Abutment"
+        abutment.Size = Vector3.new(width + 2, 3, 4)
+        abutment.Position = Vector3.new(0, -0.5, endDir * (halfLen + 1))
+        abutment.Anchored = true
+        abutment.Material = Enum.Material.Rock
+        abutment.Color = Colors.Rock
+        abutment.Parent = bridge
+    end
 
     return bridge
 end
@@ -1027,7 +1080,7 @@ local function buildDecorations()
     local mainWidth = OverworldConfig.Terrain.Roads.MainWidth
     local secWidth = OverworldConfig.Terrain.Roads.SecondaryWidth
     local roadSpacing = 200
-    local bridgeLength = 44 -- spans 30-stud river + 7 stud margin each side
+    local bridgeLength = 50 -- spans 30-stud river + arch ramp approach on each side
     local bridgeCount = 0
 
     -- Collect all road-river crossings: {x, z, isEW, roadW}
