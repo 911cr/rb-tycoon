@@ -2336,437 +2336,211 @@ local WorkerAppearances = {
     },
 }
 
--- Add role-specific Part-based accessories to an R15 NPC
-local function addWorkerAccessories(npc, workerType)
-    if not workerType then return end
+-- R15 NPC creation is DISABLED due to a known Roblox engine bug where
+-- MeshParts from CreateHumanoidModelFromDescription become invisible
+-- on server-created NPCs (avatar rendering pipeline bypass).
+-- Set to true to re-enable if Roblox fixes this in the future.
+local USE_R15_NPCS = false
 
-    -- Helper to create a Part welded to a body part
-    local function weldAccessory(parent, props, offset)
-        local part = Instance.new("Part")
-        part.Name = props.name or "Accessory"
-        part.Size = props.size or Vector3.new(0.5, 0.5, 0.5)
-        part.Anchored = false
-        part.CanCollide = false
-        part.Material = props.material or Enum.Material.SmoothPlastic
-        part.Color = props.color or Color3.new(1, 1, 1)
-        if props.shape then
-            part.Shape = props.shape
-        end
-        part.Parent = npc
-
-        local weld = Instance.new("Weld")
-        weld.Part0 = parent
-        weld.Part1 = part
-        weld.C0 = offset
-        weld.Parent = part
-
-        return part
-    end
-
-    local head = npc:FindFirstChild("Head")
-    local upperTorso = npc:FindFirstChild("UpperTorso")
-    local rightHand = npc:FindFirstChild("RightHand") or npc:FindFirstChild("RightLowerArm")
-
-    if workerType == "Miner" then
-        -- Hard hat (yellow cylinder on head)
-        if head then
-            local hat = weldAccessory(head, {
-                name = "HardHat",
-                size = Vector3.new(1.1, 0.4, 1.1),
-                shape = Enum.PartType.Cylinder,
-                material = Enum.Material.SmoothPlastic,
-                color = Color3.fromRGB(255, 210, 50),
-            }, CFrame.new(0, 0.55, 0) * CFrame.Angles(0, 0, math.rad(90)))
-
-            -- Headlamp on hat
-            weldAccessory(hat, {
-                name = "Headlamp",
-                size = Vector3.new(0.2, 0.2, 0.2),
-                material = Enum.Material.Neon,
-                color = Color3.fromRGB(255, 255, 200),
-            }, CFrame.new(0, 0, -0.5))
-        end
-
-        -- Pickaxe welded to right hand
-        if rightHand then
-            local handle = weldAccessory(rightHand, {
-                name = "PickaxeHandle",
-                size = Vector3.new(0.15, 1.6, 0.15),
-                material = Enum.Material.Wood,
-                color = Color3.fromRGB(100, 70, 45),
-            }, CFrame.new(0, -0.8, 0))
-
-            weldAccessory(handle, {
-                name = "PickaxeHead",
-                size = Vector3.new(0.7, 0.25, 0.15),
-                material = Enum.Material.Metal,
-                color = Color3.fromRGB(140, 140, 150),
-            }, CFrame.new(0.35, -0.7, 0))
-        end
-
-    elseif workerType == "Collector" then
-        -- Cloth cap (brown flat part on head)
-        if head then
-            weldAccessory(head, {
-                name = "ClothCap",
-                size = Vector3.new(1.0, 0.2, 1.1),
-                material = Enum.Material.Fabric,
-                color = Color3.fromRGB(120, 80, 50),
-            }, CFrame.new(0, 0.5, -0.1))
-        end
-
-        -- Leather apron on torso
-        if upperTorso then
-            weldAccessory(upperTorso, {
-                name = "Apron",
-                size = Vector3.new(0.9, 1.2, 0.15),
-                material = Enum.Material.Fabric,
-                color = Color3.fromRGB(120, 80, 50),
-            }, CFrame.new(0, -0.2, -0.55))
-        end
-
-    elseif workerType == "Logger" then
-        -- Knit beanie (red cylinder on head)
-        if head then
-            weldAccessory(head, {
-                name = "Beanie",
-                size = Vector3.new(0.9, 0.5, 0.9),
-                shape = Enum.PartType.Cylinder,
-                material = Enum.Material.Fabric,
-                color = Color3.fromRGB(180, 40, 40),
-            }, CFrame.new(0, 0.5, 0) * CFrame.Angles(0, 0, math.rad(90)))
-        end
-
-        -- Axe welded to right hand
-        if rightHand then
-            local axeHandle = weldAccessory(rightHand, {
-                name = "AxeHandle",
-                size = Vector3.new(0.15, 1.8, 0.15),
-                material = Enum.Material.Wood,
-                color = Color3.fromRGB(100, 70, 45),
-            }, CFrame.new(0, -0.9, 0))
-
-            weldAccessory(axeHandle, {
-                name = "AxeHead",
-                size = Vector3.new(0.5, 0.6, 0.15),
-                material = Enum.Material.Metal,
-                color = Color3.fromRGB(160, 160, 170),
-            }, CFrame.new(0.25, -0.8, 0))
-        end
-
-    elseif workerType == "Hauler" then
-        -- Bandana (dark green wedge on head)
-        if head then
-            weldAccessory(head, {
-                name = "Bandana",
-                size = Vector3.new(1.0, 0.3, 1.0),
-                material = Enum.Material.Fabric,
-                color = Color3.fromRGB(40, 80, 40),
-            }, CFrame.new(0, 0.45, 0))
-        end
-
-        -- Shoulder strap across torso
-        if upperTorso then
-            weldAccessory(upperTorso, {
-                name = "ShoulderStrap",
-                size = Vector3.new(0.2, 1.6, 0.1),
-                material = Enum.Material.Fabric,
-                color = Color3.fromRGB(100, 70, 40),
-            }, CFrame.new(-0.2, 0, -0.4) * CFrame.Angles(0, 0, math.rad(30)))
-        end
-
-    elseif workerType == "Farmer" then
-        -- Straw hat (wide brim: cylinder + disc)
-        if head then
-            -- Hat crown
-            weldAccessory(head, {
-                name = "StrawHatCrown",
-                size = Vector3.new(0.9, 0.4, 0.9),
-                shape = Enum.PartType.Cylinder,
-                material = Enum.Material.Fabric,
-                color = Color3.fromRGB(230, 210, 140),
-            }, CFrame.new(0, 0.6, 0) * CFrame.Angles(0, 0, math.rad(90)))
-
-            -- Hat brim
-            weldAccessory(head, {
-                name = "StrawHatBrim",
-                size = Vector3.new(1.6, 0.08, 1.6),
-                shape = Enum.PartType.Cylinder,
-                material = Enum.Material.Fabric,
-                color = Color3.fromRGB(230, 210, 140),
-            }, CFrame.new(0, 0.42, 0) * CFrame.Angles(0, 0, math.rad(90)))
-        end
-
-        -- Seed pouch on hip
-        if upperTorso then
-            weldAccessory(upperTorso, {
-                name = "SeedPouch",
-                size = Vector3.new(0.4, 0.5, 0.3),
-                material = Enum.Material.Fabric,
-                color = Color3.fromRGB(180, 150, 100),
-            }, CFrame.new(0.55, -0.5, 0))
-        end
-
-    elseif workerType == "Carrier" then
-        -- Flat cap (green part on head)
-        if head then
-            weldAccessory(head, {
-                name = "FlatCap",
-                size = Vector3.new(1.0, 0.2, 1.1),
-                material = Enum.Material.Fabric,
-                color = Color3.fromRGB(60, 90, 60),
-            }, CFrame.new(0, 0.5, -0.1))
-        end
-
-        -- Backpack frame (brown parts on back)
-        if upperTorso then
-            -- Main frame
-            weldAccessory(upperTorso, {
-                name = "BackpackFrame",
-                size = Vector3.new(0.8, 1.2, 0.15),
-                material = Enum.Material.Wood,
-                color = Color3.fromRGB(100, 70, 40),
-            }, CFrame.new(0, 0, 0.5))
-
-            -- Side struts
-            weldAccessory(upperTorso, {
-                name = "BackpackStrut1",
-                size = Vector3.new(0.1, 1.0, 0.1),
-                material = Enum.Material.Wood,
-                color = Color3.fromRGB(100, 70, 40),
-            }, CFrame.new(-0.35, 0, 0.55))
-            weldAccessory(upperTorso, {
-                name = "BackpackStrut2",
-                size = Vector3.new(0.1, 1.0, 0.1),
-                material = Enum.Material.Wood,
-                color = Color3.fromRGB(100, 70, 40),
-            }, CFrame.new(0.35, 0, 0.55))
-        end
-    end
-end
-
--- R15 animation asset IDs (built-in Roblox animations)
+-- R15 animation asset IDs (kept for future re-enablement)
 local NPC_ANIMS = {
     idle = "rbxassetid://507766666",
     walk = "rbxassetid://507777826",
 }
 
 -- Module-level table to store AnimationTrack references per NPC
--- Keyed by NPC model, value = {idle = AnimationTrack, walk = AnimationTrack}
 local _npcAnimTracks = {}
 
--- Ensure R15 NPC body parts remain visible and positioned correctly.
--- Two failure modes on server-created NPCs from CreateHumanoidModelFromDescription:
---   1) MeshPart Transparency reverts to 1 (avatar pipeline bypass)
---   2) Motor6D joints desync, causing body parts to drift to origin (0,0,0)
--- Both are fixed by this function: transparency reset + PivotTo snap-back.
-local function ensureNPCIntegrity(npc)
-    if not npc or not npc.Parent then return end
-    local rootPart = npc:FindFirstChild("HumanoidRootPart")
-    if not rootPart then return end
-
-    local rootPos = rootPart.Position
-    local fixedTransparency = false
-    local fixedPosition = false
-
-    for _, part in npc:GetDescendants() do
-        if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
-            -- Fix transparency revert
-            if part.Transparency >= 0.5 then
-                part.Transparency = 0
-                fixedTransparency = true
-            end
-            -- Fix Motor6D desync (parts drifted far from rootPart)
-            if (part.Position - rootPos).Magnitude > 15 then
-                fixedPosition = true
-            end
-        end
-    end
-
-    -- If any parts drifted, snap entire model back via PivotTo
-    if fixedPosition then
-        npc:PivotTo(rootPart.CFrame)
-    end
-
-    if fixedTransparency or fixedPosition then
-        warn(string.format("[NPC Integrity] %s - transparency:%s position:%s (root at %.0f,%.0f,%.0f)",
-            npc.Name,
-            tostring(fixedTransparency),
-            tostring(fixedPosition),
-            rootPos.X, rootPos.Y, rootPos.Z))
-    end
-end
-
--- Legacy compat alias
-local function ensureNPCVisible(npc)
-    ensureNPCIntegrity(npc)
-end
-
--- Create an R15 humanoid NPC worker, or fall back to box-part NPC
+-- Create a worker NPC with per-type colors and accessories.
+-- Uses reliable box-part construction (all parts Anchored, plain Parts that always render).
 local function createWorkerNPC(name, position, color, workerType)
-    -- Look up appearance config for this worker type
     local appearance = workerType and WorkerAppearances[workerType]
     local torsoColor = (appearance and appearance.torsoColor) or color or Color3.fromRGB(100, 80, 60)
     local legColor = (appearance and appearance.legColor) or Color3.fromRGB(60, 50, 40)
     local headColor = (appearance and appearance.headColor) or Color3.fromRGB(255, 205, 170)
 
-    -- Try to create R15 humanoid NPC
-    local npc
-    local r15Success = false
+    local npc = Instance.new("Model")
+    npc.Name = name
 
-    local ok, err = pcall(function()
-        -- Build HumanoidDescription with body colors and scaling
-        local desc = Instance.new("HumanoidDescription")
-        desc.HeadColor = headColor
-        desc.TorsoColor = torsoColor
-        desc.LeftArmColor = torsoColor
-        desc.RightArmColor = torsoColor
-        desc.LeftLegColor = legColor
-        desc.RightLegColor = legColor
+    -- Body (torso)
+    local torso = Instance.new("Part")
+    torso.Name = "Torso"
+    torso.Size = Vector3.new(1.5, 2, 1)
+    torso.Position = position + Vector3.new(0, 3, 0)
+    torso.Anchored = true
+    torso.CanCollide = false
+    torso.Material = Enum.Material.SmoothPlastic
+    torso.Color = torsoColor
+    torso.Parent = npc
 
-        -- Apply per-role scaling
-        if appearance then
-            desc.HeightScale = appearance.heightScale or 1.0
-            desc.WidthScale = appearance.widthScale or 1.0
-            desc.DepthScale = appearance.widthScale or 1.0
-            desc.HeadScale = 1.0
-        end
+    -- Head
+    local head = Instance.new("Part")
+    head.Name = "Head"
+    head.Shape = Enum.PartType.Ball
+    head.Size = Vector3.new(1.2, 1.2, 1.2)
+    head.Position = position + Vector3.new(0, 4.5, 0)
+    head.Anchored = true
+    head.CanCollide = false
+    head.Material = Enum.Material.SmoothPlastic
+    head.Color = headColor
+    head.Parent = npc
 
-        -- Create R15 model from description
-        npc = Players:CreateHumanoidModelFromDescription(desc, Enum.HumanoidRigType.R15)
-        npc.Name = name
+    -- Left arm
+    local leftArm = Instance.new("Part")
+    leftArm.Name = "LeftArm"
+    leftArm.Size = Vector3.new(0.5, 1.8, 0.5)
+    leftArm.Position = position + Vector3.new(-1, 3, 0)
+    leftArm.Anchored = true
+    leftArm.CanCollide = false
+    leftArm.Material = Enum.Material.SmoothPlastic
+    leftArm.Color = torsoColor
+    leftArm.Parent = npc
 
-        -- Clean up the description after use
-        desc:Destroy()
+    -- Right arm
+    local rightArm = Instance.new("Part")
+    rightArm.Name = "RightArm"
+    rightArm.Size = Vector3.new(0.5, 1.8, 0.5)
+    rightArm.Position = position + Vector3.new(1, 3, 0)
+    rightArm.Anchored = true
+    rightArm.CanCollide = false
+    rightArm.Material = Enum.Material.SmoothPlastic
+    rightArm.Color = torsoColor
+    rightArm.Parent = npc
 
-        -- Configure humanoid
-        local humanoid = npc:FindFirstChildOfClass("Humanoid")
-        if humanoid then
-            humanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
-            humanoid.RequiresNeck = false
-            humanoid.WalkSpeed = 8
-        end
+    -- Left leg
+    local leftLeg = Instance.new("Part")
+    leftLeg.Name = "LeftLeg"
+    leftLeg.Size = Vector3.new(0.6, 2, 0.6)
+    leftLeg.Position = position + Vector3.new(-0.4, 1, 0)
+    leftLeg.Anchored = true
+    leftLeg.CanCollide = false
+    leftLeg.Material = Enum.Material.SmoothPlastic
+    leftLeg.Color = legColor
+    leftLeg.Parent = npc
 
-        -- Set all parts non-collidable and ensure body parts are visible
-        -- (CreateHumanoidModelFromDescription can leave MeshParts at Transparency=1
-        --  because the avatar pipeline normally renders them for player characters,
-        --  but server-created NPCs bypass that pipeline)
-        -- Only anchor HumanoidRootPart; other parts stay unanchored so Motor6D joints
-        -- and the Animator can move them for animations (idle, walk)
-        for _, part in npc:GetDescendants() do
-            if part:IsA("BasePart") then
-                part.CanCollide = false
-                if part.Name == "HumanoidRootPart" then
-                    part.Transparency = 1 -- Physics root is always invisible
-                else
-                    part.Transparency = 0 -- Force body parts visible
-                end
-            end
-        end
-        local rootPart = npc:FindFirstChild("HumanoidRootPart")
-        if rootPart then
-            rootPart.Anchored = true
-        end
+    -- Right leg
+    local rightLeg = Instance.new("Part")
+    rightLeg.Name = "RightLeg"
+    rightLeg.Size = Vector3.new(0.6, 2, 0.6)
+    rightLeg.Position = position + Vector3.new(0.4, 1, 0)
+    rightLeg.Anchored = true
+    rightLeg.CanCollide = false
+    rightLeg.Material = Enum.Material.SmoothPlastic
+    rightLeg.Color = legColor
+    rightLeg.Parent = npc
 
-        -- Position the NPC (PivotTo moves ALL parts, not just rootPart,
-        -- avoiding Motor6D desync where body parts stay at origin)
-        npc:PivotTo(CFrame.new(position + Vector3.new(0, 3, 0)))
+    -- Name tag with status
+    local billboard = Instance.new("BillboardGui")
+    billboard.Name = "StatusBillboard"
+    billboard.Size = UDim2.new(5, 0, 1.5, 0)
+    billboard.StudsOffset = Vector3.new(0, 3, 0)
+    billboard.AlwaysOnTop = true
+    billboard.Parent = head
 
-        -- Remove default Animate LocalScript (won't work on server NPCs)
-        local animScript = npc:FindFirstChild("Animate")
-        if animScript then animScript:Destroy() end
+    local nameLabel = Instance.new("TextLabel")
+    nameLabel.Name = "NameLabel"
+    nameLabel.Size = UDim2.new(1, 0, 0.5, 0)
+    nameLabel.Position = UDim2.new(0, 0, 0, 0)
+    nameLabel.BackgroundTransparency = 1
+    nameLabel.Text = name
+    nameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    nameLabel.TextStrokeTransparency = 0.5
+    nameLabel.TextScaled = true
+    nameLabel.Font = Enum.Font.GothamBold
+    nameLabel.Parent = billboard
 
-        -- Create Animator and load idle animation
-        if humanoid then
-            local animator = humanoid:FindFirstChildOfClass("Animator")
-            if not animator then
-                animator = Instance.new("Animator")
-                animator.Parent = humanoid
-            end
+    local statusLabel = Instance.new("TextLabel")
+    statusLabel.Name = "StatusLabel"
+    statusLabel.Size = UDim2.new(1, 0, 0.5, 0)
+    statusLabel.Position = UDim2.new(0, 0, 0.5, 0)
+    statusLabel.BackgroundTransparency = 1
+    statusLabel.Text = "Idle"
+    statusLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+    statusLabel.TextStrokeTransparency = 0.5
+    statusLabel.TextScaled = true
+    statusLabel.Font = Enum.Font.Gotham
+    statusLabel.Parent = billboard
 
-            local idleAnim = Instance.new("Animation")
-            idleAnim.AnimationId = NPC_ANIMS.idle
-            local idleTrack = animator:LoadAnimation(idleAnim)
-            idleTrack.Looped = true
-            idleTrack.Priority = Enum.AnimationPriority.Idle
-            idleTrack:Play()
-            idleAnim:Destroy()
+    npc.PrimaryPart = torso
 
-            -- Store walk animation reference for walkNPCTo
-            local walkAnim = Instance.new("Animation")
-            walkAnim.AnimationId = NPC_ANIMS.walk
-            local walkTrack = animator:LoadAnimation(walkAnim)
-            walkTrack.Looped = true
-            walkTrack.Priority = Enum.AnimationPriority.Movement
-            walkAnim:Destroy()
+    -- Add simple accessories for box-part NPCs based on worker type
+    if workerType == "Miner" then
+        -- Hard hat (yellow box on head)
+        local hat = Instance.new("Part")
+        hat.Name = "HardHat"
+        hat.Size = Vector3.new(1.1, 0.4, 1.1)
+        hat.Position = head.Position + Vector3.new(0, 0.7, 0)
+        hat.Anchored = true
+        hat.CanCollide = false
+        hat.Material = Enum.Material.SmoothPlastic
+        hat.Color = Color3.fromRGB(255, 210, 50)
+        hat.Parent = npc
+    elseif workerType == "Collector" then
+        -- Cloth cap (brown flat part on head)
+        local cap = Instance.new("Part")
+        cap.Name = "ClothCap"
+        cap.Size = Vector3.new(1.0, 0.2, 1.1)
+        cap.Position = head.Position + Vector3.new(0, 0.55, -0.1)
+        cap.Anchored = true
+        cap.CanCollide = false
+        cap.Material = Enum.Material.Fabric
+        cap.Color = Color3.fromRGB(120, 80, 50)
+        cap.Parent = npc
+    elseif workerType == "Logger" then
+        -- Knit beanie (red box on head)
+        local beanie = Instance.new("Part")
+        beanie.Name = "Beanie"
+        beanie.Size = Vector3.new(1.0, 0.5, 1.0)
+        beanie.Position = head.Position + Vector3.new(0, 0.65, 0)
+        beanie.Anchored = true
+        beanie.CanCollide = false
+        beanie.Material = Enum.Material.Fabric
+        beanie.Color = Color3.fromRGB(180, 40, 40)
+        beanie.Parent = npc
+    elseif workerType == "Hauler" then
+        -- Bandana (dark green part on head)
+        local bandana = Instance.new("Part")
+        bandana.Name = "Bandana"
+        bandana.Size = Vector3.new(1.0, 0.3, 1.0)
+        bandana.Position = head.Position + Vector3.new(0, 0.5, 0)
+        bandana.Anchored = true
+        bandana.CanCollide = false
+        bandana.Material = Enum.Material.Fabric
+        bandana.Color = Color3.fromRGB(40, 80, 40)
+        bandana.Parent = npc
+    elseif workerType == "Farmer" then
+        -- Straw hat (wide brim)
+        local hatCrown = Instance.new("Part")
+        hatCrown.Name = "StrawHatCrown"
+        hatCrown.Size = Vector3.new(1.0, 0.4, 1.0)
+        hatCrown.Position = head.Position + Vector3.new(0, 0.7, 0)
+        hatCrown.Anchored = true
+        hatCrown.CanCollide = false
+        hatCrown.Material = Enum.Material.Fabric
+        hatCrown.Color = Color3.fromRGB(230, 210, 140)
+        hatCrown.Parent = npc
 
-            -- Store animation tracks in module-level table for walkNPCTo access
-            _npcAnimTracks[npc] = {
-                idle = idleTrack,
-                walk = walkTrack,
-            }
-        end
-
-        r15Success = true
-    end)
-
-    if not r15Success then
-        -- Fallback to box-part NPC
-        if err then
-            warn("[NPC] R15 creation failed for " .. name .. ": " .. tostring(err))
-        end
-        npc = createFallbackNPC(name, position, color)
-        return npc
+        local hatBrim = Instance.new("Part")
+        hatBrim.Name = "StrawHatBrim"
+        hatBrim.Size = Vector3.new(1.8, 0.08, 1.8)
+        hatBrim.Position = head.Position + Vector3.new(0, 0.5, 0)
+        hatBrim.Anchored = true
+        hatBrim.CanCollide = false
+        hatBrim.Material = Enum.Material.Fabric
+        hatBrim.Color = Color3.fromRGB(230, 210, 140)
+        hatBrim.Parent = npc
+    elseif workerType == "Carrier" then
+        -- Flat cap (green part on head)
+        local cap = Instance.new("Part")
+        cap.Name = "FlatCap"
+        cap.Size = Vector3.new(1.0, 0.2, 1.1)
+        cap.Position = head.Position + Vector3.new(0, 0.55, -0.1)
+        cap.Anchored = true
+        cap.CanCollide = false
+        cap.Material = Enum.Material.Fabric
+        cap.Color = Color3.fromRGB(60, 90, 60)
+        cap.Parent = npc
     end
-
-    -- Add billboard GUI to head
-    local head = npc:FindFirstChild("Head")
-    if head then
-        local billboard = Instance.new("BillboardGui")
-        billboard.Name = "StatusBillboard"
-        billboard.Size = UDim2.new(5, 0, 1.5, 0)
-        billboard.StudsOffset = Vector3.new(0, 3, 0)
-        billboard.AlwaysOnTop = true
-        billboard.Parent = head
-
-        local nameLabel = Instance.new("TextLabel")
-        nameLabel.Name = "NameLabel"
-        nameLabel.Size = UDim2.new(1, 0, 0.5, 0)
-        nameLabel.Position = UDim2.new(0, 0, 0, 0)
-        nameLabel.BackgroundTransparency = 1
-        nameLabel.Text = name
-        nameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-        nameLabel.TextStrokeTransparency = 0.5
-        nameLabel.TextScaled = true
-        nameLabel.Font = Enum.Font.GothamBold
-        nameLabel.Parent = billboard
-
-        local statusLabel = Instance.new("TextLabel")
-        statusLabel.Name = "StatusLabel"
-        statusLabel.Size = UDim2.new(1, 0, 0.5, 0)
-        statusLabel.Position = UDim2.new(0, 0, 0.5, 0)
-        statusLabel.BackgroundTransparency = 1
-        statusLabel.Text = "Idle"
-        statusLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-        statusLabel.TextStrokeTransparency = 0.5
-        statusLabel.TextScaled = true
-        statusLabel.Font = Enum.Font.Gotham
-        statusLabel.Parent = billboard
-    end
-
-    -- Add worker-type-specific accessories (hats, tools, etc.)
-    addWorkerAccessories(npc, workerType)
-
-    -- Start periodic integrity enforcer for R15 NPCs:
-    -- Fixes both transparency revert AND Motor6D position desync.
-    -- Checks every 0.5s since body parts can drift between frames when
-    -- PivotTo stops being called (e.g. when walk ends and worker is idle).
-    task.spawn(function()
-        while npc and npc.Parent do
-            ensureNPCIntegrity(npc)
-            task.wait(0.5)
-        end
-    end)
 
     return npc
 end
@@ -2785,134 +2559,12 @@ end
 
 -- Move all parts of an NPC to a new position (including carried items)
 local function moveNPC(npc, newPosition)
-    -- R15 path: PivotTo moves entire model (avoids Motor6D desync)
-    local rootPart = npc:FindFirstChild("HumanoidRootPart")
-    if rootPart then
-        npc:PivotTo(CFrame.new(newPosition + Vector3.new(0, 3, 0)))
-        return
-    end
-
-    -- Legacy fallback: move all parts by offset
     moveNPCLegacy(npc, newPosition)
 end
 
--- Animate NPC walking to a destination using PathfindingService waypoints
--- R15 NPCs use pathfinding to navigate around walls, then CFrame lerp along waypoints
--- Legacy box-part NPCs fall back to direct lerp
+-- Animate NPC walking to a destination with leg/arm swing animation.
+-- All workers use box-part NPCs (reliable, all Parts anchored, always visible).
 local function walkNPCTo(npc, destination, speed, callback)
-    -- Check if this is an R15 NPC (has HumanoidRootPart)
-    local rootPart = npc:FindFirstChild("HumanoidRootPart")
-
-    if rootPart then
-        local startPos = rootPart.Position - Vector3.new(0, 3, 0)
-        local endPos = Vector3.new(destination.X, startPos.Y, destination.Z)
-
-        -- Build waypoint list using PathfindingService (navigates around walls)
-        local waypoints = { endPos } -- fallback: direct path
-        local pathOk, pathErr = pcall(function()
-            local path = PathfindingService:CreatePath({
-                AgentRadius = 2,
-                AgentHeight = 5,
-                AgentCanJump = false,
-            })
-            path:ComputeAsync(rootPart.Position, endPos + Vector3.new(0, 3, 0))
-            if path.Status == Enum.PathStatus.Success then
-                local pts = path:GetWaypoints()
-                if #pts > 1 then
-                    waypoints = {}
-                    for i = 2, #pts do -- skip first waypoint (current position)
-                        table.insert(waypoints, Vector3.new(pts[i].Position.X, startPos.Y, pts[i].Position.Z))
-                    end
-                end
-            end
-        end)
-
-        if not pathOk then
-            -- PathfindingService failed, use direct path (single waypoint)
-            waypoints = { endPos }
-        end
-
-        -- Start walk animation
-        local tracks = _npcAnimTracks[npc]
-        if tracks then
-            if tracks.walk then tracks.walk:Play() end
-            if tracks.idle and tracks.idle.IsPlaying then tracks.idle:Stop() end
-        end
-
-        -- Walk through waypoints sequentially via CFrame lerp
-        local wpIndex = 1
-        local segStart = startPos
-        local segEnd = waypoints[1]
-        local segDist = (segEnd - segStart).Magnitude
-        local segDuration = segDist / math.max(speed or 8, 0.1)
-        local segElapsed = 0
-
-        -- Face initial direction (PivotTo moves ALL body parts, not just rootPart)
-        local segDir = (segEnd - segStart)
-        if segDir.Magnitude > 0.1 then
-            npc:PivotTo(CFrame.lookAt(segStart + Vector3.new(0, 3, 0), segEnd + Vector3.new(0, 3, 0)))
-        end
-
-        local walkConnection
-        walkConnection = RunService.Heartbeat:Connect(function(dt)
-            if not npc.Parent then
-                walkConnection:Disconnect()
-                return
-            end
-
-            segElapsed = segElapsed + dt
-            local alpha = math.min(segElapsed / math.max(segDuration, 0.01), 1)
-
-            local currentPos = segStart:Lerp(segEnd, alpha)
-            local dir = (segEnd - segStart)
-            if dir.Magnitude > 0.1 then
-                npc:PivotTo(CFrame.lookAt(currentPos + Vector3.new(0, 3, 0), segEnd + Vector3.new(0, 3, 0)))
-            else
-                npc:PivotTo(CFrame.new(currentPos + Vector3.new(0, 3, 0)))
-            end
-
-            if alpha >= 1 then
-                -- Move to next waypoint
-                wpIndex = wpIndex + 1
-                if wpIndex <= #waypoints then
-                    segStart = segEnd
-                    segEnd = waypoints[wpIndex]
-                    segDist = (segEnd - segStart).Magnitude
-                    segDuration = segDist / math.max(speed or 8, 0.1)
-                    segElapsed = 0
-
-                    -- Face new direction
-                    dir = (segEnd - segStart)
-                    if dir.Magnitude > 0.1 then
-                        npc:PivotTo(CFrame.lookAt(segStart + Vector3.new(0, 3, 0), segEnd + Vector3.new(0, 3, 0)))
-                    end
-                else
-                    -- All waypoints reached
-                    walkConnection:Disconnect()
-                    if tracks then
-                        if tracks.walk then tracks.walk:Stop() end
-                        if tracks.idle and not tracks.idle.IsPlaying then tracks.idle:Play() end
-                    end
-                    -- Enforce visibility after walk (animation transitions can reset MeshPart transparency)
-                    ensureNPCVisible(npc)
-                    if callback then callback() end
-                end
-            end
-        end)
-
-        -- Return a disconnect-able object for API compatibility
-        return {
-            Disconnect = function()
-                if walkConnection then walkConnection:Disconnect() end
-                if tracks then
-                    if tracks.walk then tracks.walk:Stop() end
-                    if tracks.idle and not tracks.idle.IsPlaying then tracks.idle:Play() end
-                end
-            end
-        }
-    end
-
-    -- Legacy fallback: box-part NPC with lerp + sinusoidal animation
     return walkNPCToLegacy(npc, destination, speed, callback)
 end
 
@@ -5297,29 +4949,24 @@ local function createGoldMine()
         )
         miner.Parent = mineModel
 
-        -- Create pickaxe for legacy (box-part) miners only
-        -- R15 miners get their pickaxe from addWorkerAccessories (welded to hand)
-        local pickaxe, pickaxeHead
-        local isR15Miner = miner:FindFirstChild("HumanoidRootPart") ~= nil
-        if not isR15Miner then
-            pickaxe = Instance.new("Part")
-            pickaxe.Name = "Pickaxe"
-            pickaxe.Size = Vector3.new(0.2, 2, 0.2)
-            pickaxe.Anchored = true
-            pickaxe.CanCollide = false
-            pickaxe.Material = Enum.Material.Wood
-            pickaxe.Color = Color3.fromRGB(100, 70, 45)
-            pickaxe.Parent = miner
+        -- Create pickaxe for miner
+        local pickaxe = Instance.new("Part")
+        pickaxe.Name = "Pickaxe"
+        pickaxe.Size = Vector3.new(0.2, 2, 0.2)
+        pickaxe.Anchored = true
+        pickaxe.CanCollide = false
+        pickaxe.Material = Enum.Material.Wood
+        pickaxe.Color = Color3.fromRGB(100, 70, 45)
+        pickaxe.Parent = miner
 
-            pickaxeHead = Instance.new("Part")
-            pickaxeHead.Name = "PickaxeHead"
-            pickaxeHead.Size = Vector3.new(0.8, 0.3, 0.2)
-            pickaxeHead.Anchored = true
-            pickaxeHead.CanCollide = false
-            pickaxeHead.Material = Enum.Material.Metal
-            pickaxeHead.Color = Color3.fromRGB(140, 140, 150)
-            pickaxeHead.Parent = miner
-        end
+        local pickaxeHead = Instance.new("Part")
+        pickaxeHead.Name = "PickaxeHead"
+        pickaxeHead.Size = Vector3.new(0.8, 0.3, 0.2)
+        pickaxeHead.Anchored = true
+        pickaxeHead.CanCollide = false
+        pickaxeHead.Material = Enum.Material.Metal
+        pickaxeHead.Color = Color3.fromRGB(140, 140, 150)
+        pickaxeHead.Parent = miner
 
         local minerData = {
             npc = miner,
@@ -5330,9 +4977,8 @@ local function createGoldMine()
         }
         table.insert(GoldMineState.miners, minerData)
 
-        -- Function to update pickaxe position relative to miner (legacy only, R15 uses weld)
+        -- Function to update pickaxe position relative to miner
         local function updatePickaxePosition()
-            if isR15Miner then return end -- R15 pickaxe is welded, no manual update needed
             local torso = miner:FindFirstChild("Torso")
             if torso then
                 pickaxe.Position = torso.Position + Vector3.new(1, 0.5, 0)
@@ -15625,27 +15271,23 @@ local function spawnMinerWorker(ownerUserId)
     )
     miner.Parent = model
 
-    local isR15Miner = miner:FindFirstChild("HumanoidRootPart") ~= nil
-    local pickaxe, pickaxeHead
-    if not isR15Miner then
-        pickaxe = Instance.new("Part")
-        pickaxe.Name = "Pickaxe"
-        pickaxe.Size = Vector3.new(0.2, 2, 0.2)
-        pickaxe.Anchored = true
-        pickaxe.CanCollide = false
-        pickaxe.Material = Enum.Material.Wood
-        pickaxe.Color = Color3.fromRGB(100, 70, 45)
-        pickaxe.Parent = miner
+    local pickaxe = Instance.new("Part")
+    pickaxe.Name = "Pickaxe"
+    pickaxe.Size = Vector3.new(0.2, 2, 0.2)
+    pickaxe.Anchored = true
+    pickaxe.CanCollide = false
+    pickaxe.Material = Enum.Material.Wood
+    pickaxe.Color = Color3.fromRGB(100, 70, 45)
+    pickaxe.Parent = miner
 
-        pickaxeHead = Instance.new("Part")
-        pickaxeHead.Name = "PickaxeHead"
-        pickaxeHead.Size = Vector3.new(0.8, 0.3, 0.2)
-        pickaxeHead.Anchored = true
-        pickaxeHead.CanCollide = false
-        pickaxeHead.Material = Enum.Material.Metal
-        pickaxeHead.Color = Color3.fromRGB(140, 140, 150)
-        pickaxeHead.Parent = miner
-    end
+    local pickaxeHead = Instance.new("Part")
+    pickaxeHead.Name = "PickaxeHead"
+    pickaxeHead.Size = Vector3.new(0.8, 0.3, 0.2)
+    pickaxeHead.Anchored = true
+    pickaxeHead.CanCollide = false
+    pickaxeHead.Material = Enum.Material.Metal
+    pickaxeHead.Color = Color3.fromRGB(140, 140, 150)
+    pickaxeHead.Parent = miner
 
     local minerData = {
         npc = miner,
@@ -15657,7 +15299,6 @@ local function spawnMinerWorker(ownerUserId)
     table.insert(GoldMineState.miners, minerData)
 
     local function updatePickaxePosition()
-        if isR15Miner then return end
         local torso = miner:FindFirstChild("Torso")
         if torso then
             pickaxe.Position = torso.Position + Vector3.new(1, 0.5, 0)
