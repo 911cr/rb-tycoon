@@ -2555,20 +2555,51 @@ local NPC_ANIMS = {
 -- Keyed by NPC model, value = {idle = AnimationTrack, walk = AnimationTrack}
 local _npcAnimTracks = {}
 
--- Ensure NPC body parts remain visible (R15 MeshParts from
--- CreateHumanoidModelFromDescription can revert to Transparency=1
--- when the animation system runs, since server NPCs bypass the
--- normal avatar rendering pipeline)
-local function ensureNPCVisible(npc)
-    if not npc or not npc.Parent then return false end
-    local fixed = false
+-- Ensure R15 NPC body parts remain visible and positioned correctly.
+-- Two failure modes on server-created NPCs from CreateHumanoidModelFromDescription:
+--   1) MeshPart Transparency reverts to 1 (avatar pipeline bypass)
+--   2) Motor6D joints desync, causing body parts to drift to origin (0,0,0)
+-- Both are fixed by this function: transparency reset + PivotTo snap-back.
+local function ensureNPCIntegrity(npc)
+    if not npc or not npc.Parent then return end
+    local rootPart = npc:FindFirstChild("HumanoidRootPart")
+    if not rootPart then return end
+
+    local rootPos = rootPart.Position
+    local fixedTransparency = false
+    local fixedPosition = false
+
     for _, part in npc:GetDescendants() do
-        if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" and part.Transparency >= 0.5 then
-            part.Transparency = 0
-            fixed = true
+        if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+            -- Fix transparency revert
+            if part.Transparency >= 0.5 then
+                part.Transparency = 0
+                fixedTransparency = true
+            end
+            -- Fix Motor6D desync (parts drifted far from rootPart)
+            if (part.Position - rootPos).Magnitude > 15 then
+                fixedPosition = true
+            end
         end
     end
-    return fixed
+
+    -- If any parts drifted, snap entire model back via PivotTo
+    if fixedPosition then
+        npc:PivotTo(rootPart.CFrame)
+    end
+
+    if fixedTransparency or fixedPosition then
+        warn(string.format("[NPC Integrity] %s - transparency:%s position:%s (root at %.0f,%.0f,%.0f)",
+            npc.Name,
+            tostring(fixedTransparency),
+            tostring(fixedPosition),
+            rootPos.X, rootPos.Y, rootPos.Z))
+    end
+end
+
+-- Legacy compat alias
+local function ensureNPCVisible(npc)
+    ensureNPCIntegrity(npc)
 end
 
 -- Create an R15 humanoid NPC worker, or fall back to box-part NPC
@@ -2726,15 +2757,14 @@ local function createWorkerNPC(name, position, color, workerType)
     -- Add worker-type-specific accessories (hats, tools, etc.)
     addWorkerAccessories(npc, workerType)
 
-    -- Start periodic visibility enforcer (R15 animation system can revert
-    -- MeshPart transparency to 1 since server NPCs bypass avatar pipeline)
+    -- Start periodic integrity enforcer for R15 NPCs:
+    -- Fixes both transparency revert AND Motor6D position desync.
+    -- Checks every 0.5s since body parts can drift between frames when
+    -- PivotTo stops being called (e.g. when walk ends and worker is idle).
     task.spawn(function()
         while npc and npc.Parent do
-            local wasFixed = ensureNPCVisible(npc)
-            if wasFixed then
-                warn("[NPC Visibility] Fixed invisible parts on: " .. npc.Name)
-            end
-            task.wait(1)
+            ensureNPCIntegrity(npc)
+            task.wait(0.5)
         end
     end)
 
