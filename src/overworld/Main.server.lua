@@ -106,6 +106,23 @@ local CancelTrade = createRemoteEvent("CancelTrade")
 -- Visit base events
 local RequestVisitBase = createRemoteEvent("RequestVisitBase")
 
+-- Wilderness gameplay events
+local EngageBandit = createRemoteEvent("EngageBandit")
+local EngageBoss = createRemoteEvent("EngageBoss")
+local AttackPlayer = createRemoteEvent("AttackPlayer")
+local CollectTreasureChest = createRemoteEvent("CollectTreasureChest")
+local CollectDroppedLoot = createRemoteEvent("CollectDroppedLoot")
+local InteractMerchant = createRemoteEvent("InteractMerchant")
+local MerchantTransaction = createRemoteEvent("MerchantTransaction")
+local AutoClashResult = createRemoteEvent("AutoClashResult")
+local LootCarrySync = createRemoteEvent("LootCarrySync")
+local LootBanked = createRemoteEvent("LootBanked")
+local ZoneChanged = createRemoteEvent("ZoneChanged")
+local EventAnnouncement = createRemoteEvent("EventAnnouncement")
+local CoopPrompt = createRemoteEvent("CoopPrompt")
+local CoopResponse = createRemoteEvent("CoopResponse")
+local GetCarriedLoot = createRemoteFunction("GetCarriedLoot")
+
 -- UI data
 local GetOwnBaseData = createRemoteFunction("GetOwnBaseData")
 local GetPlayerResources = createRemoteFunction("GetPlayerResources")
@@ -159,6 +176,16 @@ local GoblinCampService = loadService("GoblinCampService")
 local ResourceNodeService = loadService("ResourceNodeService")
 local TradeService = loadService("TradeService")
 
+-- Load wilderness services
+local ZoneService = loadService("ZoneService")
+local OverworldCombatService = loadService("OverworldCombatService")
+local LootCarryService = loadService("LootCarryService")
+local BanditService = loadService("BanditService")
+local BossService = loadService("BossService")
+local TreasureChestService = loadService("TreasureChestService")
+local MerchantService = loadService("MerchantService")
+local RandomEventService = loadService("RandomEventService")
+
 -- Load shared module references
 local OverworldConfig = require(ReplicatedStorage.Shared.Constants.OverworldConfig)
 
@@ -188,6 +215,15 @@ initService(BattleArenaService, "BattleArenaService")
 initService(GoblinCampService, "GoblinCampService")
 initService(ResourceNodeService, "ResourceNodeService")
 initService(TradeService, "TradeService")
+
+-- Initialize wilderness services
+initService(ZoneService, "ZoneService")
+-- Note: OverworldCombatService, LootCarryService are stateless, no Init needed
+initService(BanditService, "BanditService")
+initService(BossService, "BossService")
+initService(TreasureChestService, "TreasureChestService")
+initService(MerchantService, "MerchantService")
+initService(RandomEventService, "RandomEventService")
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- STEP 5: Build the overworld environment
@@ -263,6 +299,51 @@ if TradeService then
         if target then
             TradeResult:FireClient(target, { status = "accepted", tradeId = trade.id })
         end
+    end)
+end
+
+-- Connect ZoneService signals (notify client of zone changes)
+if ZoneService then
+    ZoneService.PlayerEnteredSafeZone:Connect(function(player)
+        ZoneChanged:FireClient(player, "safe")
+    end)
+    ZoneService.PlayerLeftSafeZone:Connect(function(player, newZone)
+        ZoneChanged:FireClient(player, newZone)
+    end)
+    ZoneService.PlayerEnteredWilderness:Connect(function(player)
+        ZoneChanged:FireClient(player, "wilderness")
+    end)
+    ZoneService.PlayerEnteredForbiddenZone:Connect(function(player)
+        ZoneChanged:FireClient(player, "forbidden")
+    end)
+end
+
+-- Connect LootCarryService signals
+if LootCarryService then
+    LootCarryService.LootAdded:Connect(function(player, lootTable)
+        LootCarrySync:FireClient(player, lootTable)
+    end)
+    LootCarryService.LootBanked:Connect(function(player, lootTable)
+        LootBanked:FireClient(player, lootTable)
+        -- Also sync updated resources to client
+        if DataService then
+            local playerData = DataService:GetPlayerData(player)
+            if playerData then
+                SyncPlayerData:FireClient(player, playerData)
+            end
+        end
+    end)
+end
+
+-- Connect RandomEventService signals
+if RandomEventService and RandomEventService.EventStarted then
+    RandomEventService.EventStarted:Connect(function(eventType, eventData)
+        EventAnnouncement:FireAllClients({ type = eventType, data = eventData, action = "start" })
+    end)
+end
+if RandomEventService and RandomEventService.EventEnded then
+    RandomEventService.EventEnded:Connect(function(eventType)
+        EventAnnouncement:FireAllClients({ type = eventType, action = "end" })
     end)
 end
 
@@ -468,6 +549,15 @@ end)
 -- Teleport to village request
 connectEvent(RequestTeleportToVillage, function(player)
     if TeleportManager and OverworldService then
+        -- Block teleport if carrying loot
+        if LootCarryService then
+            local canTP, lootErr = LootCarryService:CanTeleport(player)
+            if not canTP then
+                ServerResponse:FireClient(player, "TeleportToVillage", { success = false, error = lootErr })
+                return
+            end
+        end
+
         local canEnter, err = OverworldService:CanEnterVillage(player)
 
         if not canEnter then
@@ -635,6 +725,15 @@ connectEvent(ConfirmMatchmaking, function(player, targetUserId)
     if not BattleArenaService then
         ServerResponse:FireClient(player, "ConfirmMatchmaking", { success = false, error = "SERVICE_UNAVAILABLE" })
         return
+    end
+
+    -- Block if carrying loot
+    if LootCarryService then
+        local canTP, lootErr = LootCarryService:CanTeleport(player)
+        if not canTP then
+            ServerResponse:FireClient(player, "ConfirmMatchmaking", { success = false, error = lootErr })
+            return
+        end
     end
 
     -- Check if player is already in a battle
@@ -1007,6 +1106,15 @@ connectEvent(RequestVisitBase, function(player, data)
     end
     _visitRateLimit[player.UserId] = now
 
+    -- Block if carrying loot
+    if LootCarryService then
+        local canTP, lootErr = LootCarryService:CanTeleport(player)
+        if not canTP then
+            ServerResponse:FireClient(player, "VisitBase", { success = false, error = lootErr })
+            return
+        end
+    end
+
     -- Check player is not in a battle
     if BattleArenaService and BattleArenaService:IsPlayerInBattle(player) then
         ServerResponse:FireClient(player, "VisitBase", { success = false, error = "ALREADY_IN_BATTLE" })
@@ -1041,6 +1149,318 @@ connectEvent(RequestVisitBase, function(player, data)
         ServerResponse:FireClient(player, "VisitBase", { success = false, error = "SERVICE_UNAVAILABLE" })
     end
 end)
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- STEP 7.11: Wilderness gameplay handlers
+-- ═══════════════════════════════════════════════════════════════════════════════
+print("[OVERWORLD] Connecting wilderness handlers...")
+
+-- Rate limits for wilderness actions
+local _wildernessRateLimit: {[number]: {[string]: number}} = {}
+local function checkWildernessRate(player: Player, action: string, cooldown: number): boolean
+    local userId = player.UserId
+    _wildernessRateLimit[userId] = _wildernessRateLimit[userId] or {}
+    local now = os.clock()
+    local last = _wildernessRateLimit[userId][action] or 0
+    if now - last < cooldown then return false end
+    _wildernessRateLimit[userId][action] = now
+    return true
+end
+
+-- PvP cooldown tracking (per attacker-target pair)
+local _pvpCooldowns: {[string]: number} = {} -- "attackerId_targetId" -> timestamp
+
+-- Engage bandit: player initiates combat with a bandit NPC
+connectEvent(EngageBandit, function(player, data)
+    if not BanditService or not OverworldCombatService or not LootCarryService then
+        ServerResponse:FireClient(player, "EngageBandit", { success = false, error = "SERVICE_UNAVAILABLE" })
+        return
+    end
+
+    if typeof(data) ~= "table" then return end
+    if typeof(data.banditId) ~= "string" then return end
+
+    -- Rate limit (1 per 2 seconds)
+    if not checkWildernessRate(player, "engage_bandit", 2) then
+        ServerResponse:FireClient(player, "EngageBandit", { success = false, error = "RATE_LIMITED" })
+        return
+    end
+
+    -- Check not already in combat
+    if OverworldCombatService:IsInCombat(player.UserId) then
+        ServerResponse:FireClient(player, "EngageBandit", { success = false, error = "ALREADY_IN_COMBAT" })
+        return
+    end
+
+    -- Validate troop selection
+    if typeof(data.troops) ~= "table" then return end
+
+    -- Delegate to BanditService
+    local result = BanditService:EngageBandit(player, data.banditId, data.troops)
+    if result then
+        -- Send combat result to client
+        AutoClashResult:FireClient(player, result)
+        -- If won, add loot to carried (not directly to resources)
+        if result.winner == "attacker" and result.loot then
+            LootCarryService:AddLoot(player, result.loot)
+        end
+    else
+        ServerResponse:FireClient(player, "EngageBandit", { success = false, error = "ENGAGE_FAILED" })
+    end
+end)
+
+-- Engage boss: player initiates combat with a boss NPC
+connectEvent(EngageBoss, function(player, data)
+    if not BossService or not OverworldCombatService or not LootCarryService then
+        ServerResponse:FireClient(player, "EngageBoss", { success = false, error = "SERVICE_UNAVAILABLE" })
+        return
+    end
+
+    if typeof(data) ~= "table" then return end
+    if typeof(data.bossId) ~= "string" then return end
+
+    -- Rate limit
+    if not checkWildernessRate(player, "engage_boss", 3) then return end
+
+    -- Check not already in combat
+    if OverworldCombatService:IsInCombat(player.UserId) then
+        ServerResponse:FireClient(player, "EngageBoss", { success = false, error = "ALREADY_IN_COMBAT" })
+        return
+    end
+
+    if typeof(data.troops) ~= "table" then return end
+
+    -- Delegate to BossService
+    local result = BossService:EngageBoss(player, data.bossId, data.troops)
+    if result then
+        AutoClashResult:FireClient(player, result)
+        if result.winner == "attacker" and result.loot then
+            LootCarryService:AddLoot(player, result.loot)
+        end
+    else
+        ServerResponse:FireClient(player, "EngageBoss", { success = false, error = "ENGAGE_FAILED" })
+    end
+end)
+
+-- PvP attack: player attacks another player in wilderness
+connectEvent(AttackPlayer, function(player, data)
+    if not OverworldCombatService or not LootCarryService or not ZoneService then
+        ServerResponse:FireClient(player, "AttackPlayer", { success = false, error = "SERVICE_UNAVAILABLE" })
+        return
+    end
+
+    if typeof(data) ~= "table" then return end
+    if typeof(data.targetUserId) ~= "number" then return end
+    if typeof(data.troops) ~= "table" then return end
+
+    -- Rate limit
+    if not checkWildernessRate(player, "attack_player", 3) then return end
+
+    local targetPlayer = Players:GetPlayerByUserId(data.targetUserId)
+    if not targetPlayer then
+        ServerResponse:FireClient(player, "AttackPlayer", { success = false, error = "TARGET_NOT_FOUND" })
+        return
+    end
+
+    -- Can't attack yourself
+    if data.targetUserId == player.UserId then return end
+
+    -- Check both players exist in overworld with characters
+    local atkChar = player.Character
+    local defChar = targetPlayer.Character
+    if not atkChar or not defChar then
+        ServerResponse:FireClient(player, "AttackPlayer", { success = false, error = "NO_CHARACTER" })
+        return
+    end
+
+    local atkRoot = atkChar:FindFirstChild("HumanoidRootPart") :: BasePart?
+    local defRoot = defChar:FindFirstChild("HumanoidRootPart") :: BasePart?
+    if not atkRoot or not defRoot then return end
+
+    -- Zone check: both must be in wilderness or forbidden (not safe)
+    local atkPos = atkRoot.Position
+    local defPos = defRoot.Position
+    if not ZoneService:CanPvPAt(atkPos.X, atkPos.Z) then
+        ServerResponse:FireClient(player, "AttackPlayer", { success = false, error = "SAFE_ZONE" })
+        return
+    end
+    if not ZoneService:CanPvPAt(defPos.X, defPos.Z) then
+        ServerResponse:FireClient(player, "AttackPlayer", { success = false, error = "TARGET_IN_SAFE_ZONE" })
+        return
+    end
+
+    -- Distance check
+    local dist = (atkPos - defPos).Magnitude
+    local pvpRange = OverworldConfig.Wilderness.PvP.AttackRange
+    if dist > pvpRange then
+        ServerResponse:FireClient(player, "AttackPlayer", { success = false, error = "TOO_FAR" })
+        return
+    end
+
+    -- PvP cooldown check
+    local cooldownKey = tostring(player.UserId) .. "_" .. tostring(data.targetUserId)
+    local lastAttack = _pvpCooldowns[cooldownKey] or 0
+    local pvpCooldown = OverworldConfig.Wilderness.PvP.Cooldown
+    if os.time() - lastAttack < pvpCooldown then
+        ServerResponse:FireClient(player, "AttackPlayer", { success = false, error = "PVP_COOLDOWN" })
+        return
+    end
+
+    -- Check neither is in combat
+    if OverworldCombatService:IsInCombat(player.UserId) or OverworldCombatService:IsInCombat(data.targetUserId) then
+        ServerResponse:FireClient(player, "AttackPlayer", { success = false, error = "TARGET_IN_COMBAT" })
+        return
+    end
+
+    -- Build attacker army from client data (validate against DataService)
+    -- For now, trust troop selection and validate counts server-side later
+    local attackerArmy = { troops = data.troops, spells = data.spells }
+
+    -- Build defender army from their DataService troops (auto-selected)
+    local defenderTroops = {}
+    if DataService then
+        local defData = DataService:GetPlayerData(targetPlayer)
+        if defData and defData.troops then
+            for troopType, troopInfo in defData.troops do
+                if typeof(troopInfo) == "table" and (troopInfo.count or 0) > 0 then
+                    table.insert(defenderTroops, {
+                        troopType = troopType,
+                        level = troopInfo.level or 1,
+                        count = troopInfo.count,
+                    })
+                end
+            end
+        end
+    end
+
+    local defenderArmy = { troops = defenderTroops }
+
+    -- Mark both as in combat
+    OverworldCombatService:SetCombatState(player.UserId, true)
+    OverworldCombatService:SetCombatState(data.targetUserId, true)
+
+    -- Run auto-clash
+    local result = OverworldCombatService:StartAutoClash(attackerArmy, defenderArmy)
+
+    -- Apply PvP cooldown
+    _pvpCooldowns[cooldownKey] = os.time()
+
+    -- Handle loot transfer
+    if result.winner == "attacker" then
+        local stolenLoot = LootCarryService:StealAllLoot(targetPlayer)
+        if stolenLoot then
+            LootCarryService:AddLoot(player, stolenLoot)
+            result.loot = stolenLoot
+        end
+    elseif result.winner == "defender" then
+        local stolenLoot = LootCarryService:StealAllLoot(player)
+        if stolenLoot then
+            LootCarryService:AddLoot(targetPlayer, stolenLoot)
+        end
+    end
+
+    -- Clear combat state
+    OverworldCombatService:SetCombatState(player.UserId, false)
+    OverworldCombatService:SetCombatState(data.targetUserId, false)
+
+    -- Send results to both players
+    AutoClashResult:FireClient(player, result)
+    AutoClashResult:FireClient(targetPlayer, {
+        winner = if result.winner == "attacker" then "defender" elseif result.winner == "defender" then "attacker" else "draw",
+        attackerLosses = result.defenderLosses,
+        defenderLosses = result.attackerLosses,
+        attackerHpPercent = result.defenderHpPercent,
+        defenderHpPercent = result.attackerHpPercent,
+        duration = result.duration,
+    })
+end)
+
+-- Collect treasure chest
+connectEvent(CollectTreasureChest, function(player, data)
+    if not TreasureChestService or not LootCarryService then return end
+    if typeof(data) ~= "table" then return end
+    if typeof(data.chestId) ~= "string" then return end
+
+    if not checkWildernessRate(player, "collect_chest", 1) then return end
+
+    local success, loot, err = TreasureChestService:CollectChest(player, data.chestId)
+    if success and loot then
+        LootCarryService:AddLoot(player, loot)
+        ServerResponse:FireClient(player, "CollectTreasureChest", { success = true, loot = loot })
+    else
+        ServerResponse:FireClient(player, "CollectTreasureChest", { success = false, error = err or "COLLECT_FAILED" })
+    end
+end)
+
+-- Collect dropped loot
+connectEvent(CollectDroppedLoot, function(player, data)
+    if not LootCarryService then return end
+    if typeof(data) ~= "table" then return end
+    if typeof(data.dropId) ~= "string" then return end
+
+    if not checkWildernessRate(player, "collect_drop", 0.5) then return end
+
+    local success, err = LootCarryService:CollectDrop(player, data.dropId)
+    if success then
+        ServerResponse:FireClient(player, "CollectDroppedLoot", { success = true })
+    else
+        ServerResponse:FireClient(player, "CollectDroppedLoot", { success = false, error = err })
+    end
+end)
+
+-- Merchant interaction
+connectEvent(InteractMerchant, function(player, data)
+    if not MerchantService then return end
+    if typeof(data) ~= "table" then return end
+    if typeof(data.merchantId) ~= "string" then return end
+
+    local inventory = MerchantService:GetInventory(data.merchantId)
+    if inventory then
+        ServerResponse:FireClient(player, "InteractMerchant", { success = true, inventory = inventory })
+    else
+        ServerResponse:FireClient(player, "InteractMerchant", { success = false, error = "MERCHANT_NOT_FOUND" })
+    end
+end)
+
+-- Merchant buy/sell transaction
+connectEvent(MerchantTransaction, function(player, data)
+    if not MerchantService then return end
+    if typeof(data) ~= "table" then return end
+    if typeof(data.merchantId) ~= "string" then return end
+    if typeof(data.action) ~= "string" then return end
+    if typeof(data.itemId) ~= "string" then return end
+
+    if not checkWildernessRate(player, "merchant_tx", 0.5) then return end
+
+    local success, err = MerchantService:ProcessTransaction(player, data.merchantId, data.action, data.itemId, data.quantity)
+    if success then
+        ServerResponse:FireClient(player, "MerchantTransaction", { success = true })
+        -- Sync updated resources
+        if DataService then
+            local playerData = DataService:GetPlayerData(player)
+            if playerData then
+                SyncPlayerData:FireClient(player, playerData)
+            end
+        end
+    else
+        ServerResponse:FireClient(player, "MerchantTransaction", { success = false, error = err })
+    end
+end)
+
+-- Co-op response (player accepts/declines co-op invite)
+connectEvent(CoopResponse, function(player, data)
+    -- Co-op handling is managed by BanditService/BossService internally
+    -- This event is a placeholder for future co-op implementation
+    if typeof(data) ~= "table" then return end
+end)
+
+-- GetCarriedLoot: client queries their current carried loot
+GetCarriedLoot.OnServerInvoke = function(player)
+    if LootCarryService then
+        return LootCarryService:GetCarriedLoot(player)
+    end
+    return nil
+end
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- STEP 8: Player connection handling
@@ -1132,6 +1552,13 @@ Players.PlayerAdded:Connect(function(player)
                 humanoid.WalkSpeed = OverworldConfig.Character.WalkSpeed
                 humanoid.JumpPower = OverworldConfig.Character.JumpPower
             end
+
+            -- Refresh loot cart visual on respawn
+            if LootCarryService then
+                task.delay(0.5, function()
+                    LootCarryService:RefreshCartVisual(player)
+                end)
+            end
         end)
 
         -- If character already exists, position immediately
@@ -1167,6 +1594,16 @@ Players.PlayerRemoving:Connect(function(player)
     print(string.format("[OVERWORLD] Player leaving: %s (%d)", player.Name, player.UserId))
 
     _visitRateLimit[player.UserId] = nil
+
+    -- Drop carried loot on disconnect (creates collectible world node)
+    if LootCarryService then
+        LootCarryService:CleanupPlayer(player)
+    end
+
+    -- Clean up combat state
+    if OverworldCombatService then
+        OverworldCombatService:CleanupPlayer(player.UserId)
+    end
 
     if _teleportingPlayers[player.UserId] then
         -- Player is teleporting to their village or visiting another base
@@ -1302,6 +1739,55 @@ task.spawn(function()
             end
         end
     end
+end)
+
+-- Auto-banking loop: check if players are near their base gate to bank loot
+task.spawn(function()
+    while true do
+        task.wait(1) -- Every second
+
+        if LootCarryService and OverworldService and DataService then
+            local bankingDist = OverworldConfig.Interaction.BankingDistance
+
+            for _, player in Players:GetPlayers() do
+                if not LootCarryService:IsCarryingLoot(player) then continue end
+
+                local character = player.Character
+                if not character then continue end
+                local root = character:FindFirstChild("HumanoidRootPart") :: BasePart?
+                if not root then continue end
+
+                -- Check distance to own base
+                local state = OverworldService:GetPlayerState(player)
+                if not state or not state.position then continue end
+
+                local basePos = state.position
+                local dist = (root.Position - basePos).Magnitude
+                if dist <= bankingDist then
+                    local banked = LootCarryService:BankLoot(player, DataService)
+                    if banked then
+                        print(string.format("[OVERWORLD] %s banked loot: %dg %dw %df %dgems",
+                            player.Name, banked.gold, banked.wood, banked.food, banked.gems))
+                    end
+                end
+            end
+        end
+    end
+end)
+
+-- Dropped loot cleanup loop
+task.spawn(function()
+    while true do
+        task.wait(30) -- Every 30 seconds
+        if LootCarryService then
+            LootCarryService:CleanupExpiredDrops()
+        end
+    end
+end)
+
+-- Wilderness rate limit cleanup
+Players.PlayerRemoving:Connect(function(player)
+    _wildernessRateLimit[player.UserId] = nil
 end)
 
 print("========================================")

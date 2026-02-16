@@ -59,6 +59,20 @@ else
     warn("[DataService] DataStore unavailable, using local-only mode (data won't persist)")
 end
 
+-- Storage capacity per Town Hall level {gold, wood, food}
+local STORAGE_CAPACITY_PER_TH = {
+    [1]  = { gold = 10000,     wood = 10000,     food = 6000 },
+    [2]  = { gold = 20000,     wood = 20000,     food = 12000 },
+    [3]  = { gold = 100000,    wood = 100000,    food = 60000 },
+    [4]  = { gold = 500000,    wood = 500000,    food = 300000 },
+    [5]  = { gold = 2000000,   wood = 2000000,   food = 1200000 },
+    [6]  = { gold = 5000000,   wood = 5000000,   food = 3000000 },
+    [7]  = { gold = 10000000,  wood = 10000000,  food = 6000000 },
+    [8]  = { gold = 20000000,  wood = 20000000,  food = 12000000 },
+    [9]  = { gold = 50000000,  wood = 50000000,  food = 30000000 },
+    [10] = { gold = 100000000, wood = 100000000, food = 60000000 },
+}
+
 -- Constants
 local DATA_SAVE_INTERVAL = 300 -- 5 minutes
 local SESSION_LOCK_KEY_PREFIX = "SessionLock_"
@@ -115,9 +129,9 @@ local function createDefaultData(userId: number, username: string): Types.Player
             food = startingResources.food,
         },
         storageCapacity = {
-            gold = 5000,
-            wood = 5000,
-            food = 3000,
+            gold = 10000,
+            wood = 10000,
+            food = 6000,
         },
 
         -- Progression
@@ -223,6 +237,10 @@ local function validatePlayerData(data: Types.PlayerData): Types.PlayerData
 
     -- Ensure progression is valid
     data.townHallLevel = math.clamp(data.townHallLevel or 1, 1, 10)
+
+    -- Sync storageCapacity to TH level (migration from static defaults)
+    local thCap = STORAGE_CAPACITY_PER_TH[data.townHallLevel]
+    data.storageCapacity = { gold = thCap.gold, wood = thCap.wood, food = thCap.food }
 
     -- Ensure stats exist
     data.stats = data.stats or {
@@ -712,23 +730,23 @@ function DataService:UpdateResources(player: Player, changes: Types.ResourceData
     local data = _playerData[player.UserId]
     if not data then return false end
 
+    -- Dynamic capacity based on Town Hall level
+    local cap = STORAGE_CAPACITY_PER_TH[math.clamp(data.townHallLevel or 1, 1, 10)]
+
     -- Apply changes with validation (sanitize for NaN/Infinity exploits)
     if changes.gold then
         local sanitizedGold = sanitizeNumber(changes.gold, 0)
-        data.resources.gold = math.max(0, data.resources.gold + sanitizedGold)
-        data.resources.gold = math.min(data.resources.gold, data.storageCapacity.gold)
+        data.resources.gold = math.clamp(data.resources.gold + sanitizedGold, 0, cap.gold)
     end
 
     if changes.wood then
         local sanitizedWood = sanitizeNumber(changes.wood, 0)
-        data.resources.wood = math.max(0, data.resources.wood + sanitizedWood)
-        data.resources.wood = math.min(data.resources.wood, data.storageCapacity.wood)
+        data.resources.wood = math.clamp(data.resources.wood + sanitizedWood, 0, cap.wood)
     end
 
     if changes.food then
         local sanitizedFood = sanitizeNumber(changes.food, 0)
-        data.resources.food = math.max(0, data.resources.food + sanitizedFood)
-        data.resources.food = math.min(data.resources.food, data.storageCapacity.food)
+        data.resources.food = math.clamp(data.resources.food + sanitizedFood, 0, cap.food)
     end
 
     return true
@@ -853,6 +871,13 @@ function DataService:GetFoodSupplyStatus(player: Player): {production: number, u
         usage = data.foodUsage,
         paused = data.trainingPaused,
     }
+end
+
+--[[
+    Returns the storage capacity for a given Town Hall level.
+]]
+function DataService:GetStorageCapacityForTH(thLevel: number): {gold: number, wood: number, food: number}
+    return STORAGE_CAPACITY_PER_TH[math.clamp(thLevel or 1, 1, 10)]
 end
 
 --[[

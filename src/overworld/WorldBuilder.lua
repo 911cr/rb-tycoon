@@ -787,41 +787,96 @@ end
 
 local function createBridge(length: number, width: number): Model
     local bridge = Instance.new("Model")
-    bridge.Name = "Bridge"
+    bridge.Name = "StoneBridge"
 
-    -- Deck
+    -- Deck (PrimaryPart — center at Y=0.5 so bottom sits at model origin Y)
     local deck = Instance.new("Part")
     deck.Name = "Deck"
     deck.Size = Vector3.new(width, 1, length)
-    deck.Position = Vector3.new(0, 1, 0)
+    deck.CFrame = CFrame.new(0, 0.5, 0)
     deck.Anchored = true
     deck.Material = Enum.Material.Cobblestone
     deck.Color = Colors.BridgeStone
     deck.Parent = bridge
+    bridge.PrimaryPart = deck
 
-    -- Railings
+    -- Low stone railing walls
     for side = -1, 1, 2 do
         local railing = Instance.new("Part")
         railing.Name = "Railing"
-        railing.Size = Vector3.new(0.5, 1.5, length)
-        railing.Position = Vector3.new(side * (width / 2 - 0.25), 2.25, 0)
+        railing.Size = Vector3.new(0.6, 1.2, length)
+        railing.Position = Vector3.new(side * (width / 2 - 0.3), 1.6, 0)
         railing.Anchored = true
         railing.Material = Enum.Material.Rock
         railing.Color = Colors.Rock
         railing.Parent = bridge
+
+        -- Flat capstone on top of railing
+        local cap = Instance.new("Part")
+        cap.Name = "RailingCap"
+        cap.Size = Vector3.new(0.9, 0.25, length + 0.4)
+        cap.Position = Vector3.new(side * (width / 2 - 0.3), 2.35, 0)
+        cap.Anchored = true
+        cap.Material = Enum.Material.Cobblestone
+        cap.Color = Colors.RockLight
+        cap.Parent = bridge
     end
 
-    -- Support pillars
-    for z = -1, 1, 2 do
-        local support = Instance.new("Part")
-        support.Name = "Support"
-        support.Size = Vector3.new(3, 8, 2)
-        support.Position = Vector3.new(0, -2, z * (length / 2 - 2))
-        support.Anchored = true
-        support.Material = Enum.Material.Rock
-        support.Color = Colors.Rock
-        support.Parent = bridge
+    -- Corner posts (decorative pillars at each end of each railing)
+    for side = -1, 1, 2 do
+        for endDir = -1, 1, 2 do
+            local post = Instance.new("Part")
+            post.Name = "Post"
+            post.Shape = Enum.PartType.Block
+            post.Size = Vector3.new(1.0, 2.2, 1.0)
+            post.Position = Vector3.new(
+                side * (width / 2 - 0.3),
+                2.1,
+                endDir * (length / 2 - 0.5)
+            )
+            post.Anchored = true
+            post.Material = Enum.Material.Rock
+            post.Color = Colors.RockDark
+            post.Parent = bridge
+
+            -- Post cap (slightly wider top)
+            local postCap = Instance.new("Part")
+            postCap.Name = "PostCap"
+            postCap.Shape = Enum.PartType.Block
+            postCap.Size = Vector3.new(1.3, 0.3, 1.3)
+            postCap.Position = Vector3.new(
+                side * (width / 2 - 0.3),
+                3.35,
+                endDir * (length / 2 - 0.5)
+            )
+            postCap.Anchored = true
+            postCap.Material = Enum.Material.Cobblestone
+            postCap.Color = Colors.RockLight
+            postCap.Parent = bridge
+        end
     end
+
+    -- Support pillars (extend below deck into the riverbed)
+    for zDir = -1, 1, 2 do
+        local pillar = Instance.new("Part")
+        pillar.Name = "Support"
+        pillar.Size = Vector3.new(width * 0.5, 8, 2.5)
+        pillar.Position = Vector3.new(0, -3.5, zDir * (length / 2 - 3))
+        pillar.Anchored = true
+        pillar.Material = Enum.Material.Rock
+        pillar.Color = Colors.Rock
+        pillar.Parent = bridge
+    end
+
+    -- Center keystone (wider support under middle of bridge)
+    local keystone = Instance.new("Part")
+    keystone.Name = "Keystone"
+    keystone.Size = Vector3.new(width * 0.35, 6, 3)
+    keystone.Position = Vector3.new(0, -2.5, 0)
+    keystone.Anchored = true
+    keystone.Material = Enum.Material.Rock
+    keystone.Color = Colors.RockDark
+    keystone.Parent = bridge
 
     return bridge
 end
@@ -930,25 +985,106 @@ local function buildDecorations()
 
     task.wait()
 
-    -- Bridges over river at road crossings
-    -- Main E-W road crosses river near center area
-    -- River at center is roughly at z=1000 (where x=900, riverZ~1000)
-    local bridge1 = createBridge(40, 16)
-    -- Position bridge where main E-W road crosses river
-    local bridgeHit = raycastTerrain(900, 1000)
-    if bridgeHit then
-        bridge1:PivotTo(CFrame.new(900, bridgeHit.Position.Y + 1.5, 1000))
-    else
-        bridge1:PivotTo(CFrame.new(900, 1.5, 1000))
+    -- ================================================================
+    -- Stone bridges at every road-river crossing
+    -- ================================================================
+    -- River path (same points used in buildRiver)
+    local riverPoints = {
+        {x = 100, z = 1600}, {x = 300, z = 1400}, {x = 500, z = 1200},
+        {x = 700, z = 1050}, {x = 900, z = 1000}, {x = 1100, z = 950},
+        {x = 1300, z = 900}, {x = 1500, z = 850}, {x = 1700, z = 800},
+        {x = 1900, z = 750},
+    }
+
+    -- Interpolate river Z at a given X
+    local function getRiverZAtX(targetX: number): number?
+        for ri = 1, #riverPoints - 1 do
+            local p1 = riverPoints[ri]
+            local p2 = riverPoints[ri + 1]
+            if targetX >= p1.x and targetX <= p2.x then
+                local t = (targetX - p1.x) / (p2.x - p1.x)
+                return p1.z + t * (p2.z - p1.z)
+            end
+        end
+        return nil
     end
-    bridge1.Parent = _propsFolder
 
-    -- Second bridge where N-S road crosses river (MAP_CENTER, ~1000)
-    local bridge2 = createBridge(40, 16)
-    bridge2:PivotTo(CFrame.new(MAP_CENTER, 1.5, 1000) * CFrame.Angles(0, math.rad(90), 0))
-    bridge2.Parent = _propsFolder
+    -- Interpolate river X at a given Z (river Z is monotonically decreasing)
+    local function getRiverXAtZ(targetZ: number): number?
+        for ri = 1, #riverPoints - 1 do
+            local p1 = riverPoints[ri]
+            local p2 = riverPoints[ri + 1]
+            local minZ = math.min(p1.z, p2.z)
+            local maxZ = math.max(p1.z, p2.z)
+            if targetZ >= minZ and targetZ <= maxZ then
+                local t = (targetZ - p1.z) / (p2.z - p1.z)
+                return p1.x + t * (p2.x - p1.x)
+            end
+        end
+        return nil
+    end
 
-    print(string.format("[WorldBuilder] Decorations complete (%d rocks, %d torches)", rockCount, torchCount))
+    local mainWidth = OverworldConfig.Terrain.Roads.MainWidth
+    local secWidth = OverworldConfig.Terrain.Roads.SecondaryWidth
+    local roadSpacing = 200
+    local bridgeLength = 44 -- spans 30-stud river + 7 stud margin each side
+    local bridgeCount = 0
+
+    -- Collect all road-river crossings: {x, z, isEW, roadW}
+    local crossings = {}
+
+    -- Main E-W road (z = MAP_CENTER) × river
+    local ewCrossX = getRiverXAtZ(MAP_CENTER)
+    if ewCrossX and ewCrossX >= 100 and ewCrossX <= MAP_SIZE - 100 then
+        table.insert(crossings, {x = ewCrossX, z = MAP_CENTER, isEW = true, roadW = mainWidth})
+    end
+
+    -- Main N-S road (x = MAP_CENTER) × river
+    local nsCrossZ = getRiverZAtX(MAP_CENTER)
+    if nsCrossZ and nsCrossZ >= 100 and nsCrossZ <= MAP_SIZE - 100 then
+        table.insert(crossings, {x = MAP_CENTER, z = nsCrossZ, isEW = false, roadW = mainWidth})
+    end
+
+    -- Secondary N-S roads (vertical, in safe zone) × river
+    for roadX = sz.MinX, sz.MaxX, roadSpacing do
+        if math.abs(roadX - MAP_CENTER) > 50 then
+            local crossZ = getRiverZAtX(roadX)
+            if crossZ and crossZ >= sz.MinZ and crossZ <= sz.MaxZ then
+                table.insert(crossings, {x = roadX, z = crossZ, isEW = false, roadW = secWidth})
+            end
+        end
+    end
+
+    -- Secondary E-W roads (horizontal, in safe zone) × river
+    for roadZ = sz.MinZ, sz.MaxZ, roadSpacing do
+        if math.abs(roadZ - MAP_CENTER) > 50 then
+            local crossX = getRiverXAtZ(roadZ)
+            if crossX and crossX >= sz.MinX and crossX <= sz.MaxX then
+                table.insert(crossings, {x = crossX, z = roadZ, isEW = true, roadW = secWidth})
+            end
+        end
+    end
+
+    -- Place a stone bridge at each crossing
+    for _, cross in crossings do
+        local bWidth = cross.roadW + 4 -- slightly wider than the road
+        local bridge = createBridge(bridgeLength, bWidth)
+
+        -- Position deck top near road surface level
+        local surfaceY = getWorldHeight(cross.x, cross.z)
+        local placeCF = CFrame.new(cross.x, surfaceY, cross.z)
+
+        if cross.isEW then
+            -- E-W road: rotate bridge 90° so deck spans along X
+            placeCF = placeCF * CFrame.Angles(0, math.rad(90), 0)
+        end
+
+        bridge:PivotTo(placeCF)
+        bridge.Parent = _propsFolder
+        bridgeCount += 1
+    end
+
+    print(string.format("[WorldBuilder] Decorations complete (%d rocks, %d torches, %d bridges)", rockCount, torchCount, bridgeCount))
 end
 
 -- ============================================================================

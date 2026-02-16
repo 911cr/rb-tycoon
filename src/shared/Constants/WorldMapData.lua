@@ -19,8 +19,8 @@ local WorldMapData = {}
 ]]
 WorldMapData.Map = {
     -- Map size in world units
-    Width = 1000,
-    Height = 1000,
+    Width = 2000,
+    Height = 2000,
 
     -- Grid cell size for positioning
     CellSize = 10,
@@ -33,6 +33,14 @@ WorldMapData.Map = {
 
     -- Maximum bases to show at once (performance)
     MaxVisibleBases = 50,
+
+    -- Safe zone bounds (bases spawn here)
+    SafeZone = {
+        MinX = 600,
+        MaxX = 1400,
+        MinZ = 600,
+        MaxZ = 1400,
+    },
 }
 
 --[[
@@ -244,12 +252,12 @@ end
     @return {x: number, z: number} - Map position
 ]]
 function WorldMapData.GenerateStartingPosition(): {x: number, z: number}
-    local map = WorldMapData.Map
-    local margin = 50 -- Keep away from edges
+    local safe = WorldMapData.Map.SafeZone
+    local margin = 30 -- Keep away from zone edges
 
     return {
-        x = math.random(margin, map.Width - margin),
-        z = math.random(margin, map.Height - margin),
+        x = math.random(safe.MinX + margin, safe.MaxX - margin),
+        z = math.random(safe.MinZ + margin, safe.MaxZ - margin),
     }
 end
 

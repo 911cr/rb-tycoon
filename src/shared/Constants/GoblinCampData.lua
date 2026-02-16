@@ -38,7 +38,7 @@ GoblinCampData.Camps = {
         name = "Goblin Outpost",
         difficulty = "Easy",
         thEquivalent = 2,
-        position = Vector3.new(300, 0, 300),
+        position = Vector3.new(500, 0, 500),
         loot = { gold = 500, wood = 300, food = 200 },
         respawnTime = RESPAWN_EASY,
         buildings = {
@@ -55,7 +55,7 @@ GoblinCampData.Camps = {
         name = "Goblin Hideout",
         difficulty = "Easy",
         thEquivalent = 2,
-        position = Vector3.new(700, 0, 250),
+        position = Vector3.new(1500, 0, 400),
         loot = { gold = 600, wood = 350, food = 250 },
         respawnTime = RESPAWN_EASY,
         buildings = {
@@ -73,7 +73,7 @@ GoblinCampData.Camps = {
         name = "Goblin Burrow",
         difficulty = "Easy",
         thEquivalent = 3,
-        position = Vector3.new(450, 0, 700),
+        position = Vector3.new(800, 0, 1500),
         loot = { gold = 800, wood = 500, food = 300 },
         respawnTime = RESPAWN_EASY,
         buildings = {
@@ -100,7 +100,7 @@ GoblinCampData.Camps = {
         name = "Goblin Village",
         difficulty = "Medium",
         thEquivalent = 4,
-        position = Vector3.new(250, 0, 550),
+        position = Vector3.new(350, 0, 1100),
         loot = { gold = 1500, wood = 1000, food = 500 },
         respawnTime = RESPAWN_MEDIUM,
         buildings = {
@@ -124,7 +124,7 @@ GoblinCampData.Camps = {
         name = "Goblin Fortress",
         difficulty = "Medium",
         thEquivalent = 5,
-        position = Vector3.new(600, 0, 500),
+        position = Vector3.new(1200, 0, 900),
         loot = { gold = 2000, wood = 1200, food = 650 },
         respawnTime = RESPAWN_MEDIUM,
         buildings = {
@@ -152,7 +152,7 @@ GoblinCampData.Camps = {
         name = "Goblin Encampment",
         difficulty = "Medium",
         thEquivalent = 6,
-        position = Vector3.new(400, 0, 350),
+        position = Vector3.new(700, 0, 600),
         loot = { gold = 2500, wood = 1500, food = 800 },
         respawnTime = RESPAWN_MEDIUM,
         buildings = {
@@ -185,7 +185,7 @@ GoblinCampData.Camps = {
         name = "Goblin Stronghold",
         difficulty = "Hard",
         thEquivalent = 7,
-        position = Vector3.new(200, 0, 800),
+        position = Vector3.new(300, 0, 1700),
         loot = { gold = 5000, wood = 3000, food = 1500 },
         respawnTime = RESPAWN_HARD,
         buildings = {
@@ -219,7 +219,7 @@ GoblinCampData.Camps = {
         name = "Goblin Citadel",
         difficulty = "Hard",
         thEquivalent = 9,
-        position = Vector3.new(750, 0, 750),
+        position = Vector3.new(1600, 0, 1600),
         loot = { gold = 8000, wood = 5000, food = 2500 },
         respawnTime = RESPAWN_HARD,
         buildings = {
