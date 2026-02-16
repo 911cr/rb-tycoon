@@ -2986,6 +2986,19 @@ local BuildingUpgradeCosts = {
     farm6 = { base = { gold = 300, wood = 50 }, maxLevel = 10 },
 }
 
+-- Town Hall direct upgrade costs (gold only, per current level)
+local TownHallUpgradeCosts = {
+    [1] = { gold = 1000 },
+    [2] = { gold = 4000 },
+    [3] = { gold = 25000 },
+    [4] = { gold = 150000 },
+    [5] = { gold = 750000 },
+    [6] = { gold = 1200000 },
+    [7] = { gold = 2000000 },
+    [8] = { gold = 3000000 },
+    [9] = { gold = 5000000 },
+}
+
 -- Calculate upgrade cost for a building at current level
 local function getUpgradeCost(buildingName, currentLevel)
     local config = BuildingUpgradeCosts[buildingName]
@@ -11988,6 +12001,21 @@ local function addTownHallXP(amount: number)
         TownHallState.xpToNextLevel = math.floor(TownHallState.xpToNextLevel * 1.5)
         TownHallState.population = TownHallState.population + 5 -- More citizens at higher levels
         print(string.format("[TownHall] LEVEL UP! Now level %d (Population: %d)", TownHallState.level, TownHallState.population))
+
+        -- Update storage capacity in DataService for the village owner
+        if DataService and _villageOwnerUserId then
+            local ownerPlayer = Players:GetPlayerByUserId(_villageOwnerUserId)
+            if ownerPlayer then
+                local cap = DataService:GetStorageCapacityForTH(TownHallState.level)
+                local playerData = DataService:GetPlayerData(ownerPlayer)
+                if playerData and cap then
+                    playerData.storageCapacity = { gold = cap.gold, wood = cap.wood, food = cap.food }
+                    playerData.townHallLevel = TownHallState.level
+                    print(string.format("[TownHall] Updated storage caps: %d gold, %d wood, %d food",
+                        cap.gold, cap.wood, cap.food))
+                end
+            end
+        end
     end
 end
 
@@ -12451,7 +12479,7 @@ local function createTownHall()
     local carpet = Instance.new("Part")
     carpet.Name = "RoyalCarpet"
     carpet.Size = Vector3.new(6, 0.1, 60)
-    carpet.Position = Vector3.new(baseX, GROUND_Y + 0.15, baseZ)
+    carpet.Position = Vector3.new(baseX, GROUND_Y + 0.25, baseZ)
     carpet.Anchored = true
     carpet.Material = Enum.Material.Fabric
     carpet.Color = Color3.fromRGB(150, 50, 50)
@@ -12752,11 +12780,7 @@ local function createTownHall()
     upgradePrompt.MaxActivationDistance = 10
     upgradePrompt.Parent = upgradeDesk
 
-    -- Track selected building for upgrades per player
-    local selectedBuildingForUpgrade = {}  -- [playerId] = buildingName
-    local lastInteractionTime = {}  -- [playerId] = tick()
-
-    -- Building display names for nicer output
+    -- Building display names for upgrade center GUI
     local buildingDisplayNames = {
         goldMine = "Gold Mine",
         lumberMill = "Lumber Mill",
@@ -12771,156 +12795,393 @@ local function createTownHall()
 
     local buildingOrder = { "goldMine", "lumberMill", "barracks", "farm1", "farm2", "farm3", "farm4", "farm5", "farm6" }
 
-    -- Function to upgrade a building from the center
-    local function upgradeBuildingFromCenter(player, buildingName)
-        local config = BuildingUpgradeCosts[buildingName]
-        if not config then
-            print(string.format("[TownHall] %s: Invalid building type: %s", player.Name, buildingName))
-            return false
+    -- Active upgrade center GUIs per player
+    local activeUpgradeCenterGuis = {} -- [userId] = ScreenGui
+
+    -- Number formatting with commas
+    local function formatNumber(n)
+        local formatted = tostring(math.floor(n))
+        local k
+        while true do
+            formatted, k = string.gsub(formatted, "^(-?%d+)(%d%d%d)", "%1,%2")
+            if k == 0 then break end
         end
-
-        local currentLevel = TownHallState.buildingLevels[buildingName] or 1
-        if currentLevel >= config.maxLevel then
-            print(string.format("[TownHall] %s: %s is already at max level (%d)!", player.Name, buildingDisplayNames[buildingName], config.maxLevel))
-            return false
-        end
-
-        local cost = getUpgradeCost(buildingName, currentLevel)
-        if not cost then
-            print(string.format("[TownHall] %s: Cannot calculate upgrade cost", player.Name))
-            return false
-        end
-
-        -- Check if player has enough resources
-        local hasGold = not cost.gold or GoldMineState.chestGold >= cost.gold
-        local hasWood = not cost.wood or LumberMillState.woodStorage >= cost.wood
-        local hasFood = not cost.food or FarmState.foodStorage >= cost.food
-
-        if not hasGold or not hasWood or not hasFood then
-            print(string.format("[TownHall] %s: Insufficient resources for %s upgrade!", player.Name, buildingDisplayNames[buildingName]))
-            local needParts = {}
-            if cost.gold then table.insert(needParts, string.format("%d Gold", cost.gold)) end
-            if cost.wood then table.insert(needParts, string.format("%d Wood", cost.wood)) end
-            if cost.food then table.insert(needParts, string.format("%d Food", cost.food)) end
-            print(string.format("  Need: %s", table.concat(needParts, ", ")))
-            print(string.format("  Have: %d Gold, %d Wood, %d Food",
-                GoldMineState.chestGold, LumberMillState.woodStorage, FarmState.foodStorage))
-            return false
-        end
-
-        -- Deduct resources
-        if cost.gold then GoldMineState.chestGold = GoldMineState.chestGold - cost.gold end
-        if cost.wood then LumberMillState.woodStorage = LumberMillState.woodStorage - cost.wood end
-        if cost.food then FarmState.foodStorage = FarmState.foodStorage - cost.food end
-
-        -- Perform upgrade
-        TownHallState.buildingLevels[buildingName] = currentLevel + 1
-        local newLevel = TownHallState.buildingLevels[buildingName]
-        local newBonus = (newLevel - 1) * 10 -- +10% per level above 1
-
-        print("[TownHall] ========== UPGRADE COMPLETE! ==========")
-        print(string.format("  %s upgraded to Level %d!", buildingDisplayNames[buildingName], newLevel))
-        print(string.format("  Production bonus: +%d%%", newBonus))
-        print("================================================")
-
-        -- Add Town Hall XP for upgrading
-        addTownHallXP(50 * newLevel)
-
-        return true
+        return formatted
     end
+
+    -- Create the upgrade center GUI for a player
+    local function createUpgradeCenterGui(player)
+        -- Destroy existing GUI if open
+        if activeUpgradeCenterGuis[player.UserId] then
+            activeUpgradeCenterGuis[player.UserId]:Destroy()
+            activeUpgradeCenterGuis[player.UserId] = nil
+        end
+
+        local playerGui = player:FindFirstChild("PlayerGui")
+        if not playerGui then return end
+
+        -- Create ScreenGui
+        local screenGui = Instance.new("ScreenGui")
+        screenGui.Name = "UpgradeCenterMenu"
+        screenGui.ResetOnSpawn = false
+        screenGui.Parent = playerGui
+        activeUpgradeCenterGuis[player.UserId] = screenGui
+
+        -- Main frame
+        local mainFrame = Instance.new("Frame")
+        mainFrame.Name = "MainFrame"
+        mainFrame.Size = UDim2.new(0, 480, 0, 600)
+        mainFrame.Position = UDim2.new(0.5, -240, 0.5, -300)
+        mainFrame.BackgroundColor3 = Color3.fromRGB(30, 25, 20)
+        mainFrame.BorderSizePixel = 3
+        mainFrame.BorderColor3 = Color3.fromRGB(255, 200, 50)
+        mainFrame.Parent = screenGui
+
+        -- Title bar
+        local titleBar = Instance.new("Frame")
+        titleBar.Name = "TitleBar"
+        titleBar.Size = UDim2.new(1, 0, 0, 50)
+        titleBar.Position = UDim2.new(0, 0, 0, 0)
+        titleBar.BackgroundColor3 = Color3.fromRGB(50, 40, 30)
+        titleBar.BorderSizePixel = 0
+        titleBar.Parent = mainFrame
+
+        local title = Instance.new("TextLabel")
+        title.Name = "Title"
+        title.Size = UDim2.new(0.85, 0, 1, 0)
+        title.Position = UDim2.new(0, 0, 0, 0)
+        title.BackgroundTransparency = 1
+        title.Text = "UPGRADE CENTER"
+        title.TextColor3 = Color3.fromRGB(255, 215, 0)
+        title.TextScaled = true
+        title.Font = Enum.Font.GothamBold
+        title.Parent = titleBar
+
+        -- X close button in title bar
+        local xButton = Instance.new("TextButton")
+        xButton.Name = "XClose"
+        xButton.Size = UDim2.new(0, 40, 0, 40)
+        xButton.Position = UDim2.new(1, -45, 0, 5)
+        xButton.BackgroundColor3 = Color3.fromRGB(150, 50, 50)
+        xButton.BorderSizePixel = 0
+        xButton.Text = "X"
+        xButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+        xButton.TextScaled = true
+        xButton.Font = Enum.Font.GothamBold
+        xButton.Parent = titleBar
+
+        -- Scrolling frame for content
+        local scrollFrame = Instance.new("ScrollingFrame")
+        scrollFrame.Name = "Content"
+        scrollFrame.Size = UDim2.new(1, -10, 1, -110) -- Leave room for title and bottom close
+        scrollFrame.Position = UDim2.new(0, 5, 0, 55)
+        scrollFrame.BackgroundTransparency = 1
+        scrollFrame.BorderSizePixel = 0
+        scrollFrame.ScrollBarThickness = 8
+        scrollFrame.ScrollBarImageColor3 = Color3.fromRGB(255, 200, 50)
+        scrollFrame.CanvasSize = UDim2.new(0, 0, 0, 0) -- Will be set after adding content
+        scrollFrame.Parent = mainFrame
+
+        local yOffset = 5
+
+        -- ======== TOWN HALL UPGRADE CARD ========
+        local thCard = Instance.new("Frame")
+        thCard.Name = "TownHallCard"
+        thCard.Size = UDim2.new(0.97, 0, 0, 130)
+        thCard.Position = UDim2.new(0.015, 0, 0, yOffset)
+        thCard.BackgroundColor3 = Color3.fromRGB(50, 40, 30)
+        thCard.BorderSizePixel = 2
+        thCard.BorderColor3 = Color3.fromRGB(255, 215, 0)
+        thCard.Parent = scrollFrame
+
+        local thTitle = Instance.new("TextLabel")
+        thTitle.Size = UDim2.new(0.75, 0, 0, 30)
+        thTitle.Position = UDim2.new(0.02, 0, 0, 5)
+        thTitle.BackgroundTransparency = 1
+        thTitle.Text = string.format("TOWN HALL  Level %d", TownHallState.level)
+        thTitle.TextColor3 = Color3.fromRGB(255, 215, 0)
+        thTitle.TextXAlignment = Enum.TextXAlignment.Left
+        thTitle.TextScaled = true
+        thTitle.Font = Enum.Font.GothamBold
+        thTitle.Parent = thCard
+
+        -- Crown icon label
+        local crownLabel = Instance.new("TextLabel")
+        crownLabel.Size = UDim2.new(0, 30, 0, 30)
+        crownLabel.Position = UDim2.new(1, -35, 0, 5)
+        crownLabel.BackgroundTransparency = 1
+        crownLabel.Text = "♛"
+        crownLabel.TextColor3 = Color3.fromRGB(255, 215, 0)
+        crownLabel.TextScaled = true
+        crownLabel.Font = Enum.Font.GothamBold
+        crownLabel.Parent = thCard
+
+        -- Current storage display
+        local currentCap = DataService and DataService:GetStorageCapacityForTH(TownHallState.level)
+        local capText = currentCap
+            and string.format("Storage: %sg / %sw / %sf",
+                formatNumber(currentCap.gold), formatNumber(currentCap.wood), formatNumber(currentCap.food))
+            or "Storage: --"
+
+        local thStorageLabel = Instance.new("TextLabel")
+        thStorageLabel.Size = UDim2.new(0.96, 0, 0, 22)
+        thStorageLabel.Position = UDim2.new(0.02, 0, 0, 35)
+        thStorageLabel.BackgroundTransparency = 1
+        thStorageLabel.Text = capText
+        thStorageLabel.TextColor3 = Color3.fromRGB(200, 200, 180)
+        thStorageLabel.TextXAlignment = Enum.TextXAlignment.Left
+        thStorageLabel.TextScaled = true
+        thStorageLabel.Font = Enum.Font.Gotham
+        thStorageLabel.Parent = thCard
+
+        -- Next level storage
+        local nextCap = DataService and DataService:GetStorageCapacityForTH(TownHallState.level + 1)
+        if TownHallState.level < 10 and nextCap then
+            local nextCapLabel = Instance.new("TextLabel")
+            nextCapLabel.Size = UDim2.new(0.96, 0, 0, 22)
+            nextCapLabel.Position = UDim2.new(0.02, 0, 0, 57)
+            nextCapLabel.BackgroundTransparency = 1
+            nextCapLabel.Text = string.format("Next: %sg / %sw / %sf",
+                formatNumber(nextCap.gold), formatNumber(nextCap.wood), formatNumber(nextCap.food))
+            nextCapLabel.TextColor3 = Color3.fromRGB(150, 200, 150)
+            nextCapLabel.TextXAlignment = Enum.TextXAlignment.Left
+            nextCapLabel.TextScaled = true
+            nextCapLabel.Font = Enum.Font.Gotham
+            nextCapLabel.Parent = thCard
+        end
+
+        -- TH upgrade button or MAX label
+        if TownHallState.level >= 10 then
+            local maxLabel = Instance.new("TextLabel")
+            maxLabel.Size = UDim2.new(0.96, 0, 0, 32)
+            maxLabel.Position = UDim2.new(0.02, 0, 0, 88)
+            maxLabel.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
+            maxLabel.BorderSizePixel = 0
+            maxLabel.Text = "MAX LEVEL"
+            maxLabel.TextColor3 = Color3.fromRGB(255, 215, 0)
+            maxLabel.TextScaled = true
+            maxLabel.Font = Enum.Font.GothamBold
+            maxLabel.Parent = thCard
+        else
+            local thCost = TownHallUpgradeCosts[TownHallState.level]
+            local thUpgradeBtn = Instance.new("TextButton")
+            thUpgradeBtn.Name = "THUpgradeButton"
+            thUpgradeBtn.Size = UDim2.new(0.96, 0, 0, 32)
+            thUpgradeBtn.Position = UDim2.new(0.02, 0, 0, 88)
+            thUpgradeBtn.BackgroundColor3 = Color3.fromRGB(80, 150, 80)
+            thUpgradeBtn.BorderSizePixel = 0
+            thUpgradeBtn.Text = thCost
+                and string.format("UPGRADE TO LEVEL %d - %s gold", TownHallState.level + 1, formatNumber(thCost.gold))
+                or "UPGRADE"
+            thUpgradeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+            thUpgradeBtn.TextScaled = true
+            thUpgradeBtn.Font = Enum.Font.GothamBold
+            thUpgradeBtn.Parent = thCard
+
+            thUpgradeBtn.MouseButton1Click:Connect(function()
+                if TownHallState.level >= 10 then return end
+                local cost = TownHallUpgradeCosts[TownHallState.level]
+                if not cost then return end
+                if not deductPlayerResources(player, cost, "TownHallUpgrade") then return end
+
+                TownHallState.level = TownHallState.level + 1
+                TownHallState.xpToNextLevel = math.floor(TownHallState.xpToNextLevel * 1.5)
+                TownHallState.population = TownHallState.population + 5
+                print(string.format("[TownHall] %s upgraded Town Hall to level %d!", player.Name, TownHallState.level))
+
+                -- Sync to DataService
+                if DataService and _villageOwnerUserId then
+                    local ownerPlayer = Players:GetPlayerByUserId(_villageOwnerUserId)
+                    if ownerPlayer then
+                        local playerData = DataService:GetPlayerData(ownerPlayer)
+                        if playerData then
+                            playerData.townHallLevel = TownHallState.level
+                            local cap = DataService:GetStorageCapacityForTH(TownHallState.level)
+                            if cap then
+                                playerData.storageCapacity = { gold = cap.gold, wood = cap.wood, food = cap.food }
+                            end
+                            -- Sync HUD
+                            local Events = ReplicatedStorage:FindFirstChild("Events")
+                            if Events then
+                                local SyncPlayerData = Events:FindFirstChild("SyncPlayerData")
+                                if SyncPlayerData then SyncPlayerData:FireClient(player, playerData) end
+                            end
+                        end
+                    end
+                end
+
+                -- Refresh GUI
+                createUpgradeCenterGui(player)
+            end)
+        end
+
+        yOffset = yOffset + 140
+
+        -- ======== BUILDING UPGRADES SEPARATOR ========
+        local separator = Instance.new("TextLabel")
+        separator.Size = UDim2.new(0.97, 0, 0, 25)
+        separator.Position = UDim2.new(0.015, 0, 0, yOffset)
+        separator.BackgroundTransparency = 1
+        separator.Text = "--- BUILDING UPGRADES ---"
+        separator.TextColor3 = Color3.fromRGB(180, 160, 120)
+        separator.TextScaled = true
+        separator.Font = Enum.Font.GothamBold
+        separator.Parent = scrollFrame
+
+        yOffset = yOffset + 30
+
+        -- ======== BUILDING UPGRADE CARDS ========
+        for _, buildingName in ipairs(buildingOrder) do
+            local displayName = buildingDisplayNames[buildingName]
+            local config = BuildingUpgradeCosts[buildingName]
+            if not config then continue end
+
+            local level = TownHallState.buildingLevels[buildingName] or 1
+            local maxLevel = config.maxLevel
+            local bonus = (level - 1) * 10
+
+            local card = Instance.new("Frame")
+            card.Name = buildingName .. "Card"
+            card.Size = UDim2.new(0.97, 0, 0, 90)
+            card.Position = UDim2.new(0.015, 0, 0, yOffset)
+            card.BackgroundColor3 = Color3.fromRGB(45, 40, 35)
+            card.BorderSizePixel = 2
+            card.BorderColor3 = Color3.fromRGB(180, 160, 120)
+            card.Parent = scrollFrame
+
+            -- Building name + level
+            local cardTitle = Instance.new("TextLabel")
+            cardTitle.Size = UDim2.new(0.55, 0, 0, 25)
+            cardTitle.Position = UDim2.new(0.02, 0, 0, 5)
+            cardTitle.BackgroundTransparency = 1
+            cardTitle.Text = string.format("%s  Lv.%d/%d", displayName, level, maxLevel)
+            cardTitle.TextColor3 = Color3.fromRGB(255, 200, 50)
+            cardTitle.TextXAlignment = Enum.TextXAlignment.Left
+            cardTitle.TextScaled = true
+            cardTitle.Font = Enum.Font.GothamBold
+            cardTitle.Parent = card
+
+            -- Bonus display
+            local bonusLabel = Instance.new("TextLabel")
+            bonusLabel.Size = UDim2.new(0.4, 0, 0, 25)
+            bonusLabel.Position = UDim2.new(0.58, 0, 0, 5)
+            bonusLabel.BackgroundTransparency = 1
+            bonusLabel.Text = string.format("+%d%% bonus", bonus)
+            bonusLabel.TextColor3 = Color3.fromRGB(150, 200, 150)
+            bonusLabel.TextXAlignment = Enum.TextXAlignment.Right
+            bonusLabel.TextScaled = true
+            bonusLabel.Font = Enum.Font.Gotham
+            bonusLabel.Parent = card
+
+            if level >= maxLevel then
+                -- MAX LEVEL label
+                local maxLabel = Instance.new("TextLabel")
+                maxLabel.Size = UDim2.new(0.96, 0, 0, 28)
+                maxLabel.Position = UDim2.new(0.02, 0, 0, 32)
+                maxLabel.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
+                maxLabel.BorderSizePixel = 0
+                maxLabel.Text = "MAX LEVEL"
+                maxLabel.TextColor3 = Color3.fromRGB(255, 215, 0)
+                maxLabel.TextScaled = true
+                maxLabel.Font = Enum.Font.GothamBold
+                maxLabel.Parent = card
+
+                card.Size = UDim2.new(0.97, 0, 0, 70)
+            else
+                local cost = getUpgradeCost(buildingName, level)
+                -- Cost display
+                local costParts = {}
+                if cost then
+                    if cost.gold then table.insert(costParts, formatNumber(cost.gold) .. "g") end
+                    if cost.wood then table.insert(costParts, formatNumber(cost.wood) .. "w") end
+                    if cost.food then table.insert(costParts, formatNumber(cost.food) .. "f") end
+                end
+
+                local costLabel = Instance.new("TextLabel")
+                costLabel.Size = UDim2.new(0.96, 0, 0, 22)
+                costLabel.Position = UDim2.new(0.02, 0, 0, 32)
+                costLabel.BackgroundTransparency = 1
+                costLabel.Text = "Cost: " .. table.concat(costParts, ", ")
+                costLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
+                costLabel.TextXAlignment = Enum.TextXAlignment.Left
+                costLabel.TextScaled = true
+                costLabel.Font = Enum.Font.Gotham
+                costLabel.Parent = card
+
+                -- Upgrade button
+                local upgradeBtn = Instance.new("TextButton")
+                upgradeBtn.Name = "UpgradeButton"
+                upgradeBtn.Size = UDim2.new(0.96, 0, 0, 28)
+                upgradeBtn.Position = UDim2.new(0.02, 0, 0, 56)
+                upgradeBtn.BackgroundColor3 = Color3.fromRGB(80, 150, 80)
+                upgradeBtn.BorderSizePixel = 0
+                upgradeBtn.Text = "UPGRADE"
+                upgradeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+                upgradeBtn.TextScaled = true
+                upgradeBtn.Font = Enum.Font.GothamBold
+                upgradeBtn.Parent = card
+
+                -- Capture buildingName in closure
+                local bName = buildingName
+                upgradeBtn.MouseButton1Click:Connect(function()
+                    local curLevel = TownHallState.buildingLevels[bName] or 1
+                    local upgCost = getUpgradeCost(bName, curLevel)
+                    if not upgCost then return end
+                    if not deductPlayerResources(player, upgCost, "BuildingUpgrade") then return end
+
+                    TownHallState.buildingLevels[bName] = curLevel + 1
+                    local newLevel = TownHallState.buildingLevels[bName]
+                    print(string.format("[TownHall] %s upgraded %s to Level %d! (+%d%% bonus)",
+                        player.Name, buildingDisplayNames[bName], newLevel, (newLevel - 1) * 10))
+
+                    addTownHallXP(50 * newLevel)
+
+                    -- Refresh GUI
+                    createUpgradeCenterGui(player)
+                end)
+            end
+
+            yOffset = yOffset + (level >= maxLevel and 75 or 95)
+        end
+
+        -- Update canvas size to fit all content
+        scrollFrame.CanvasSize = UDim2.new(0, 0, 0, yOffset + 10)
+
+        -- Bottom close button
+        local closeButton = Instance.new("TextButton")
+        closeButton.Name = "CloseButton"
+        closeButton.Size = UDim2.new(0.5, 0, 0, 40)
+        closeButton.Position = UDim2.new(0.25, 0, 1, -50)
+        closeButton.BackgroundColor3 = Color3.fromRGB(150, 50, 50)
+        closeButton.BorderSizePixel = 0
+        closeButton.Text = "CLOSE"
+        closeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+        closeButton.TextScaled = true
+        closeButton.Font = Enum.Font.GothamBold
+        closeButton.Parent = mainFrame
+
+        -- Close handlers
+        local function closeGui()
+            screenGui:Destroy()
+            activeUpgradeCenterGuis[player.UserId] = nil
+        end
+
+        closeButton.MouseButton1Click:Connect(closeGui)
+        xButton.MouseButton1Click:Connect(closeGui)
+    end
+
+    -- Cleanup GUI when player leaves
+    Players.PlayerRemoving:Connect(function(leavingPlayer)
+        if activeUpgradeCenterGuis[leavingPlayer.UserId] then
+            activeUpgradeCenterGuis[leavingPlayer.UserId]:Destroy()
+            activeUpgradeCenterGuis[leavingPlayer.UserId] = nil
+        end
+    end)
 
     upgradePrompt.Triggered:Connect(function(player)
         if not isVillageOwner(player) then return end
-        local now = tick()
-        local lastTime = lastInteractionTime[player.UserId] or 0
-        local selected = selectedBuildingForUpgrade[player.UserId]
-
-        -- Quick interaction (within 1.5 seconds) cycles or upgrades
-        if now - lastTime < 1.5 and selected then
-            -- Try to upgrade the selected building
-            local success = upgradeBuildingFromCenter(player, selected)
-            if success then
-                selectedBuildingForUpgrade[player.UserId] = nil
-            else
-                -- Cycle to next building if upgrade failed
-                local currentIdx = 1
-                for i, name in ipairs(buildingOrder) do
-                    if name == selected then
-                        currentIdx = i
-                        break
-                    end
-                end
-
-                for offset = 1, #buildingOrder do
-                    local nextIdx = ((currentIdx - 1 + offset) % #buildingOrder) + 1
-                    local buildingName = buildingOrder[nextIdx]
-                    local level = TownHallState.buildingLevels[buildingName] or 1
-                    local config = BuildingUpgradeCosts[buildingName]
-                    if config and level < config.maxLevel then
-                        selectedBuildingForUpgrade[player.UserId] = buildingName
-                        local cost = getUpgradeCost(buildingName, level)
-                        local costParts = {}
-                        if cost.gold then table.insert(costParts, string.format("%dg", cost.gold)) end
-                        if cost.wood then table.insert(costParts, string.format("%dw", cost.wood)) end
-                        if cost.food then table.insert(costParts, string.format("%df", cost.food)) end
-                        print(string.format("[TownHall] >> Selected: %s (Lv%d -> %d) | Cost: %s",
-                            buildingDisplayNames[buildingName], level, level + 1, table.concat(costParts, "/")))
-                        break
-                    end
-                end
-            end
-        else
-            -- Show full upgrade menu
-            print("[TownHall] ============ BUILDING UPGRADE CENTER ============")
-            print(string.format("  Town Hall Level: %d | Total Bonuses Active!", TownHallState.level))
-            print("")
-            print("  BUILDING LEVELS & PRODUCTION BONUSES:")
-            print("  ----------------------------------------")
-
-            for idx, buildingName in ipairs(buildingOrder) do
-                local level = TownHallState.buildingLevels[buildingName] or 1
-                local config = BuildingUpgradeCosts[buildingName]
-                local maxLevel = config and config.maxLevel or 10
-                local bonus = (level - 1) * 10
-                local displayName = buildingDisplayNames[buildingName]
-
-                if level >= maxLevel then
-                    print(string.format("  %d. %s: Lv%d (MAX) | +%d%% production",
-                        idx, displayName, level, bonus))
-                else
-                    local cost = getUpgradeCost(buildingName, level)
-                    local costParts = {}
-                    if cost then
-                        if cost.gold then table.insert(costParts, string.format("%dg", cost.gold)) end
-                        if cost.wood then table.insert(costParts, string.format("%dw", cost.wood)) end
-                        if cost.food then table.insert(costParts, string.format("%df", cost.food)) end
-                    end
-                    print(string.format("  %d. %s: Lv%d/%d | +%d%% | Next: %s",
-                        idx, displayName, level, maxLevel, bonus, table.concat(costParts, "/")))
-                end
-            end
-
-            print("")
-            print("  YOUR RESOURCES:")
-            print(string.format("    Gold: %d | Wood: %d | Food: %d",
-                GoldMineState.chestGold, LumberMillState.woodStorage, FarmState.foodStorage))
-            print("")
-
-            -- Auto-select first upgradeable building
-            for _, buildingName in ipairs(buildingOrder) do
-                local level = TownHallState.buildingLevels[buildingName] or 1
-                local config = BuildingUpgradeCosts[buildingName]
-                if config and level < config.maxLevel then
-                    selectedBuildingForUpgrade[player.UserId] = buildingName
-                    print(string.format("  >> %s selected. Interact again to UPGRADE!", buildingDisplayNames[buildingName]))
-                    print("     (Interact quickly to cycle buildings)")
-                    break
-                end
-            end
-            print("==========================================================")
-        end
-
-        lastInteractionTime[player.UserId] = now
+        createUpgradeCenterGui(player)
+        print(string.format("[TownHall] %s opened Upgrade Center", player.Name))
     end)
 
     -- ========================================================================
@@ -14303,6 +14564,17 @@ local function applyLoadedState(savedState)
         TownHallState.xp = th.xp or 0
         TownHallState.xpToNextLevel = th.xpToNextLevel or 100
         TownHallState.population = th.population or 10
+
+        -- Sync TH level to DataService
+        if DataService and _villageOwnerUserId then
+            local ownerPlayer = Players:GetPlayerByUserId(_villageOwnerUserId)
+            if ownerPlayer then
+                local playerData = DataService:GetPlayerData(ownerPlayer)
+                if playerData then
+                    playerData.townHallLevel = TownHallState.level
+                end
+            end
+        end
         if th.jewelCase then
             TownHallState.jewelCase.maxSlots = th.jewelCase.maxSlots or 3
             if th.jewelCase.slots then
