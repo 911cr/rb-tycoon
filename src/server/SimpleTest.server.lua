@@ -4914,21 +4914,11 @@ local function createGoldMine()
         notifyPlayer(player, "HireWorker", true, "Miner hired!")
         local minerId = minerCount + 1
 
-        -- Remove one waiting worker from the stand (they walk away to work)
+        -- Remove one waiting worker from the stand
         local waitingWorker = table.remove(GoldMineState.waitingMiners, 1)
         if waitingWorker then
-            -- Make the waiting worker walk away before destroying
-            local workerRoot = waitingWorker:FindFirstChild("HumanoidRootPart") or waitingWorker:FindFirstChild("Torso")
-            if workerRoot then
-                local walkAwayPos = GoldMineState.positions.workerSpawn + Vector3.new(minerCount * 3, 0, 0)
-                walkNPCTo(waitingWorker, walkAwayPos, 6, function()
-                    _npcAnimTracks[waitingWorker] = nil
-                    waitingWorker:Destroy()
-                end)
-            else
-                _npcAnimTracks[waitingWorker] = nil
-                waitingWorker:Destroy()
-            end
+            _npcAnimTracks[waitingWorker] = nil
+            waitingWorker:Destroy()
         end
 
         -- Update sign if no more waiting workers
@@ -5186,21 +5176,11 @@ local function createGoldMine()
         notifyPlayer(player, "HireWorker", true, "Collector hired!")
         local collectorId = collectorCount + 1
 
-        -- Remove one waiting worker from the stand (they walk away to work)
+        -- Remove one waiting worker from the stand
         local waitingWorker = table.remove(GoldMineState.waitingCollectors, 1)
         if waitingWorker then
-            -- Make the waiting worker walk away before destroying
-            local workerRoot = waitingWorker:FindFirstChild("HumanoidRootPart") or waitingWorker:FindFirstChild("Torso")
-            if workerRoot then
-                local walkAwayPos = GoldMineState.positions.workerSpawn + Vector3.new(collectorCount * 3 + 10, 0, 0)
-                walkNPCTo(waitingWorker, walkAwayPos, 6, function()
-                    _npcAnimTracks[waitingWorker] = nil
-                    waitingWorker:Destroy()
-                end)
-            else
-                _npcAnimTracks[waitingWorker] = nil
-                waitingWorker:Destroy()
-            end
+            _npcAnimTracks[waitingWorker] = nil
+            waitingWorker:Destroy()
         end
 
         -- Update sign if no more waiting workers
@@ -7815,18 +7795,11 @@ local function createLumberMill()
         notifyPlayer(player, "HireWorker", true, "Logger hired!")
         local loggerId = loggerCount + 1
 
-        -- Remove one waiting worker from the stand (they walk away to work)
+        -- Remove one waiting worker from the stand
         local waitingWorker = table.remove(LumberMillState.waitingLoggers, 1)
         if waitingWorker then
-            -- Make the waiting worker walk away before destroying
-            setNPCStatus(waitingWorker, "Hired!")
-            task.spawn(function()
-                local walkAwayPos = LumberMillState.positions.workerSpawn + Vector3.new(loggerCount * 3, 0, 0)
-                walkNPCTo(waitingWorker, walkAwayPos, 6, function()
-                    _npcAnimTracks[waitingWorker] = nil
-                    waitingWorker:Destroy()
-                end)
-            end)
+            _npcAnimTracks[waitingWorker] = nil
+            waitingWorker:Destroy()
         end
 
         -- Check if booth is now empty
@@ -8026,18 +7999,11 @@ local function createLumberMill()
         if not deductPlayerResources(player, {gold = cost.gold, food = cost.food}, "LumberMill") then return end
         local haulerId = haulerCount + 1
 
-        -- Remove one waiting worker from the stand (they walk away to work)
+        -- Remove one waiting worker from the stand
         local waitingWorker = table.remove(LumberMillState.waitingHaulers, 1)
         if waitingWorker then
-            -- Make the waiting worker walk away before destroying
-            setNPCStatus(waitingWorker, "Hired!")
-            task.spawn(function()
-                local walkAwayPos = LumberMillState.positions.workerSpawn + Vector3.new(haulerCount * 3 + 10, 0, 0)
-                walkNPCTo(waitingWorker, walkAwayPos, 6, function()
-                    _npcAnimTracks[waitingWorker] = nil
-                    waitingWorker:Destroy()
-                end)
-            end)
+            _npcAnimTracks[waitingWorker] = nil
+            waitingWorker:Destroy()
         end
 
         -- Check if booth is now empty
@@ -10316,21 +10282,11 @@ local function createFarm(farmNumber)
         notifyPlayer(player, "HireWorker", true, "Farmer hired!")
         local farmerId = farmerCount + 1
 
-        -- Remove one waiting worker from the stand (they walk away to work)
+        -- Remove one waiting worker from the stand
         local waitingWorker = table.remove(FarmState.waitingFarmers, 1)
         if waitingWorker then
-            -- Make the waiting worker walk away before destroying
-            local workerRoot = waitingWorker:FindFirstChild("HumanoidRootPart") or waitingWorker:FindFirstChild("Torso")
-            if workerRoot then
-                local walkAwayPos = FarmState.positions.workerSpawn + Vector3.new(farmerCount * 3, 0, 0)
-                walkNPCTo(waitingWorker, walkAwayPos, 6, function()
-                    _npcAnimTracks[waitingWorker] = nil
-                    waitingWorker:Destroy()
-                end)
-            else
-                _npcAnimTracks[waitingWorker] = nil
-                waitingWorker:Destroy()
-            end
+            _npcAnimTracks[waitingWorker] = nil
+            waitingWorker:Destroy()
         end
 
         -- Update sign if no more waiting workers
@@ -10574,21 +10530,11 @@ local function createFarm(farmNumber)
         end
         notifyPlayer(player, "HireWorker", true, "Carrier hired!")
 
-        -- Remove one waiting worker from the stand (they walk away to work)
+        -- Remove one waiting worker from the stand
         local waitingWorker = table.remove(FarmState.waitingCarriers, 1)
         if waitingWorker then
-            -- Make the waiting worker walk away before destroying
-            local workerRoot = waitingWorker:FindFirstChild("HumanoidRootPart") or waitingWorker:FindFirstChild("Torso")
-            if workerRoot then
-                local walkAwayPos = FarmState.positions.workerSpawn + Vector3.new(carrierCount * 3 + 10, 0, 0)
-                walkNPCTo(waitingWorker, walkAwayPos, 6, function()
-                    _npcAnimTracks[waitingWorker] = nil
-                    waitingWorker:Destroy()
-                end)
-            else
-                _npcAnimTracks[waitingWorker] = nil
-                waitingWorker:Destroy()
-            end
+            _npcAnimTracks[waitingWorker] = nil
+            waitingWorker:Destroy()
         end
 
         -- Update sign if no more waiting workers
