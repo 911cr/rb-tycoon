@@ -1154,7 +1154,7 @@ local function createBuildingExterior(name, position, size, roofColor, wallColor
     ridge.Orientation = Vector3.new(0, rotation, 0)
     ridge.Anchored = true
     ridge.Material = Enum.Material.Slate
-    ridge.Color = Color3.fromRGB(roofColor.R * 200, roofColor.G * 200, roofColor.B * 200)
+    ridge.Color = Color3.fromRGB(math.floor(roofColor.R * 255 * 0.8), math.floor(roofColor.G * 255 * 0.8), math.floor(roofColor.B * 255 * 0.8))
     ridge.Parent = exterior
 
     -- Entrance trigger (invisible, walk-through teleport)
@@ -3965,6 +3965,10 @@ local function createGoldMine()
         bLight.Parent = beamLantern
     end
 
+    -- Mine cart tracks off to the RIGHT side of entrance (not blocking path)
+    local trackColor = Color3.fromRGB(80, 70, 60)
+    local trackZOffset = 8  -- Offset tracks to the right side
+
     -- Mine cart wheels (4 small cylinders)
     for _, wOff in {{-0.8, -1.2}, {-0.8, 1.2}, {0.8, -1.2}, {0.8, 1.2}} do
         local cartWheel = Instance.new("Part")
@@ -3979,10 +3983,6 @@ local function createGoldMine()
         cartWheel.CanCollide = false
         cartWheel.Parent = mineEntrance
     end
-
-    -- Mine cart tracks off to the RIGHT side of entrance (not blocking path)
-    local trackColor = Color3.fromRGB(80, 70, 60)
-    local trackZOffset = 8  -- Offset tracks to the right side
     for _, zOff in ipairs({-1.2, 1.2}) do
         local rail = Instance.new("Part")
         rail.Name = "Rail"
