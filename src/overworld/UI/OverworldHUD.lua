@@ -7,6 +7,8 @@
     - Player resources
     - Nearby player count
     - Teleport loading screen
+
+    Uses the Components design system for fantasy-medieval themed styling.
 ]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -18,6 +20,10 @@ repeat task.wait() until ReplicatedStorage:FindFirstChild("Shared")
 
 local OverworldConfig = require(ReplicatedStorage.Shared.Constants.OverworldConfig)
 local Signal = require(ReplicatedStorage.Shared.Modules.Signal)
+local Components = require(script.Parent.Components)
+
+local C = Components.Colors
+local S = Components.Sizes
 
 local OverworldHUD = {}
 OverworldHUD.__index = OverworldHUD
@@ -47,6 +53,8 @@ local _defenseLogButton: TextButton? = nil
 local _shieldFrame: Frame? = nil
 local _shieldTimerLabel: TextLabel? = nil
 local _shieldWarningLabel: TextLabel? = nil
+local _shieldStroke: UIStroke? = nil
+local _shieldIconLabel: TextLabel? = nil
 local _shieldPulseActive = false
 
 -- Minimap state
@@ -176,7 +184,7 @@ local function refreshBaseDotPositions()
         if not _homeDot then
             _homeDot = Instance.new("Frame")
             _homeDot.Name = "HomeDot"
-            _homeDot.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+            _homeDot.BackgroundColor3 = Color3.new(1, 1, 1)
             _homeDot.BorderSizePixel = 0
             _homeDot.ZIndex = 4
             _homeDot.Parent = _miniMapFrame
@@ -222,13 +230,13 @@ local function refreshBaseDotPositions()
         local zone = OverworldConfig.GetZone(playerX, playerZ)
         if zone == "safe" then
             _zoneLabel.Text = "Safe Zone"
-            _zoneLabel.TextColor3 = Color3.fromRGB(100, 200, 100)
+            _zoneLabel.TextColor3 = C.Success
         elseif zone == "forbidden" then
             _zoneLabel.Text = "Forbidden Zone"
-            _zoneLabel.TextColor3 = Color3.fromRGB(200, 80, 80)
+            _zoneLabel.TextColor3 = C.Danger
         else
             _zoneLabel.Text = "Wilderness"
-            _zoneLabel.TextColor3 = Color3.fromRGB(220, 180, 80)
+            _zoneLabel.TextColor3 = C.Warning
         end
     end
 end
@@ -238,61 +246,7 @@ end
 -- ============================================================================
 
 --[[
-    Creates a resource display bar.
-]]
-local function createResourceBar(name: string, color: Color3, imageId: string, parent: Frame): Frame
-    local frame = Instance.new("Frame")
-    frame.Name = name .. "Bar"
-    frame.Size = UDim2.new(0, 120, 0, 35)
-    frame.BackgroundColor3 = Color3.fromRGB(40, 38, 35)
-    frame.BorderSizePixel = 0
-    frame.Parent = parent
-
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 6)
-    corner.Parent = frame
-
-    -- Icon
-    local icon = Instance.new("Frame")
-    icon.Name = "Icon"
-    icon.Size = UDim2.new(0, 25, 0, 25)
-    icon.Position = UDim2.new(0, 5, 0.5, -12)
-    icon.BackgroundColor3 = color
-    icon.Parent = frame
-
-    local iconCorner = Instance.new("UICorner")
-    iconCorner.CornerRadius = UDim.new(0, 4)
-    iconCorner.Parent = icon
-
-    local iconImage = Instance.new("ImageLabel")
-    iconImage.Name = "IconImage"
-    iconImage.Size = UDim2.new(0, 19, 0, 19)
-    iconImage.Position = UDim2.new(0.5, 0, 0.5, 0)
-    iconImage.AnchorPoint = Vector2.new(0.5, 0.5)
-    iconImage.BackgroundTransparency = 1
-    iconImage.Image = imageId
-    iconImage.ImageColor3 = Color3.new(1, 1, 1)
-    iconImage.ScaleType = Enum.ScaleType.Fit
-    iconImage.Parent = icon
-
-    -- Value
-    local valueLabel = Instance.new("TextLabel")
-    valueLabel.Name = "Value"
-    valueLabel.Size = UDim2.new(1, -40, 1, 0)
-    valueLabel.Position = UDim2.new(0, 35, 0, 0)
-    valueLabel.BackgroundTransparency = 1
-    valueLabel.Text = "0"
-    valueLabel.TextColor3 = Color3.fromRGB(240, 230, 200)
-    valueLabel.TextSize = 16
-    valueLabel.Font = Enum.Font.GothamBold
-    valueLabel.TextXAlignment = Enum.TextXAlignment.Left
-    valueLabel.Parent = frame
-
-    return frame
-end
-
---[[
-    Creates the HUD UI.
+    Creates the HUD UI using the Components design system.
 ]]
 local function createHUD(): ScreenGui
     local screenGui = Instance.new("ScreenGui")
@@ -300,383 +254,362 @@ local function createHUD(): ScreenGui
     screenGui.ResetOnSpawn = false
     screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
-    -- Resources container (top-left)
-    local resourcesFrame = Instance.new("Frame")
-    resourcesFrame.Name = "Resources"
-    resourcesFrame.Size = UDim2.new(0, 220, 0, 150)
-    resourcesFrame.Position = UDim2.new(0, 15, 0, 15)
-    resourcesFrame.BackgroundTransparency = 1
-    resourcesFrame.Parent = screenGui
+    -- ================================================================
+    -- Resources panel (top-left) — ornate fantasy panel
+    -- ================================================================
+    local resourcesPanel = Components.CreateFrame({
+        Name = "Resources",
+        Size = UDim2.new(0, 160, 0, 170),
+        Position = UDim2.new(0, 15, 0, 15),
+        BackgroundColor = C.Panel,
+        CornerRadius = S.CornerRadiusLarge,
+        BorderColor = C.PanelBorder,
+        Parent = screenGui,
+    })
 
-    local resourcesLayout = Instance.new("UIListLayout")
-    resourcesLayout.FillDirection = Enum.FillDirection.Vertical
-    resourcesLayout.Padding = UDim.new(0, 5)
-    resourcesLayout.Parent = resourcesFrame
+    -- Panel gradient for depth
+    local resGradient = Instance.new("UIGradient")
+    resGradient.Rotation = 90
+    resGradient.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.new(1, 1, 1)),
+        ColorSequenceKeypoint.new(1, Color3.new(0.85, 0.85, 0.85)),
+    })
+    resGradient.Parent = resourcesPanel
 
-    -- Gold bar
-    createResourceBar("Gold", Color3.fromRGB(255, 200, 50), "rbxassetid://132769554", resourcesFrame)
+    local resPadding = Instance.new("UIPadding")
+    resPadding.PaddingTop = UDim.new(0, 8)
+    resPadding.PaddingBottom = UDim.new(0, 8)
+    resPadding.PaddingLeft = UDim.new(0, 8)
+    resPadding.PaddingRight = UDim.new(0, 8)
+    resPadding.Parent = resourcesPanel
 
-    -- Wood bar
-    createResourceBar("Wood", Color3.fromRGB(139, 100, 60), "rbxassetid://16537944090", resourcesFrame)
+    Components.CreateListLayout({
+        Padding = UDim.new(0, 6),
+        Parent = resourcesPanel,
+    })
 
-    -- Food bar
-    createResourceBar("Food", Color3.fromRGB(100, 180, 80), "rbxassetid://2958706766", resourcesFrame)
+    -- Resource displays using Components design system
+    Components.CreateResourceDisplay({
+        ResourceType = "Gold",
+        Size = UDim2.new(1, 0, 0, 38),
+        Parent = resourcesPanel,
+    })
 
-    -- Raid risk indicator (below resource bars)
-    local riskLabel = Instance.new("TextLabel")
-    riskLabel.Name = "RiskIndicator"
-    riskLabel.Size = UDim2.new(0, 220, 0, 18)
-    riskLabel.BackgroundTransparency = 1
-    riskLabel.Text = ""
-    riskLabel.TextColor3 = Color3.fromRGB(200, 130, 80)
-    riskLabel.TextSize = 10
-    riskLabel.Font = Enum.Font.Gotham
-    riskLabel.TextXAlignment = Enum.TextXAlignment.Left
+    Components.CreateResourceDisplay({
+        ResourceType = "Wood",
+        Size = UDim2.new(1, 0, 0, 38),
+        Parent = resourcesPanel,
+    })
+
+    Components.CreateResourceDisplay({
+        ResourceType = "Food",
+        Size = UDim2.new(1, 0, 0, 38),
+        Parent = resourcesPanel,
+    })
+
+    -- Raid risk indicator
+    local riskLabel = Components.CreateLabel({
+        Name = "RiskIndicator",
+        Text = "",
+        Size = UDim2.new(1, 0, 0, 16),
+        TextColor = C.Warning,
+        TextSize = S.FontSizeSmall,
+        Font = Enum.Font.Gotham,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Parent = resourcesPanel,
+    })
     riskLabel.TextTransparency = 0.2
-    riskLabel.Parent = resourcesFrame
 
     _riskLabel = riskLabel
-    _resourcesFrame = resourcesFrame
+    _resourcesFrame = resourcesPanel
 
     -- ================================================================
-    -- Mini-map container (top-right) — 200x200 bird's eye view
+    -- Mini-map (top-right) — ornate framed bird's eye view
     -- ================================================================
-    local miniMapFrame = Instance.new("Frame")
-    miniMapFrame.Name = "MiniMap"
-    miniMapFrame.Size = UDim2.new(0, MINIMAP_SIZE, 0, MINIMAP_SIZE)
-    miniMapFrame.Position = UDim2.new(1, -(MINIMAP_SIZE + 15), 0, 15)
-    miniMapFrame.BackgroundColor3 = Color3.fromRGB(30, 45, 25)
-    miniMapFrame.BorderSizePixel = 0
+    local miniMapFrame = Components.CreateFrame({
+        Name = "MiniMap",
+        Size = UDim2.new(0, MINIMAP_SIZE, 0, MINIMAP_SIZE),
+        Position = UDim2.new(1, -(MINIMAP_SIZE + 15), 0, 15),
+        BackgroundColor = Color3.fromRGB(30, 45, 25),
+        CornerRadius = S.CornerRadius,
+        BorderColor = C.GoldTrim,
+        Parent = screenGui,
+    })
     miniMapFrame.ClipsDescendants = true
-    miniMapFrame.Parent = screenGui
-
-    local miniMapCorner = Instance.new("UICorner")
-    miniMapCorner.CornerRadius = UDim.new(0, 8)
-    miniMapCorner.Parent = miniMapFrame
-
-    local miniMapStroke = Instance.new("UIStroke")
-    miniMapStroke.Color = Color3.fromRGB(80, 100, 60)
-    miniMapStroke.Thickness = 2
-    miniMapStroke.Parent = miniMapFrame
 
     -- Compass "N" indicator at top center
-    local compassLabel = Instance.new("TextLabel")
-    compassLabel.Name = "Compass"
-    compassLabel.Size = UDim2.new(0, 16, 0, 14)
-    compassLabel.Position = UDim2.new(0.5, -8, 0, 2)
-    compassLabel.BackgroundTransparency = 1
-    compassLabel.Text = "N"
-    compassLabel.TextColor3 = Color3.fromRGB(200, 200, 180)
-    compassLabel.TextSize = 10
-    compassLabel.Font = Enum.Font.GothamBold
+    local compassLabel = Components.CreateLabel({
+        Name = "Compass",
+        Text = "N",
+        Size = UDim2.new(0, 16, 0, 14),
+        Position = UDim2.new(0.5, -8, 0, 2),
+        TextColor = C.Parchment,
+        TextSize = 10,
+        Font = Enum.Font.GothamBold,
+        TextXAlignment = Enum.TextXAlignment.Center,
+        Parent = miniMapFrame,
+    })
     compassLabel.ZIndex = 5
-    compassLabel.Parent = miniMapFrame
 
     -- Player position indicator (always centered)
-    local playerDot = Instance.new("Frame")
-    playerDot.Name = "PlayerDot"
-    playerDot.Size = UDim2.new(0, 8, 0, 8)
-    playerDot.Position = UDim2.new(0.5, -4, 0.5, -4)
-    playerDot.BackgroundColor3 = Color3.fromRGB(100, 200, 255)
+    local playerDot = Components.CreateFrame({
+        Name = "PlayerDot",
+        Size = UDim2.new(0, 8, 0, 8),
+        Position = UDim2.new(0.5, -4, 0.5, -4),
+        BackgroundColor = Color3.fromRGB(100, 200, 255),
+        CornerRadius = UDim.new(1, 0),
+        Parent = miniMapFrame,
+    })
     playerDot.ZIndex = 6
-    playerDot.Parent = miniMapFrame
-
-    local dotCorner = Instance.new("UICorner")
-    dotCorner.CornerRadius = UDim.new(1, 0)
-    dotCorner.Parent = playerDot
 
     -- Player dot glow ring
-    local dotGlow = Instance.new("Frame")
-    dotGlow.Name = "DotGlow"
-    dotGlow.Size = UDim2.new(0, 14, 0, 14)
-    dotGlow.Position = UDim2.new(0.5, -7, 0.5, -7)
-    dotGlow.BackgroundColor3 = Color3.fromRGB(100, 200, 255)
+    local dotGlow = Components.CreateFrame({
+        Name = "DotGlow",
+        Size = UDim2.new(0, 14, 0, 14),
+        Position = UDim2.new(0.5, -7, 0.5, -7),
+        BackgroundColor = Color3.fromRGB(100, 200, 255),
+        CornerRadius = UDim.new(1, 0),
+        Parent = miniMapFrame,
+    })
     dotGlow.BackgroundTransparency = 0.7
     dotGlow.ZIndex = 5
-    dotGlow.Parent = miniMapFrame
 
-    local glowCorner = Instance.new("UICorner")
-    glowCorner.CornerRadius = UDim.new(1, 0)
-    glowCorner.Parent = dotGlow
-
-    -- Zone label at bottom
-    local zoneLabel = Instance.new("TextLabel")
-    zoneLabel.Name = "ZoneLabel"
-    zoneLabel.Size = UDim2.new(1, 0, 0, 16)
-    zoneLabel.Position = UDim2.new(0, 0, 1, -34)
-    zoneLabel.BackgroundTransparency = 1
-    zoneLabel.Text = "Safe Zone"
-    zoneLabel.TextColor3 = Color3.fromRGB(100, 200, 100)
-    zoneLabel.TextSize = 9
-    zoneLabel.Font = Enum.Font.GothamBold
+    -- Zone label at bottom of minimap
+    local zoneLabel = Components.CreateLabel({
+        Name = "ZoneLabel",
+        Text = "Safe Zone",
+        Size = UDim2.new(1, 0, 0, 16),
+        Position = UDim2.new(0, 0, 1, -34),
+        TextColor = C.Success,
+        TextSize = 9,
+        Font = Enum.Font.GothamBold,
+        TextXAlignment = Enum.TextXAlignment.Center,
+        Parent = miniMapFrame,
+    })
     zoneLabel.ZIndex = 5
-    zoneLabel.Parent = miniMapFrame
-
     _zoneLabel = zoneLabel
 
     -- Nearby count label
-    local nearbyLabel = Instance.new("TextLabel")
-    nearbyLabel.Name = "NearbyCount"
-    nearbyLabel.Size = UDim2.new(1, 0, 0, 16)
-    nearbyLabel.Position = UDim2.new(0, 0, 1, -18)
-    nearbyLabel.BackgroundTransparency = 1
-    nearbyLabel.Text = "0 players nearby"
-    nearbyLabel.TextColor3 = Color3.fromRGB(120, 150, 100)
-    nearbyLabel.TextSize = 9
-    nearbyLabel.Font = Enum.Font.Gotham
+    local nearbyLabel = Components.CreateLabel({
+        Name = "NearbyCount",
+        Text = "0 players nearby",
+        Size = UDim2.new(1, 0, 0, 16),
+        Position = UDim2.new(0, 0, 1, -18),
+        TextColor = C.TextMuted,
+        TextSize = 9,
+        Font = Enum.Font.Gotham,
+        TextXAlignment = Enum.TextXAlignment.Center,
+        Parent = miniMapFrame,
+    })
     nearbyLabel.ZIndex = 5
-    nearbyLabel.Parent = miniMapFrame
 
     _miniMapFrame = miniMapFrame
 
-    -- Shield timer display (below mini-map, top-right area)
-    local shieldFrame = Instance.new("Frame")
-    shieldFrame.Name = "ShieldDisplay"
-    shieldFrame.Size = UDim2.new(0, MINIMAP_SIZE, 0, 60)
-    shieldFrame.Position = UDim2.new(1, -(MINIMAP_SIZE + 15), 0, MINIMAP_SIZE + 25)
-    shieldFrame.BackgroundColor3 = Color3.fromRGB(20, 40, 60)
-    shieldFrame.BorderSizePixel = 0
+    -- ================================================================
+    -- Shield timer display (below minimap)
+    -- ================================================================
+    local shieldFrame = Components.CreateFrame({
+        Name = "ShieldDisplay",
+        Size = UDim2.new(0, MINIMAP_SIZE, 0, 60),
+        Position = UDim2.new(1, -(MINIMAP_SIZE + 15), 0, MINIMAP_SIZE + 25),
+        BackgroundColor = Color3.fromRGB(20, 40, 60),
+        CornerRadius = S.CornerRadius,
+        Parent = screenGui,
+    })
     shieldFrame.Visible = false
-    shieldFrame.Parent = screenGui
 
-    local shieldCorner = Instance.new("UICorner")
-    shieldCorner.CornerRadius = UDim.new(0, 8)
-    shieldCorner.Parent = shieldFrame
-
+    -- Shield stroke (stored for dynamic color changes)
     local shieldStroke = Instance.new("UIStroke")
     shieldStroke.Name = "ShieldStroke"
     shieldStroke.Color = Color3.fromRGB(60, 150, 220)
     shieldStroke.Thickness = 2
     shieldStroke.Parent = shieldFrame
+    _shieldStroke = shieldStroke
 
     -- Shield icon/label
-    local shieldIconLabel = Instance.new("TextLabel")
-    shieldIconLabel.Name = "ShieldIcon"
-    shieldIconLabel.Size = UDim2.new(0, 30, 0, 30)
-    shieldIconLabel.Position = UDim2.new(0, 8, 0, 5)
-    shieldIconLabel.BackgroundTransparency = 1
-    shieldIconLabel.Text = "SHIELD"
-    shieldIconLabel.TextColor3 = Color3.fromRGB(80, 180, 255)
-    shieldIconLabel.TextSize = 8
-    shieldIconLabel.Font = Enum.Font.GothamBold
-    shieldIconLabel.Parent = shieldFrame
+    local shieldIconLabel = Components.CreateLabel({
+        Name = "ShieldIcon",
+        Text = "SHIELD",
+        Size = UDim2.new(0, 30, 0, 30),
+        Position = UDim2.new(0, 8, 0, 5),
+        TextColor = Color3.fromRGB(80, 180, 255),
+        TextSize = 8,
+        Font = Enum.Font.GothamBold,
+        Parent = shieldFrame,
+    })
+    _shieldIconLabel = shieldIconLabel
 
     -- Shield timer label
-    local shieldTimerLabel = Instance.new("TextLabel")
-    shieldTimerLabel.Name = "TimerLabel"
-    shieldTimerLabel.Size = UDim2.new(1, -45, 0, 22)
-    shieldTimerLabel.Position = UDim2.new(0, 40, 0, 6)
-    shieldTimerLabel.BackgroundTransparency = 1
-    shieldTimerLabel.Text = "Shield: --:--"
-    shieldTimerLabel.TextColor3 = Color3.fromRGB(80, 200, 255)
-    shieldTimerLabel.TextSize = 14
-    shieldTimerLabel.Font = Enum.Font.GothamBold
-    shieldTimerLabel.TextXAlignment = Enum.TextXAlignment.Left
-    shieldTimerLabel.Parent = shieldFrame
-
+    local shieldTimerLabel = Components.CreateLabel({
+        Name = "TimerLabel",
+        Text = "Shield: --:--",
+        Size = UDim2.new(1, -45, 0, 22),
+        Position = UDim2.new(0, 40, 0, 6),
+        TextColor = Color3.fromRGB(80, 200, 255),
+        TextSize = S.FontSizeMedium,
+        Font = Enum.Font.GothamBold,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Parent = shieldFrame,
+    })
     _shieldTimerLabel = shieldTimerLabel
 
     -- Shield warning text
-    local shieldWarningLabel = Instance.new("TextLabel")
-    shieldWarningLabel.Name = "WarningLabel"
-    shieldWarningLabel.Size = UDim2.new(1, -12, 0, 18)
-    shieldWarningLabel.Position = UDim2.new(0, 6, 0, 34)
-    shieldWarningLabel.BackgroundTransparency = 1
-    shieldWarningLabel.Text = "Attacking breaks your shield!"
-    shieldWarningLabel.TextColor3 = Color3.fromRGB(200, 180, 140)
-    shieldWarningLabel.TextSize = 9
-    shieldWarningLabel.Font = Enum.Font.Gotham
-    shieldWarningLabel.TextXAlignment = Enum.TextXAlignment.Center
-    shieldWarningLabel.Parent = shieldFrame
-
+    local shieldWarningLabel = Components.CreateLabel({
+        Name = "WarningLabel",
+        Text = "Attacking breaks your shield!",
+        Size = UDim2.new(1, -12, 0, 18),
+        Position = UDim2.new(0, 6, 0, 34),
+        TextColor = C.TextSecondary,
+        TextSize = 9,
+        Font = Enum.Font.Gotham,
+        TextXAlignment = Enum.TextXAlignment.Center,
+        Parent = shieldFrame,
+    })
     _shieldWarningLabel = shieldWarningLabel
     _shieldFrame = shieldFrame
 
-    -- Go to City button (bottom center)
-    local goToCityButton = Instance.new("TextButton")
-    goToCityButton.Name = "GoToCityButton"
-    goToCityButton.Size = UDim2.new(0, 200, 0, 50)
-    goToCityButton.Position = UDim2.new(0.5, -100, 1, -70)
-    goToCityButton.BackgroundColor3 = Color3.fromRGB(80, 60, 40)
-    goToCityButton.BorderSizePixel = 0
-    goToCityButton.Text = "Go to City"
-    goToCityButton.TextColor3 = Color3.fromRGB(255, 230, 180)
-    goToCityButton.TextSize = 22
-    goToCityButton.Font = Enum.Font.GothamBold
-    goToCityButton.Parent = screenGui
+    -- ================================================================
+    -- Bottom action bar — ornate panel with centered buttons
+    -- ================================================================
+    local actionBar = Components.CreateFrame({
+        Name = "ActionBar",
+        Size = UDim2.new(0, 560, 0, 60),
+        Position = UDim2.new(0.5, 0, 1, -15),
+        AnchorPoint = Vector2.new(0.5, 1),
+        BackgroundColor = C.Panel,
+        CornerRadius = S.CornerRadiusLarge,
+        BorderColor = C.PanelBorder,
+        Parent = screenGui,
+    })
 
-    local buttonCorner = Instance.new("UICorner")
-    buttonCorner.CornerRadius = UDim.new(0, 10)
-    buttonCorner.Parent = goToCityButton
+    -- Action bar gradient for depth
+    local actionGradient = Instance.new("UIGradient")
+    actionGradient.Rotation = 90
+    actionGradient.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.new(1, 1, 1)),
+        ColorSequenceKeypoint.new(1, Color3.new(0.85, 0.85, 0.85)),
+    })
+    actionGradient.Parent = actionBar
 
-    local buttonStroke = Instance.new("UIStroke")
-    buttonStroke.Color = Color3.fromRGB(139, 100, 60)
-    buttonStroke.Thickness = 3
-    buttonStroke.Parent = goToCityButton
+    local actionPadding = Instance.new("UIPadding")
+    actionPadding.PaddingTop = UDim.new(0, 8)
+    actionPadding.PaddingBottom = UDim.new(0, 8)
+    actionPadding.PaddingLeft = UDim.new(0, 10)
+    actionPadding.PaddingRight = UDim.new(0, 10)
+    actionPadding.Parent = actionBar
 
-    -- Hover effect
-    goToCityButton.MouseEnter:Connect(function()
-        TweenService:Create(goToCityButton, TweenInfo.new(0.2), {
-            BackgroundColor3 = Color3.fromRGB(100, 80, 50)
-        }):Play()
-    end)
+    Components.CreateListLayout({
+        FillDirection = Enum.FillDirection.Horizontal,
+        HorizontalAlignment = Enum.HorizontalAlignment.Center,
+        VerticalAlignment = Enum.VerticalAlignment.Center,
+        Padding = UDim.new(0, 12),
+        Parent = actionBar,
+    })
 
-    goToCityButton.MouseLeave:Connect(function()
-        TweenService:Create(goToCityButton, TweenInfo.new(0.2), {
-            BackgroundColor3 = Color3.fromRGB(80, 60, 40)
-        }):Play()
-    end)
-
-    -- Click handler
-    goToCityButton.MouseButton1Click:Connect(function()
-        OverworldHUD.GoToCityClicked:Fire()
-    end)
-
-    _goToCityButton = goToCityButton
-
-    -- Find Battle button (bottom center, to the right of Go to City)
-    local findBattleButton = Instance.new("TextButton")
-    findBattleButton.Name = "FindBattleButton"
-    findBattleButton.Size = UDim2.new(0, 160, 0, 50)
-    findBattleButton.Position = UDim2.new(0.5, 110, 1, -70)
-    findBattleButton.BackgroundColor3 = Color3.fromRGB(140, 50, 50)
-    findBattleButton.BorderSizePixel = 0
-    findBattleButton.Text = "Find Battle"
-    findBattleButton.TextColor3 = Color3.fromRGB(255, 230, 200)
-    findBattleButton.TextSize = 20
-    findBattleButton.Font = Enum.Font.GothamBold
-    findBattleButton.Parent = screenGui
-
-    local fbCorner = Instance.new("UICorner")
-    fbCorner.CornerRadius = UDim.new(0, 10)
-    fbCorner.Parent = findBattleButton
-
-    local fbStroke = Instance.new("UIStroke")
-    fbStroke.Color = Color3.fromRGB(180, 80, 60)
-    fbStroke.Thickness = 3
-    fbStroke.Parent = findBattleButton
-
-    -- Hover effect
-    findBattleButton.MouseEnter:Connect(function()
-        TweenService:Create(findBattleButton, TweenInfo.new(0.2), {
-            BackgroundColor3 = Color3.fromRGB(170, 65, 65)
-        }):Play()
-    end)
-
-    findBattleButton.MouseLeave:Connect(function()
-        TweenService:Create(findBattleButton, TweenInfo.new(0.2), {
-            BackgroundColor3 = Color3.fromRGB(140, 50, 50)
-        }):Play()
-    end)
-
-    -- Click handler
-    findBattleButton.MouseButton1Click:Connect(function()
-        OverworldHUD.FindBattleClicked:Fire()
-    end)
-
-    _findBattleButton = findBattleButton
-
-    -- Defense Log button (bottom center, to the left of Go to City)
-    local defenseLogButton = Instance.new("TextButton")
-    defenseLogButton.Name = "DefenseLogButton"
-    defenseLogButton.Size = UDim2.new(0, 160, 0, 50)
-    defenseLogButton.Position = UDim2.new(0.5, -270, 1, -70)
-    defenseLogButton.BackgroundColor3 = Color3.fromRGB(100, 40, 40)
-    defenseLogButton.BorderSizePixel = 0
-    defenseLogButton.Text = "Defense Log"
-    defenseLogButton.TextColor3 = Color3.fromRGB(255, 220, 200)
-    defenseLogButton.TextSize = 20
-    defenseLogButton.Font = Enum.Font.GothamBold
-    defenseLogButton.Parent = screenGui
-
-    local dlCorner = Instance.new("UICorner")
-    dlCorner.CornerRadius = UDim.new(0, 10)
-    dlCorner.Parent = defenseLogButton
-
-    local dlStroke = Instance.new("UIStroke")
-    dlStroke.Color = Color3.fromRGB(160, 60, 60)
-    dlStroke.Thickness = 3
-    dlStroke.Parent = defenseLogButton
-
-    -- Hover effect
-    defenseLogButton.MouseEnter:Connect(function()
-        TweenService:Create(defenseLogButton, TweenInfo.new(0.2), {
-            BackgroundColor3 = Color3.fromRGB(130, 55, 55)
-        }):Play()
-    end)
-
-    defenseLogButton.MouseLeave:Connect(function()
-        TweenService:Create(defenseLogButton, TweenInfo.new(0.2), {
-            BackgroundColor3 = Color3.fromRGB(100, 40, 40)
-        }):Play()
-    end)
-
-    -- Click handler
-    defenseLogButton.MouseButton1Click:Connect(function()
-        OverworldHUD.DefenseLogClicked:Fire()
-    end)
-
+    -- Defense Log button
+    local defenseLogButton = Components.CreateButton({
+        Name = "DefenseLogButton",
+        Text = "Defense Log",
+        Size = UDim2.new(0, 160, 0, 44),
+        Style = "danger",
+        OnClick = function()
+            OverworldHUD.DefenseLogClicked:Fire()
+        end,
+        Parent = actionBar,
+    })
+    defenseLogButton.LayoutOrder = 1
     _defenseLogButton = defenseLogButton
 
+    -- Go to City button (prominent center)
+    local goToCityButton = Components.CreateButton({
+        Name = "GoToCityButton",
+        Text = "Go to City",
+        Size = UDim2.new(0, 190, 0, 44),
+        Style = "wood",
+        TextSize = S.FontSizeLarge,
+        OnClick = function()
+            OverworldHUD.GoToCityClicked:Fire()
+        end,
+        Parent = actionBar,
+    })
+    goToCityButton.LayoutOrder = 2
+    _goToCityButton = goToCityButton
+
+    -- Find Battle button
+    local findBattleButton = Components.CreateButton({
+        Name = "FindBattleButton",
+        Text = "Find Battle",
+        Size = UDim2.new(0, 160, 0, 44),
+        Style = "danger",
+        OnClick = function()
+            OverworldHUD.FindBattleClicked:Fire()
+        end,
+        Parent = actionBar,
+    })
+    findBattleButton.LayoutOrder = 3
+    _findBattleButton = findBattleButton
+
+    -- ================================================================
     -- Loading screen (for teleports)
+    -- ================================================================
     local loadingFrame = Instance.new("Frame")
     loadingFrame.Name = "LoadingScreen"
     loadingFrame.Size = UDim2.new(1, 0, 1, 0)
-    loadingFrame.BackgroundColor3 = Color3.fromRGB(15, 12, 10)
+    loadingFrame.BackgroundColor3 = C.Background
     loadingFrame.BackgroundTransparency = 0
     loadingFrame.Visible = false
     loadingFrame.ZIndex = 100
     loadingFrame.Parent = screenGui
 
-    local loadingLabel = Instance.new("TextLabel")
-    loadingLabel.Name = "LoadingText"
-    loadingLabel.Size = UDim2.new(1, 0, 0, 50)
-    loadingLabel.Position = UDim2.new(0, 0, 0.5, -25)
-    loadingLabel.BackgroundTransparency = 1
-    loadingLabel.Text = "Teleporting..."
-    loadingLabel.TextColor3 = Color3.fromRGB(200, 180, 140)
-    loadingLabel.TextSize = 28
-    loadingLabel.Font = Enum.Font.GothamBold
-    loadingLabel.Parent = loadingFrame
+    Components.CreateLabel({
+        Name = "LoadingText",
+        Text = "Teleporting...",
+        Size = UDim2.new(1, 0, 0, 50),
+        Position = UDim2.new(0, 0, 0.5, -25),
+        TextColor = C.TextGold,
+        TextSize = S.FontSizeTitle,
+        Font = Enum.Font.GothamBold,
+        TextXAlignment = Enum.TextXAlignment.Center,
+        Parent = loadingFrame,
+    })
 
     -- Loading spinner
-    local spinner = Instance.new("Frame")
-    spinner.Name = "Spinner"
-    spinner.Size = UDim2.new(0, 40, 0, 40)
-    spinner.Position = UDim2.new(0.5, -20, 0.5, 40)
-    spinner.BackgroundColor3 = Color3.fromRGB(200, 180, 140)
-    spinner.Parent = loadingFrame
-
-    local spinnerCorner = Instance.new("UICorner")
-    spinnerCorner.CornerRadius = UDim.new(1, 0)
-    spinnerCorner.Parent = spinner
+    local spinner = Components.CreateFrame({
+        Name = "Spinner",
+        Size = UDim2.new(0, 40, 0, 40),
+        Position = UDim2.new(0.5, -20, 0.5, 40),
+        BackgroundColor = C.GoldTrim,
+        CornerRadius = UDim.new(1, 0),
+        Parent = loadingFrame,
+    })
 
     _loadingFrame = loadingFrame
 
+    -- ================================================================
     -- Error notification
-    local errorFrame = Instance.new("Frame")
-    errorFrame.Name = "ErrorNotification"
-    errorFrame.Size = UDim2.new(0, 300, 0, 50)
-    errorFrame.Position = UDim2.new(0.5, -150, 0, -60)
-    errorFrame.BackgroundColor3 = Color3.fromRGB(150, 50, 50)
+    -- ================================================================
+    local errorFrame = Components.CreateFrame({
+        Name = "ErrorNotification",
+        Size = UDim2.new(0, 300, 0, 50),
+        Position = UDim2.new(0.5, -150, 0, -60),
+        BackgroundColor = C.Danger,
+        CornerRadius = S.CornerRadius,
+        BorderColor = Color3.fromRGB(140, 50, 50),
+        Parent = screenGui,
+    })
     errorFrame.Visible = false
-    errorFrame.Parent = screenGui
 
-    local errorCorner = Instance.new("UICorner")
-    errorCorner.CornerRadius = UDim.new(0, 8)
-    errorCorner.Parent = errorFrame
-
-    local errorLabel = Instance.new("TextLabel")
-    errorLabel.Name = "ErrorText"
-    errorLabel.Size = UDim2.new(1, -20, 1, 0)
-    errorLabel.Position = UDim2.new(0, 10, 0, 0)
-    errorLabel.BackgroundTransparency = 1
-    errorLabel.Text = "Error message"
-    errorLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-    errorLabel.TextSize = 14
-    errorLabel.Font = Enum.Font.GothamBold
-    errorLabel.TextXAlignment = Enum.TextXAlignment.Left
-    errorLabel.Parent = errorFrame
+    Components.CreateLabel({
+        Name = "ErrorText",
+        Text = "Error message",
+        Size = UDim2.new(1, -20, 1, 0),
+        Position = UDim2.new(0, 10, 0, 0),
+        TextColor = C.TextPrimary,
+        TextSize = S.FontSizeMedium,
+        Font = Enum.Font.GothamBold,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Parent = errorFrame,
+    })
 
     _errorFrame = errorFrame
 
@@ -718,27 +651,28 @@ function OverworldHUD:UpdateResources(resources: {gold: number, wood: number, fo
     local wood = resources.wood or 0
     local food = resources.food or 0
 
-    local goldBar = _resourcesFrame:FindFirstChild("GoldBar") :: Frame?
-    if goldBar then
-        local value = goldBar:FindFirstChild("Value") :: TextLabel?
-        if value then
-            value.Text = tostring(gold)
+    -- Components.CreateResourceDisplay names: "GoldDisplay" > "Amount"
+    local goldDisplay = _resourcesFrame:FindFirstChild("GoldDisplay") :: Frame?
+    if goldDisplay then
+        local amount = goldDisplay:FindFirstChild("Amount") :: TextLabel?
+        if amount then
+            amount.Text = formatNumber(gold)
         end
     end
 
-    local woodBar = _resourcesFrame:FindFirstChild("WoodBar") :: Frame?
-    if woodBar then
-        local value = woodBar:FindFirstChild("Value") :: TextLabel?
-        if value then
-            value.Text = tostring(wood)
+    local woodDisplay = _resourcesFrame:FindFirstChild("WoodDisplay") :: Frame?
+    if woodDisplay then
+        local amount = woodDisplay:FindFirstChild("Amount") :: TextLabel?
+        if amount then
+            amount.Text = formatNumber(wood)
         end
     end
 
-    local foodBar = _resourcesFrame:FindFirstChild("FoodBar") :: Frame?
-    if foodBar then
-        local value = foodBar:FindFirstChild("Value") :: TextLabel?
-        if value then
-            value.Text = tostring(food)
+    local foodDisplay = _resourcesFrame:FindFirstChild("FoodDisplay") :: Frame?
+    if foodDisplay then
+        local amount = foodDisplay:FindFirstChild("Amount") :: TextLabel?
+        if amount then
+            amount.Text = formatNumber(food)
         end
     end
 
@@ -1032,14 +966,12 @@ function OverworldHUD:UpdateShield(shieldData: {active: boolean, expiresAt: numb
 
     _shieldFrame.BackgroundColor3 = bgColor
 
-    local shieldStroke = _shieldFrame:FindFirstChild("ShieldStroke") :: UIStroke?
-    if shieldStroke then
-        shieldStroke.Color = strokeColor
+    if _shieldStroke then
+        _shieldStroke.Color = strokeColor
     end
 
-    local shieldIcon = _shieldFrame:FindFirstChild("ShieldIcon") :: TextLabel?
-    if shieldIcon then
-        shieldIcon.TextColor3 = timerColor
+    if _shieldIconLabel then
+        _shieldIconLabel.TextColor3 = timerColor
     end
 end
 

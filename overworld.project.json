@@ -56,7 +56,10 @@
           "$path": "src/overworld/Controllers"
         },
         "UI": {
-          "$path": "src/overworld/UI"
+          "$path": "src/overworld/UI",
+          "Components": {
+            "$path": "src/client/UI/Components.lua"
+          }
         }
       }
     },
