@@ -1171,8 +1171,10 @@ end
 local _pvpCooldowns: {[string]: number} = {} -- "attackerId_targetId" -> timestamp
 
 -- Engage bandit: player initiates combat with a bandit NPC
+-- NOTE: Primary engagement path is now via ProximityPrompt (handled in BanditService).
+-- This RemoteEvent handler is kept as a legacy/fallback path.
 connectEvent(EngageBandit, function(player, data)
-    if not BanditService or not OverworldCombatService or not LootCarryService then
+    if not BanditService or not OverworldCombatService or not LootCarryService or not DataService then
         ServerResponse:FireClient(player, "EngageBandit", { success = false, error = "SERVICE_UNAVAILABLE" })
         return
     end
@@ -1192,11 +1194,28 @@ connectEvent(EngageBandit, function(player, data)
         return
     end
 
-    -- Validate troop selection
-    if typeof(data.troops) ~= "table" then return end
+    -- Read troops server-side from DataService (don't trust client troop data)
+    local troops = {}
+    local playerData = DataService:GetPlayerData(player)
+    if playerData and playerData.troops then
+        for troopType, troopInfo in playerData.troops do
+            if typeof(troopInfo) == "table" and (troopInfo.count or 0) > 0 then
+                table.insert(troops, {
+                    troopType = troopType,
+                    level = troopInfo.level or 1,
+                    count = troopInfo.count,
+                })
+            end
+        end
+    end
+
+    if #troops == 0 then
+        ServerResponse:FireClient(player, "EngageBandit", { success = false, error = "NO_TROOPS" })
+        return
+    end
 
     -- Delegate to BanditService
-    local result = BanditService:EngageBandit(player, data.banditId, data.troops)
+    local result = BanditService:EngageBandit(player, data.banditId, troops)
     if result then
         -- Send combat result to client
         AutoClashResult:FireClient(player, result)

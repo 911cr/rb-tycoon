@@ -1709,8 +1709,8 @@ ServerResponse.OnClientEvent:Connect(function(eventName, result)
     print(string.format("[CLIENT] Server response for %s: %s", eventName, result.success and "success" or "failed"))
 
     if not result.success and OverworldHUD and OverworldHUD.ShowError then
-        -- Don't show raw error codes for matchmaking/revenge/goblin camps/resource nodes - handled specifically
-        if eventName ~= "ConfirmMatchmaking" and eventName ~= "RequestRevenge" and eventName ~= "AttackGoblinCamp" and eventName ~= "CollectResourceNode" then
+        -- Don't show raw error codes for events with specific handlers below
+        if eventName ~= "ConfirmMatchmaking" and eventName ~= "RequestRevenge" and eventName ~= "AttackGoblinCamp" and eventName ~= "CollectResourceNode" and eventName ~= "EngageBandit" and eventName ~= "BanditWarning" then
             OverworldHUD:ShowError(result.error or "Unknown error")
         end
     end
@@ -1768,6 +1768,32 @@ ServerResponse.OnClientEvent:Connect(function(eventName, result)
                 end
                 OverworldHUD:ShowError(errorMsg)
             end
+        end
+    end
+
+    -- Handle bandit engagement errors
+    if eventName == "EngageBandit" then
+        if not result.success and OverworldHUD and OverworldHUD.ShowError then
+            local errorMsg = result.error or "Cannot battle right now."
+            if errorMsg == "NO_TROOPS" then
+                errorMsg = "You have no troops! Train troops in your village first."
+            elseif errorMsg == "RATE_LIMITED" then
+                errorMsg = "Too fast! Wait a moment."
+            elseif errorMsg == "ALREADY_IN_COMBAT" then
+                errorMsg = "Already in combat!"
+            elseif errorMsg == "ENGAGE_FAILED" then
+                errorMsg = "Cannot engage this bandit right now."
+            elseif errorMsg == "SERVICE_UNAVAILABLE" then
+                errorMsg = "Service unavailable. Try again."
+            end
+            OverworldHUD:ShowError(errorMsg)
+        end
+    end
+
+    -- Handle bandit warning (no troops, no loot — bandit ignores player)
+    if eventName == "BanditWarning" then
+        if OverworldHUD and OverworldHUD.ShowError then
+            OverworldHUD:ShowError(result.message or "The bandit eyes you but finds nothing worth stealing.")
         end
     end
 end)

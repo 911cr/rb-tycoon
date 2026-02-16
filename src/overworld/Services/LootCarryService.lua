@@ -348,6 +348,46 @@ function LootCarryService:StealAllLoot(player: Player): LootTable?
 end
 
 --[[
+    Steals a percentage of carried loot from a player (bandit forced combat).
+    Deducts the stolen portion and returns it. Remaining loot stays with the player.
+
+    @param player Player - The victim
+    @param percent number - Fraction to steal (0.0 to 1.0)
+    @return LootTable? - The stolen loot, or nil if none
+]]
+function LootCarryService:StealPartialLoot(player: Player, percent: number): LootTable?
+    local userId = player.UserId
+    local loot = _carriedLoot[userId]
+    if not loot or getLootValue(loot) <= 0 then
+        return nil
+    end
+
+    percent = math.clamp(percent, 0, 1)
+
+    local stolen: LootTable = {
+        gold = math.floor(loot.gold * percent),
+        wood = math.floor(loot.wood * percent),
+        food = math.floor(loot.food * percent),
+        gems = math.floor(loot.gems * percent),
+    }
+
+    -- Deduct stolen amount from carried loot
+    loot.gold -= stolen.gold
+    loot.wood -= stolen.wood
+    loot.food -= stolen.food
+    loot.gems -= stolen.gems
+
+    -- If nothing left, clear entirely
+    if getLootValue(loot) <= 0 then
+        _carriedLoot[userId] = nil
+    end
+
+    updateCartVisual(player)
+
+    return if getLootValue(stolen) > 0 then stolen else nil
+end
+
+--[[
     Banks carried loot — transfers to DataService resources.
     Called when player walks within banking distance of own base.
 
